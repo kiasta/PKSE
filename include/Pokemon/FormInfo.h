@@ -96,6 +96,23 @@ namespace Pokemon {
     uint8_t genderLinkedForm(uint16_t species, uint8_t currentForm, uint8_t gender);
 
     /**
+     * True when the species can freely change form AFTER it was caught — a held plate, a
+     * memory disc, a baber's trim, the season, a form-change item. Ported from PKHeX
+     * `FormInfo.IsFormChangeable`'s `FormChange` list.
+     * 
+     * Layer 3 needs it because an encounter template records the form that SPAWNED, and for
+     * these species that says nothing about the form now stored. A Rotom caught in its base
+     * form and later put in a washing machine is still the same encounter; comparing the form
+     * would report a mismatch that is not one.
+     * 
+     * PKHeX's own version takes the old new form plus both contexts, because Zygarde and
+     * Deerling changed rules between generations. Every game PKSE supports is Gen 8 or later
+     * (or Gen 3, which has none of these species, bar Deoxys), and in that gen both are freely
+     * changeable, so the extra arguments would only ever narrow to `true`.
+     */
+    bool isFormChangeable(uint16_t species);
+
+    /**
      * An EncryptionConstant that satisfies the species' **form correlation**, given the form it is
      * being put into. Returns `ec` unchanged for every species that has no such correlation, and for
      * one that already satisfies it.

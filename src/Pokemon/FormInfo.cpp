@@ -182,6 +182,39 @@ namespace Pokemon {
         }
     }
 
+    bool isFormChangeable(uint16_t species) {
+        switch (species) {
+            case 412:   // Burmy      -- cloak follows the last battle's terrain
+            case 676:   // Furfrou    -- trims, from the barber
+            case 741:   // Oricorio   -- nectar
+            case 479:   // Rotom      -- appliances
+            case 386:   // Deoxys     -- meteorites
+            case 483:   // Dialga
+            case 484:   // Palkia
+            case 487:   // Giratina   -- Griseous Orb / Core
+            case 492:   // Shaymin    -- Gracidea
+            case 493:   // Arceus     -- plates
+            case 641:   // Tornadus
+            case 642:   // Thundurus
+            case 645:   // Landorus   -- Reveal Glass
+            case 646:   // Kyurem     -- fusion
+            case 647:   // Keldeo     -- Secret Sword
+            case 649:   // Genesect   -- drives
+            case 720:   // Hoopa      -- Prison Bottle
+            case 773:   // Silvally   -- memories
+            case 800:   // Necrozma   -- fusion
+            case 898:   // Calyrex    -- fusion
+            case 905:   // Enamorus   -- Reveal Glass
+            case 1017:  // Ogerpon    -- masks
+            case 718:   // Zygarde    -- Reassembly Unit (Gen 8+; see the header note)
+            case 585:   // Deerling   -- province/season, re-rolled on startup from Gen 8 on
+            case 586:   // Sawsbuck
+                return true;
+            default:
+                return false;
+        }
+    }
+
     uint8_t genderLinkedForm(uint16_t species, uint8_t currentForm, uint8_t gender) {
         if (!isFormGenderSpecific(species) || gender > 1) return currentForm;
         // Low bit only -- the rest of the index is whatever else the form encodes (Meowstic's

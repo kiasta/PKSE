@@ -11,6 +11,7 @@
 
 #include <string>
 
+#include "Legality/EncounterMatch.h"
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PersonalInfoTable.h"
@@ -242,6 +243,12 @@ namespace Legality {
         // ---- Checksum: a strong regression guard on our own editor (flags corruption / mid-edit) ----
         if (!pk.checksumValid())
             add(r, Severity::Warning, "Stored checksum is invalid");
+
+        // Layer 3: does a real encounter in the origin game produce this Pokemon?
+        // Runs last so its findings read as the conclusion after the field checks, and
+        // it takes no game argument: the tables follow the mon's origin version, not the
+        // save it is sitting in. See EncounterMatch.h.
+        checkEncounter(pk, r);
 
         return r;
     }

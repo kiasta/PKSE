@@ -166,7 +166,7 @@ make clean && make all prod
 
 ## **Regenerating the data tables**
 
-Most of the game data PKSE relies on — species / move / ability / item names, learnsets, per-species info (abilities, gender ratios, forms), item-pouch contents, met-location names, move PP and Pokedex entry placement — lives in **generated** source files under `src/Names/` and `src/Pokemon/`. These are **committed to the repo**, so a normal build never regenerates them: `make` just compiles them, and you do **not** need any of the tools below to build PKSE.
+Most of the game data PKSE relies on — species / move / ability / item names, learnsets, per-species info (abilities, gender ratios, forms), item-pouch contents, met-location names, move PP and Pokedex entry placement — lives in **generated** source files under `src/Names/` and `src/Pokemon/`. These are **committed to the repo**, but a normal build never regenerates them: `make` just compiles them, and you do **not** need any of the tools below to build PKSE.
 
 You only need to regenerate a table when its upstream data changes — a new game, a DLC that adds Pokemon / moves / items, or a correction in [PKHeX](https://github.com/kwsch/PKHeX). The generators live in `tools/` and are run **by hand, one at a time**.
 
@@ -175,18 +175,20 @@ You only need to regenerate a table when its upstream data changes — a new gam
 These read their inputs **straight from GitHub** — only Python 3 and an internet connection are needed, no local PKHeX checkout:
 
 ```bash
-python tools/gen_personal.py       # abilities / gender / friendship / forms / per-game presence
-python tools/gen_learnsets.py      # per-game learnable-move bitsets
-python tools/gen_locations.py      # met-location names
-python tools/gen_moveinfo.py       # base PP per move
-python tools/gen_movenames.py      # move display names
-python tools/gen_movepresence.py   # which moves exist in each game
-python tools/gen_itempresence.py   # which items a Pokemon may legally hold, per game
-python tools/gen_itempouches.py    # which items belong in each bag pocket
-python tools/gen_speciesnames.py   # species display names
-python tools/gen_swshdex.py        # which of Sword/Shield's three Pokedexes a species is in
-python tools/gen_svdex.py          # which Scarlet/Violet regional Pokedex a species+FORM is in
-python tools/gen_pladex.py         # Legends: Arceus Pokedex statistics-entry lookup
+python tools/gen_encounters.py      # legality encounters
+python tools/gen_evolutions.py      # legality evolutions
+python tools/gen_itempouches.py     # which items belong in each bag pocket
+python tools/gen_itempresence.py    # which items a Pokemon may legally hold, per game
+python tools/gen_learnsets.py       # per-game learnable-move bitsets
+python tools/gen_locations.py       # met-location names
+python tools/gen_moveinfo.py        # base PP per move
+python tools/gen_movenames.py       # move display names
+python tools/gen_movepresence.py    # which moves exist in each game
+python tools/gen_personal.py        # abilities / gender / friendship / forms / per-game presence
+python tools/gen_pladex.py          # Legends: Arceus Pokedex statistics-entry lookup
+python tools/gen_speciesnames.py    # species display names
+python tools/gen_svdex.py           # which Scarlet/Violet regional Pokedex a species+FORM is in
+python tools/gen_swshdex.py         # which of Sword/Shield's three Pokedexes a species is in
 ```
 
 Each fetches its PKHeX files via `tools/pkhex_source.py` and caches them under `tools/.pkhex_cache/` (gitignored) so re-runs are offline. By default they use a **pinned PKHeX commit** — the one the committed tables were built from — so regenerating reproduces the existing tables exactly. Two overrides:

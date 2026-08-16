@@ -700,7 +700,7 @@ namespace Pokemon {
          * Read-only: nothing in PKSE creates an Alpha, but a save can already contain one and the
          * Pokedex records Alpha sightings in their own slot.
          */
-        bool isAlpha() const noexcept { return (static_cast<uint8_t>(data[0x16]) & 0x20) != 0; }
+        bool isAlpha() const noexcept override { return (static_cast<uint8_t>(data[0x16]) & 0x20) != 0; }
 
         /**
          * Absolute height / weight -- IEEE-754 floats at 0xAC / 0xB0 (PA8), in the game's own units.

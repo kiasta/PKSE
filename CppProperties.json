@@ -22,7 +22,7 @@
         "__SWITCH__",
         "_REENTRANT",
         "NVG_NO_STB",
-        "PKSE_VERSION=\"1.1.3\""
+        "PKSE_VERSION=\"1.2.0-pre-release\""
       ]
     }
   ]

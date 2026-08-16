@@ -275,14 +275,15 @@ namespace Modals {
         }
 
         // Legality summary pinned at the bottom of the left pane (R / tap opens the full issue list).
+        // A clean mon is still worth opening: Layer 3 records which encounter it matched, or why it
+        // could not be checked, as notes — so the row stays tappable whenever there is anything to read.
         {
             const int ly = colY + colH - legalityH + 6;
-            if (legalityRep.ok()) {
-                fb.drawText(Lx + 18, ly, "Legality: no problems found", Color(120, 205, 140), TextStyle::Caption);
-            } else {
-                const std::string label = "Legality: " + std::to_string(legalityRep.problemCount())
-                                        + " issue(s)  -  R / tap to view";
-                fb.drawText(Lx + 18, ly, label, Color(235, 100, 100), TextStyle::Caption);
+            const bool clean = legalityRep.ok();
+            std::string label = clean ? "Legality: no problems found" : "Legality: " + std::to_string(legalityRep.problemCount()) + " issue(s)";
+            if (!legalityRep.empty()) label += "  -  R / tap to view";
+            fb.drawText(Lx + 18, ly, label, clean ? Color(120, 205, 140) : Color(235, 100, 100), TextStyle::Caption);
+            if (!legalityRep.empty()) {
                 int lw, lh; fb.measureText(label, lw, lh, TextStyle::Caption);
                 screen.touchButtons.push_back({ 95, Lx + 14, ly - 4, lw + 8, lh + 8 });  // id 95: open legality overlay
             }

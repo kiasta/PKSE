@@ -256,6 +256,16 @@ namespace Pokemon {
          * @return true for Let's Go Pokemon, false otherwise
          */
         virtual bool hasAwakeningValues() const noexcept { return false; }
+        /**
+         * Is this an Alpha? Legends: Arceus and Legends Z-A only; every other format
+         * has no such concept and is false.
+         * 
+         * Read-only across the codebase — nothing in PKSE creates an Alpha — but a save
+         * can already contain one, and the legality checker has to know: an Alpha is a
+         * property of the ENCOUNTER (alpha slots and alpha statistics are separate templates
+         * with their own guaranteed IVs), not something the player cna confer afterwords
+         */
+        virtual bool isAlpha() const noexcept { return false; }
 
         // ========================================
         // Moves

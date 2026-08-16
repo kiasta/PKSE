@@ -615,7 +615,7 @@ namespace Pokemon {
          * its Pokedex entry records "an Alpha of this species was seen" separately from the form flags.
          * Read-only here: nothing in PKSE creates an Alpha, but a save can already contain one.
          */
-        bool isAlpha() const noexcept { return static_cast<uint8_t>(data[0x23]) != 0; }
+        bool isAlpha() const noexcept override { return static_cast<uint8_t>(data[0x23]) != 0; }
 
         /** Fateful-encounter flag -- bit 0 of the gender byte at 0x22 (setGender leaves bit 0 alone). */
         bool isFatefulEncounter() const noexcept override { return (static_cast<uint8_t>(data[0x22]) & 0x01) != 0; }

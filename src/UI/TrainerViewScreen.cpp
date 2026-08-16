@@ -2547,10 +2547,11 @@ namespace UI {
                 return;
             }
             // Open the legality issue list: R, or tapping the legality summary (id 95) -- but ONLY
-            // when the mon actually has issues. A clean mon has nothing to show, so the button is
-            // disabled (greyed in the guide) and this does nothing.
+            // when the report has something in it. That includes a clean mon with layer 3 notes
+            // (which encounter it matched or why the check could not run); a truly empty report
+            // has nothing to show, so the button is disabled (greyed in the guide) and this does nothing.
             if ((kDown & HidNpadButton_R) || tb == 95) {
-                if (pokemon && !Legality::analyze(*pokemon, pokemon->getGameGroup()).ok())
+                if (pokemon && !Legality::analyze(*pokemon, pokemon->getGameGroup()).empty())
                     details.legalityOverlay = true;
                 return;
             }

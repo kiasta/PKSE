@@ -60,8 +60,8 @@ APP_AUTHOR  :=  Kiasta
 #
 # NOTE: no trailing comment on either assignment line. Make keeps trailing whitespace in a value, so
 # "0.0.3 \t\t# ..." would have baked spaces into the .nacp version and the -D define.
-APP_VERSION :=	1.1.3
-APP_VERSION_FULL :=	1.1.3
+APP_VERSION :=	1.2.0-pre
+APP_VERSION_FULL :=	1.2.0-pre-release
 
 # Mirrors what switch_rules does for APP_VERSION: an unset long form falls back to the short one
 # rather than compiling in an empty version string.
