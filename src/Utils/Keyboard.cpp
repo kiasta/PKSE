@@ -16,6 +16,46 @@ namespace Utils {
         // truncate any non-ASCII name mid-sequence.
         constexpr int kBytesPerChar = 4;
 
+        struct InlineState {
+            SwkbdInline keyboard{};
+            bool created = false;
+            bool active = false;
+            bool initialized = false;
+            bool changed = false;
+            bool accepted = false;
+            bool cancelled = false;
+            std::string text;
+        };
+
+        InlineState inlineState;
+
+        void inlineInitialized() {
+            inlineState.initialized = true;
+        }
+
+        void inlineChanged(const char* text, SwkbdChangedStringArg*) {
+            if (!inlineState.active) return;
+            inlineState.text = text ? text : "";
+            inlineState.changed = true;
+        }
+
+        void inlineAccepted(const char* text, SwkbdDecidedEnterArg*) {
+            if (!inlineState.active) return;
+            inlineState.text = text ? text : "";
+            inlineState.accepted = true;
+        }
+
+        void inlineCancelled() {
+            if (inlineState.active) inlineState.cancelled = true;
+        }
+
+        s32 utf8CharacterCount(const std::string& text) {
+            s32 count = 0;
+            for (unsigned char c : text)
+                if ((c & 0xC0) != 0x80) ++count;
+            return count;
+        }
+
         /**
          * Common swkbd plumbing. Returns false on cancel OR on applet failure -- the caller treats
          * both as "no change", which is right either way: a failed applet must not be allowed to
@@ -50,6 +90,96 @@ namespace Utils {
             out.assign(buf.data());
             return true;
         }
+    }
+
+    bool beginInlineText(const std::string& initial, int maxChars) {
+        if (maxChars <= 0) return false;
+        closeInlineText();
+
+        Result rc = swkbdInlineCreate(&inlineState.keyboard);
+        if (R_FAILED(rc)) {
+            logErrorToFile("swkbdInlineCreate failed");
+            return false;
+        }
+        inlineState.created = true;
+        swkbdInlineSetFinishedInitializeCallback(&inlineState.keyboard, inlineInitialized);
+
+        rc = swkbdInlineLaunchForLibraryApplet(
+            &inlineState.keyboard, SwkbdInlineMode_AppletDisplay, 0);
+        if (R_FAILED(rc)) {
+            logErrorToFile("swkbdInlineLaunchForLibraryApplet failed");
+            closeInlineText();
+            return false;
+        }
+        inlineState.active = true;
+        inlineState.text = initial;
+        inlineState.text = initial;
+        swkbdInlineSetChangedStringCallback(&inlineState.keyboard, inlineChanged);
+        swkbdInlineSetDecidedEnterCallback(&inlineState.keyboard, inlineAccepted);
+        swkbdInlineSetDecidedCancelCallback(&inlineState.keyboard, inlineCancelled);
+
+        SwkbdAppearArg appearArg;
+        swkbdInlineMakeAppearArg(&appearArg, SwkbdType_QWERTY);
+        swkbdInlineAppearArgSetOkButtonText(&appearArg, "Done");
+        swkbdInlineAppearArgSetStringLenMax(&appearArg, maxChars);
+        swkbdInlineAppearArgSetStringLenMin(&appearArg, 0);
+        swkbdInlineSetInputText(&inlineState.keyboard, initial.c_str());
+        swkbdInlineSetCursorPos(&inlineState.keyboard, utf8CharacterCount(initial));
+        swkbdInlineAppear(&inlineState.keyboard, &appearArg);
+
+        rc = swkbdInlineUpdate(&inlineState.keyboard, nullptr);
+        if (R_FAILED(rc)) {
+            logErrorToFile("initial swkbdInlineUpdate failed");
+            closeInlineText();
+            return false;
+        }
+        return true;
+    }
+
+    InlineKeyboardUpdate updateInlineText() {
+        InlineKeyboardUpdate update;
+        if (!inlineState.active) return update;
+
+        SwkbdState state = SwkbdState_Inactive;
+        const Result rc = swkbdInlineUpdate(&inlineState.keyboard, &state);
+        if (R_FAILED(rc)) {
+            logErrorToFile("swkbdInlineUpdate failed");
+            update.event = InlineKeyboardEvent::Failed;
+            update.text = inlineState.text;
+            closeInlineText();
+            return update;
+        }
+
+        update.text = inlineState.text;
+        if (inlineState.cancelled) {
+            update.event = InlineKeyboardEvent::Cancelled;
+            closeInlineText();
+        } else if (inlineState.accepted) {
+            update.event = InlineKeyboardEvent::Accepted;
+            closeInlineText();
+        } else if (inlineState.changed) {
+            inlineState.changed = false;
+            update.event = InlineKeyboardEvent::Changed;
+        } else if (inlineState.initialized && state == SwkbdState_Inactive) {
+            logErrorToFile("inline keyboard exited unexpectedly");
+            update.event = InlineKeyboardEvent::Failed;
+            closeInlineText();
+        }
+        return update;
+    }
+
+    void closeInlineText() {
+        if (inlineState.created) {
+            const Result rc = swkbdInlineClose(&inlineState.keyboard);
+            if (R_FAILED(rc)) logErrorToFile("swkbdInlineClose failed");
+        }
+        inlineState.created = false;
+        inlineState.active = false;
+        inlineState.initialized = false;
+        inlineState.changed = false;
+        inlineState.accepted = false;
+        inlineState.cancelled = false;
+        inlineState.text.clear();
     }
 
     KeyboardResult promptText(const std::string& header, const std::string& guide,

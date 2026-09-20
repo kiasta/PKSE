@@ -121,11 +121,12 @@ namespace Dialogs {
         }
         const bool searchable = pickerSupportsSearch(kind);
         const bool filtered = searchable && !screen.pickerSearchQuery.empty();
+        const bool liveSearch = searchable && screen.pickerSearchKeyboardActive;
 
         // Dim behind + centered panel.
         fb.drawFilledRect(0, 0, W, H, Color(0, 0, 0, 150));
-        const int pw = 560, ph = H - 120;
-        const int px = (W - pw) / 2, py = 60;
+        const int pw = 560, ph = liveSearch ? 286 : H - 120;
+        const int px = (W - pw) / 2, py = liveSearch ? 24 : 60;
         fb.drawFilledRoundedRect(px, py, pw, ph, 16, Colors::Panel);
         fb.drawRoundedRect(px, py, pw, ph, 16, Colors::Accent, 2);
 
@@ -145,9 +146,11 @@ namespace Dialogs {
         }
         const int headerBottom = searchable ? py + 60 : py + 52;
         if (searchable) {
-            const std::string searchText = filtered
-                ? "Search: " + screen.pickerSearchQuery
-                : "X: Search by name";
+            const std::string searchText = liveSearch
+                ? "Search: " + (screen.pickerSearchQuery.empty()
+                              ? std::string("all options") : screen.pickerSearchQuery)
+                : filtered ? "Search: " + screen.pickerSearchQuery
+                           : "X: Search by name";
             fb.drawText(px + 20, py + 40, searchText, Colors::TextDim, TextStyle::Caption);
         }
         fb.drawHDivider(px + 20, headerBottom, pw - 40);
@@ -217,7 +220,9 @@ namespace Dialogs {
         if (count > visible)
             drawScrollbar(fb, px + pw - 14, listTop, visible * rowH, count * rowH, first * rowH);
 
-        const char* controls = !searchable
+        const char* controls = liveSearch
+            ? "Results update live as you type"
+            : !searchable
             ? "A: Select    B: Cancel    L/R: Page"
             : count == 0
                 ? "B: Cancel    X: Edit Search    Y: Clear Search"

@@ -7,8 +7,8 @@ namespace Utils {
     /**
      * Switch software-keyboard (swkbd) wrapper.
      *
-     * swkbd is a LIBRARY APPLET: the call blocks and PKSE is suspended for as long as the keyboard
-     * owns the screen. Three rules follow, and all are load-bearing:
+     * promptText() and promptNumber() use the all-foreground applet: the call blocks and PKSE is
+     * suspended for as long as the keyboard owns the screen. Three rules follow for those helpers:
      *
      *  - **Call it only from a screen's update(), never from draw().** The UI loop runs
      *    update() -> draw() -> flush(), so at update() time no NanoVG frame is open. Calling it
@@ -24,6 +24,27 @@ namespace Utils {
         bool accepted = false;   ///< false = cancelled or the applet failed; `text` is then empty
         std::string text;        ///< UTF-8, as typed (NOT yet validated against a game's encoding)
     };
+
+    enum class InlineKeyboardEvent {
+        None,
+        Changed,
+        Accepted,
+        Cancelled,
+        Failed
+    };
+
+    struct InlineKeyboardUpdate {
+        InlineKeyboardEvent event = InlineKeyboardEvent::None;
+        std::string text;
+    };
+
+    /**
+     * Launch the native keyboard as a background applet so the application keeps rendering.
+     * Call updateInlineText() once per frame until it reports Accepted, Cancelled, or Failed.
+     */
+    bool beginInlineText(const std::string& initial, int maxChars);
+    InlineKeyboardUpdate updateInlineText();
+    void closeInlineText();
 
     /**
      * Show the text keyboard, seeded with `initial`.

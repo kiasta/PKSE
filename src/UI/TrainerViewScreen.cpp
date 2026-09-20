@@ -553,6 +553,10 @@ namespace UI {
         }
     }
 
+    TrainerViewScreen::~TrainerViewScreen() {
+        Utils::closeInlineText();
+    }
+
     // Non-null cells in the carried block (a block can contain holes -- see moveMon).
     int TrainerViewScreen::carriedCount() const {
         int n = 0;
@@ -1897,6 +1901,38 @@ namespace UI {
     void TrainerViewScreen::update(const PadState& pad, const TouchInput& touch) {
         u64 kDown = padGetButtonsDown(&pad) | navTouchButton(touch);   // nav-bar badges are tappable
 
+        if (pickerSearchKeyboardActive) {
+            const Utils::InlineKeyboardUpdate keyboard = Utils::updateInlineText();
+            const auto restoreSearch = [&] {
+                applyPickerSearch(pickerSearchBeforeKeyboard);
+                pickerSearchValue = pickerSearchValueBeforeKeyboard;
+                pickerSel = 0;
+                for (int i = 0; i < pickerCount; ++i)
+                    if (pickerOrder[i] == pickerSearchValue) { pickerSel = i; break; }
+            };
+            switch (keyboard.event) {
+                case Utils::InlineKeyboardEvent::Changed:
+                    applyPickerSearch(keyboard.text);
+                    break;
+                case Utils::InlineKeyboardEvent::Accepted:
+                    applyPickerSearch(keyboard.text);
+                    pickerSearchKeyboardActive = false;
+                    break;
+                case Utils::InlineKeyboardEvent::Cancelled:
+                    restoreSearch();
+                    pickerSearchKeyboardActive = false;
+                    break;
+                case Utils::InlineKeyboardEvent::Failed:
+                    restoreSearch();
+                    pickerSearchKeyboardActive = false;
+                    postStatus("Couldn't run the live search keyboard.", 300);
+                    break;
+                case Utils::InlineKeyboardEvent::None:
+                    break;
+            }
+            return;
+        }
+
         // Let's Go stores its boxes as a GAPLESS list, so anything that vacated a slot last frame
         // left a hole the game can't represent. Re-pack it here rather than at each of the
         // several sites that can vacate a slot: this function has many early returns -- the release
@@ -2001,12 +2037,16 @@ namespace UI {
                 return;
             }
             if (Dialogs::pickerSupportsSearch(pickerKind) && (kDown & HidNpadButton_X)) {
-                const bool moves = pickerKind == Dialogs::PickerKind::Move;
-                const Utils::KeyboardResult result = Utils::promptText(
-                    moves ? "Search Moves" : "Search Items",
-                    "Part of the name",
-                    pickerSearchQuery, 32);
-                if (result.accepted) applyPickerSearch(result.text);
+                if (pickerCount > 0 && pickerSel >= 0
+                    && pickerSel < static_cast<int>(pickerOrder.size()))
+                    pickerSearchValue = pickerOrder[pickerSel];
+                pickerSearchBeforeKeyboard = pickerSearchQuery;
+                pickerSearchValueBeforeKeyboard = pickerSearchValue;
+                if (Utils::beginInlineText(pickerSearchQuery, 32)) {
+                    pickerSearchKeyboardActive = true;
+                } else {
+                    postStatus("Couldn't open the live search keyboard.", 300);
+                }
                 return;
             }
 
@@ -4212,7 +4252,9 @@ namespace UI {
         // Draw instructions
         std::string instructions;
         if (pickerActive) {
-            if (Dialogs::pickerSupportsSearch(pickerKind)) {
+            if (pickerSearchKeyboardActive) {
+                instructions = "Live search  |  Results update as you type";
+            } else if (Dialogs::pickerSupportsSearch(pickerKind)) {
                 instructions = pickerSearchQuery.empty()
                     ? "A: Select  |  B: Cancel  |  X: Search  |  L/R: Page"
                     : pickerCount == 0

@@ -48,6 +48,7 @@ namespace UI {
         enum class EditSource { Party, Box, Bank };
 
         TrainerViewScreen(Trainer::Trainer& trainer, const std::string& titleName, const std::string& backupDir, u64 titleId, AccountUid userUid, bool loadedFromCart);
+        ~TrainerViewScreen() override;
         void update(const PadState& pad, const TouchInput& touch) override;
         void draw(PKSEFramebuffer& fb) override;
         bool shouldExit() const override { return goBack; }
@@ -372,6 +373,9 @@ namespace UI {
         std::vector<int> pickerSearchOrder;
         int pickerSearchLegalCount = 0;
         int pickerSearchValue = 0;
+        bool pickerSearchKeyboardActive = false;
+        std::string pickerSearchBeforeKeyboard;
+        int pickerSearchValueBeforeKeyboard = 0;
         // Met-location picker: the origin version whose location table is shown, so the picker can
         // resolve each id in pickerOrder to a name (a location id names a different place per game).
         uint8_t pickerMetVersion = 0;
