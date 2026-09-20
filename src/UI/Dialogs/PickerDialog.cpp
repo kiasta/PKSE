@@ -220,9 +220,9 @@ namespace Dialogs {
         const char* controls = !searchable
             ? "A: Select    B: Cancel    L/R: Page"
             : count == 0
-                ? "B: Cancel    X: Edit/Clear Search"
+                ? "B: Cancel    X: Edit Search    Y: Clear Search"
                 : filtered
-                    ? "A: Select    B: Cancel    X: Edit/Clear Search    L/R: Page"
+                    ? "A: Select    B: Cancel    X: Edit    Y: Clear    L/R: Page"
                     : "A: Select    B: Cancel    X: Search    L/R: Page";
         fb.drawText(px + 20, py + ph - 34, controls, Colors::TextDim, TextStyle::Caption);
     }

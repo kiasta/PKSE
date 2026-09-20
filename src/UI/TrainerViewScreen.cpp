@@ -1995,11 +1995,16 @@ namespace UI {
         // Reusable value picker — owns all input while open.
         if (pickerActive) {
             Pokemon::Pokemon* pkPick = detailsTargetPokemon();
+            if (Dialogs::pickerSupportsSearch(pickerKind)
+                && !pickerSearchQuery.empty() && (kDown & HidNpadButton_Y)) {
+                applyPickerSearch("");
+                return;
+            }
             if (Dialogs::pickerSupportsSearch(pickerKind) && (kDown & HidNpadButton_X)) {
                 const bool moves = pickerKind == Dialogs::PickerKind::Move;
                 const Utils::KeyboardResult result = Utils::promptText(
                     moves ? "Search Moves" : "Search Items",
-                    "Part of the name; clear to show all",
+                    "Part of the name",
                     pickerSearchQuery, 32);
                 if (result.accepted) applyPickerSearch(result.text);
                 return;
@@ -4206,7 +4211,17 @@ namespace UI {
 
         // Draw instructions
         std::string instructions;
-        if (swapActive) {
+        if (pickerActive) {
+            if (Dialogs::pickerSupportsSearch(pickerKind)) {
+                instructions = pickerSearchQuery.empty()
+                    ? "A: Select  |  B: Cancel  |  X: Search  |  L/R: Page"
+                    : pickerCount == 0
+                        ? "B: Cancel  |  X: Edit Search  |  Y: Clear Search"
+                        : "A: Select  |  B: Cancel  |  X: Edit Search  |  Y: Clear Search  |  L/R: Page";
+            } else {
+                instructions = "A: Select  |  B: Cancel  |  L/R: Page";
+            }
+        } else if (swapActive) {
             instructions = "HOLDING  |  Arrows: Move Cursor  |  L/R: Change Box  |  Y: Drop Here  |  B: Cancel";
         } else if (statEdit.dialogActive) {
             if (statEdit.mode != Dialogs::StatEditMode::IV) {
