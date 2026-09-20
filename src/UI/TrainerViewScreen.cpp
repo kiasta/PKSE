@@ -2120,6 +2120,10 @@ namespace UI {
                 if (!pickerOrder.empty() && pickerSel < static_cast<int>(pickerOrder.size())
                     && selectedCategory >= 0 && selectedCategory < static_cast<int>(trainer.items.size())) {
                     const uint16_t id = static_cast<uint16_t>(pickerOrder[pickerSel]);
+                    const Utils::NumberResult quantity =
+                        Utils::promptNumber("Item Amount", 1, 1, currentItemMaxCount());
+                    if (!quantity.accepted) return;   // keep the picker open; nothing was added
+                    const uint16_t amount = static_cast<uint16_t>(quantity.value);
                     auto& pouch = trainer.items[selectedCategory];
                     const auto e = std::find_if(pouch.begin(), pouch.end(),
                         [id](const Trainer::InventoryItem& x) { return x.itemId == id; });
@@ -2127,9 +2131,9 @@ namespace UI {
                     if (e != pouch.end()) {
                         // Present but empty -> re-activate it AND flag it new (a freshly-added
                         // item always shows the bag's "new" marker in the games that have one).
-                        if (e->count == 0) { e->count = 1; e->isNew = true; hasUnsavedChanges = true; addVia = "revived"; }
+                        if (e->count == 0) { e->count = amount; e->isNew = true; hasUnsavedChanges = true; addVia = "revived"; }
                     } else if (static_cast<int>(pouch.size()) < currentPouchCapacity()) {
-                        pouch.push_back(Trainer::InventoryItem{ id, 1, true, false });
+                        pouch.push_back(Trainer::InventoryItem{ id, amount, true, false });
                         hasUnsavedChanges = true;
                         addVia = "appended";
                     } else {
@@ -2141,7 +2145,7 @@ namespace UI {
                             + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory))
                             + " " + Utils::logField("item", Utils::itemName(id, trainer.getGameGroup()))
                             + " id=" + std::to_string(id)
-                            + " count=1 via=" + addVia
+                            + " count=" + std::to_string(amount) + " via=" + addVia
                             + " pouchsize=" + std::to_string(pouch.size())
                             + "/" + std::to_string(currentPouchCapacity()));
                     }
