@@ -95,13 +95,32 @@ namespace Dialogs {
         return "Select";
     }
 
+    bool pickerSupportsSearch(PickerKind kind) {
+        switch (kind) {
+            case PickerKind::Move:
+            case PickerKind::Item:
+            case PickerKind::ItemG3:
+            case PickerKind::PouchItem:
+            case PickerKind::PouchItemG3:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     void drawPickerDialog(TrainerViewScreen& screen, PKSEFramebuffer& fb) {
         const int W = fb.getWidth(), H = fb.getHeight();
         const PickerKind kind = screen.pickerKind;
-        const int count = screen.pickerCount > 0 ? screen.pickerCount : 1;
+        const int count = screen.pickerCount > 0 ? screen.pickerCount : 0;
         int sel = screen.pickerSel;
-        if (sel < 0) sel = 0;
-        if (sel >= count) sel = count - 1;
+        if (count > 0) {
+            if (sel < 0) sel = 0;
+            if (sel >= count) sel = count - 1;
+        } else {
+            sel = 0;
+        }
+        const bool searchable = pickerSupportsSearch(kind);
+        const bool filtered = searchable && !screen.pickerSearchQuery.empty();
 
         // Dim behind + centered panel.
         fb.drawFilledRect(0, 0, W, H, Color(0, 0, 0, 150));
@@ -115,48 +134,60 @@ namespace Dialogs {
         const char* title = (screen.itemPickerReplace &&
                              (kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG3))
                           ? "Change Item To" : pickerTitle(kind);
-        fb.drawText(px + 20, py + 16, title, Colors::Text, TextStyle::Heading);
+        fb.drawText(px + 20, py + (searchable ? 8 : 16), title, Colors::Text, TextStyle::Heading);
         {
-            std::string pos = std::to_string(sel + 1) + " / " + std::to_string(count);
+            std::string pos = count > 0
+                            ? std::to_string(sel + 1) + " / " + std::to_string(count)
+                            : "0 / 0";
             int pwi, phi; fb.measureText(pos, pwi, phi, TextStyle::Caption);
-            fb.drawText(px + pw - 20 - pwi, py + 22, pos, Colors::TextDim, TextStyle::Caption);
+            fb.drawText(px + pw - 20 - pwi, py + (searchable ? 14 : 22),
+                        pos, Colors::TextDim, TextStyle::Caption);
         }
-        fb.drawHDivider(px + 20, py + 52, pw - 40);
+        const int headerBottom = searchable ? py + 60 : py + 52;
+        if (searchable) {
+            const std::string searchText = filtered
+                ? "Search: " + screen.pickerSearchQuery
+                : "X: Search by name";
+            fb.drawText(px + 20, py + 40, searchText, Colors::TextDim, TextStyle::Caption);
+        }
+        fb.drawHDivider(px + 20, headerBottom, pw - 40);
 
         // Scrollable list window centered on the selection.
         const int rowH = 40;
-        const int listTop = py + 64, listBottom = py + ph - 48;
+        const int listTop = headerBottom + 12, listBottom = py + ph - 48;
         int visible = (listBottom - listTop) / rowH;
         if (visible < 1) visible = 1;
-        int first = sel - visible / 2;
-        if (first > count - visible) first = count - visible;
-        if (first < 0) first = 0;
+        int first = 0;
+        if (count > 0) {
+            first = sel - visible / 2;
+            if (first > count - visible) first = count - visible;
+            if (first < 0) first = 0;
+        }
 
         screen.touchButtons.clear();
-        // the Ability picker reorders its options (legal abilities first) via screen.pickerOrder,
-        // and the legal prefix renders green. Form and Gender filter rather than reorder (forms the
-        // game can't hold are dropped; so are genders the species can't be), but they need the same
-        // row -> value indirection. Every other kind stays identity-indexed (row == value).
+        // Ability and Move put legal options first and render that prefix green. Other mapped pickers
+        // filter or search their original values, so they need the same row -> value indirection.
         //
         // A kind that fills pickerOrder and is missing from this list is the sharp edge: labels would
         // keep using the row index while the write uses pickerOrder, naming one value and writing
         // another with nothing on screen to show it.
-        const bool reorder = (kind == PickerKind::Ability || kind == PickerKind::Species
-                           || kind == PickerKind::Move    || kind == PickerKind::PouchItem
-                           || kind == PickerKind::PouchItemG3 || kind == PickerKind::MetLocation
-                           || kind == PickerKind::Ball    || kind == PickerKind::Form
-                           || kind == PickerKind::Gender)
-                           && !screen.pickerOrder.empty();
+        const bool mapped = (kind == PickerKind::Ability || kind == PickerKind::Species
+                          || kind == PickerKind::Move    || kind == PickerKind::Item
+                          || kind == PickerKind::ItemG3  || kind == PickerKind::PouchItem
+                          || kind == PickerKind::PouchItemG3 || kind == PickerKind::MetLocation
+                          || kind == PickerKind::Ball    || kind == PickerKind::Form
+                          || kind == PickerKind::Gender)
+                          && !screen.pickerOrder.empty();
         for (int i = 0; i < visible && (first + i) < count; ++i) {
             const int idx = first + i;
-            const int val = (reorder && idx < static_cast<int>(screen.pickerOrder.size())) ? screen.pickerOrder[idx] : idx;
+            const int val = (mapped && idx < static_cast<int>(screen.pickerOrder.size())) ? screen.pickerOrder[idx] : idx;
             const int ry = listTop + i * rowH;
             const bool s = (idx == sel);
             if (s) {
                 fb.drawFilledRoundedRect(px + 12, ry, pw - 24, rowH - 4, 8, Colors::Selected);
                 fb.drawRoundedRect(px + 12, ry, pw - 24, rowH - 4, 8, Colors::Accent, 2);
             }
-            const bool legal = reorder && idx < screen.pickerLegalCount;
+            const bool legal = mapped && idx < screen.pickerLegalCount;
             const Color col = legal ? Color(120, 210, 130) : (s ? Colors::Text : Colors::TextDim);
             // Met Location / Form resolve their names through mon-specific context (origin version /
             // species) that the free pickerOptionLabel() can't see; everything else is context-free.
@@ -175,11 +206,25 @@ namespace Dialogs {
             fb.drawText(px + 28, ry + (rowH - 4 - fb.lineHeight(TextStyle::Body)) / 2, label, col);
             screen.touchButtons.push_back({ idx, px + 12, ry, pw - 24, rowH - 4 });  // id = option row
         }
+        if (count == 0) {
+            const char* emptyText = filtered ? "No matching options" : "No options available";
+            int ew, eh; fb.measureText(emptyText, ew, eh, TextStyle::Body);
+            fb.drawText(px + (pw - ew) / 2, listTop + (listBottom - listTop - eh) / 2,
+                        emptyText, Colors::TextDim);
+        }
 
         // Scrollbar on the panel's right edge (same thumb as everywhere else) when the list overflows.
-        drawScrollbar(fb, px + pw - 14, listTop, visible * rowH, count * rowH, first * rowH);
+        if (count > visible)
+            drawScrollbar(fb, px + pw - 14, listTop, visible * rowH, count * rowH, first * rowH);
 
-        fb.drawText(px + 20, py + ph - 34, "A: Select    B: Cancel    L/R: Page", Colors::TextDim, TextStyle::Caption);
+        const char* controls = !searchable
+            ? "A: Select    B: Cancel    L/R: Page"
+            : count == 0
+                ? "B: Cancel    X: Edit/Clear Search"
+                : filtered
+                    ? "A: Select    B: Cancel    X: Edit/Clear Search    L/R: Page"
+                    : "A: Select    B: Cancel    X: Search    L/R: Page";
+        fb.drawText(px + 20, py + ph - 34, controls, Colors::TextDim, TextStyle::Caption);
     }
 }
 }

@@ -41,6 +41,8 @@ namespace Dialogs {
     const char* pickerOptionLabel(PickerKind kind, int index);
     // Panel title.
     const char* pickerTitle(PickerKind kind);
+    // Whether this picker can filter its options by name.
+    bool pickerSupportsSearch(PickerKind kind);
 
     // Draws the centered scrollable picker panel and registers a touch button per visible row
     // (button id = the option's index).

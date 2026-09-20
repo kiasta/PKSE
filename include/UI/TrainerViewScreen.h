@@ -62,6 +62,8 @@ namespace UI {
         void buildAbilityPickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current);  // the species' legal ability slots (all ids too, when illegal edits are allowed)
         void buildCreatorSpeciesOrder();  // creator: filter the species picker to the open game's dex
         void buildMovePickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current);  // learnable moves first
+        void preparePickerSearch();  // snapshot the current move/item option set before filtering
+        void applyPickerSearch(const std::string& query);  // filter the snapshot without changing legality
         void buildFormPickerOrder(uint16_t species, uint8_t current, Enums::GameVersion group);  // storable forms only (drops battle-only ones + the ones this game doesn't have)
         void buildGenderPickerOrder(uint16_t species, uint8_t form, uint8_t current);  // only the genders the species can be (one row when fixed-gender)
         bool genderEditable(const Pokemon::Pokemon& p) const;  // false -> the Gender row is read-only (nothing to change it TO)
@@ -359,11 +361,17 @@ namespace UI {
         // A pouch-item picker opened to CHANGE an existing item's type (Potion -> Super Potion),
         // not to add a new one. Changes the confirm behavior + the picker title; reuses PouchItem.
         bool itemPickerReplace = false;
-        // Ability picker: reordered option list so the species' legal abilities sort to the top
-        // and render green. pickerOrder[row] = ability id at that row; rows 0..pickerLegalCount-1 are
-        // the legal abilities. Empty for every other picker kind (which stay identity-indexed: row == value).
+        // Pickers whose visible rows do not map directly to stored values use this row -> value list.
+        // pickerLegalCount marks a green legal prefix where applicable (abilities and moves).
         std::vector<int> pickerOrder;
         int pickerLegalCount = 0;
+        // Searchable move/item pickers keep their complete, already-filtered option set here.
+        // pickerOrder is then the visible subset, so every existing draw/apply path keeps using the
+        // same row -> value mapping and clearing the query can restore the exact original list.
+        std::string pickerSearchQuery;
+        std::vector<int> pickerSearchOrder;
+        int pickerSearchLegalCount = 0;
+        int pickerSearchValue = 0;
         // Met-location picker: the origin version whose location table is shown, so the picker can
         // resolve each id in pickerOrder to a name (a location id names a different place per game).
         uint8_t pickerMetVersion = 0;

@@ -114,6 +114,23 @@ namespace UI {
         }
     }
 
+    static std::string foldPickerSearchText(const std::string& text) {
+        std::string folded = text;
+        for (size_t i = 0; i < folded.size(); ++i) {
+            const unsigned char c = static_cast<unsigned char>(folded[i]);
+            if (c >= 'A' && c <= 'Z') {
+                folded[i] = static_cast<char>(c + ('a' - 'A'));
+            } else if (c == 0xC3 && i + 1 < folded.size()) {
+                const unsigned char next = static_cast<unsigned char>(folded[i + 1]);
+                // Latin-1 uppercase letters share this offset with their lowercase forms.
+                if (next >= 0x80 && next <= 0x9E && next != 0x97)
+                    folded[i + 1] = static_cast<char>(next + 0x20);
+                ++i;
+            }
+        }
+        return folded;
+    }
+
     // True when ANY form of the species is flagged present in this game.
     //
     // Form 0 is not the question, and asking it is a bug in its own right: Legends: Arceus has no
@@ -783,6 +800,54 @@ namespace UI {
         pickerSel = 0;
         for (int i = 0; i < static_cast<int>(pickerOrder.size()); ++i)
             if (pickerOrder[i] == static_cast<int>(current)) { pickerSel = i; break; }
+    }
+
+    void TrainerViewScreen::preparePickerSearch() {
+        pickerSearchQuery.clear();
+        pickerSearchOrder = pickerOrder;
+        if (pickerSearchOrder.empty()) {
+            pickerSearchOrder.reserve(static_cast<size_t>(std::max(0, pickerCount)));
+            for (int value = 0; value < pickerCount; ++value)
+                pickerSearchOrder.push_back(value);
+        }
+
+        pickerOrder = pickerSearchOrder;
+        pickerCount = static_cast<int>(pickerOrder.size());
+        pickerSearchLegalCount = pickerKind == Dialogs::PickerKind::Move
+                               ? std::min(pickerLegalCount, pickerCount) : 0;
+        pickerLegalCount = pickerSearchLegalCount;
+        pickerSel = pickerCount > 0 ? std::clamp(pickerSel, 0, pickerCount - 1) : 0;
+        pickerSearchValue = pickerCount > 0 ? pickerOrder[pickerSel] : 0;
+    }
+
+    void TrainerViewScreen::applyPickerSearch(const std::string& query) {
+        if (!Dialogs::pickerSupportsSearch(pickerKind)) return;
+
+        if (pickerCount > 0 && pickerSel >= 0 && pickerSel < static_cast<int>(pickerOrder.size()))
+            pickerSearchValue = pickerOrder[pickerSel];
+
+        pickerSearchQuery = query;
+        const std::string foldedQuery = foldPickerSearchText(query);
+        pickerOrder.clear();
+        pickerLegalCount = 0;
+        for (int i = 0; i < static_cast<int>(pickerSearchOrder.size()); ++i) {
+            const int value = pickerSearchOrder[i];
+            const std::string label = Dialogs::pickerOptionLabel(pickerKind, value);
+            if (foldedQuery.empty()
+                || foldPickerSearchText(label).find(foldedQuery) != std::string::npos) {
+                pickerOrder.push_back(value);
+                if (i < pickerSearchLegalCount) ++pickerLegalCount;
+            }
+        }
+
+        pickerCount = static_cast<int>(pickerOrder.size());
+        pickerSel = 0;
+        for (int i = 0; i < pickerCount; ++i) {
+            if (pickerOrder[i] == pickerSearchValue) {
+                pickerSel = i;
+                break;
+            }
+        }
     }
 
     // Fill the form picker with the forms this game can actually hold (row -> form id) -- see
@@ -1927,22 +1992,36 @@ namespace UI {
             return;
         }
 
-        // Reusable value picker (nature / gender / move) — owns all input while open.
+        // Reusable value picker — owns all input while open.
         if (pickerActive) {
             Pokemon::Pokemon* pkPick = detailsTargetPokemon();
-            const int count = (pickerCount > 0) ? pickerCount : 1;
+            if (Dialogs::pickerSupportsSearch(pickerKind) && (kDown & HidNpadButton_X)) {
+                const bool moves = pickerKind == Dialogs::PickerKind::Move;
+                const Utils::KeyboardResult result = Utils::promptText(
+                    moves ? "Search Moves" : "Search Items",
+                    "Part of the name; clear to show all",
+                    pickerSearchQuery, 32);
+                if (result.accepted) applyPickerSearch(result.text);
+                return;
+            }
+
+            const int count = pickerCount;
             const int page = 12;
 
             // Touch: tap an option row selects it immediately (button id = option index).
             int ptb = touchedButtonId(touch);
             if (ptb >= 0 && ptb < count) { pickerSel = ptb; kDown |= HidNpadButton_A; }
 
-            if (kDown & HidNpadButton_Up)                        pickerSel = (pickerSel - 1 + count) % count;
-            if (kDown & HidNpadButton_Down)                      pickerSel = (pickerSel + 1) % count;
-            if (kDown & (HidNpadButton_L | HidNpadButton_Left))  pickerSel = std::max(0, pickerSel - page);
-            if (kDown & (HidNpadButton_R | HidNpadButton_Right)) pickerSel = std::min(count - 1, pickerSel + page);
-            if (pickerSel < 0) pickerSel = 0;
-            if (pickerSel >= count) pickerSel = count - 1;
+            if (count > 0) {
+                if (kDown & HidNpadButton_Up)                        pickerSel = (pickerSel - 1 + count) % count;
+                if (kDown & HidNpadButton_Down)                      pickerSel = (pickerSel + 1) % count;
+                if (kDown & (HidNpadButton_L | HidNpadButton_Left))  pickerSel = std::max(0, pickerSel - page);
+                if (kDown & (HidNpadButton_R | HidNpadButton_Right)) pickerSel = std::min(count - 1, pickerSel + page);
+                if (pickerSel < 0) pickerSel = 0;
+                if (pickerSel >= count) pickerSel = count - 1;
+            } else {
+                pickerSel = 0;
+            }
 
             if (kDown & HidNpadButton_B) {
                 pickerActive = false; creator.active = false;
@@ -1951,6 +2030,7 @@ namespace UI {
                 if (itemPickerReplace) { itemPickerReplace = false; itemEditDialogActive = true; }
                 return;
             }
+            if (count == 0) return;
 
             // Creator: a Species pick in create mode builds a new mon into the target empty slot,
             // then hands off to the details editor (there is no live target Pokemon yet, so this
@@ -2114,9 +2194,12 @@ namespace UI {
                         break;
                     }
                     case Dialogs::PickerKind::Item:
-                    case Dialogs::PickerKind::ItemG3:   // same write; only the id space differs
-                        pkPick->setHeldItem(static_cast<uint16_t>(pickerSel));
+                    case Dialogs::PickerKind::ItemG3: { // same write; only the id space differs
+                        const int item = (!pickerOrder.empty() && pickerSel < static_cast<int>(pickerOrder.size()))
+                                           ? pickerOrder[pickerSel] : pickerSel;
+                        pkPick->setHeldItem(static_cast<uint16_t>(item));
                         break;
+                    }
                     case Dialogs::PickerKind::Level:
                         pkPick->setLevel(static_cast<uint8_t>(pickerSel + 1));  // options 0-99 -> level 1-100
                         break;
@@ -2689,6 +2772,7 @@ namespace UI {
                     // still offered (after the legal ones) and flagged by the legality check, PKHeX-style.
                     buildMovePickerOrder(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup(), pokemon->move(pickerSlot));
                     pickerCount = static_cast<int>(pickerOrder.size());
+                    preparePickerSearch();
                     pickerActive = true;
                 } else if (f == 14) {            // Held item
                     // Gen 3 held items are a separate, much smaller id space -- offering the modern
@@ -2696,8 +2780,11 @@ namespace UI {
                     // item for.
                     pickerKind = (pokemon->getGameGroup() == GameVersion::FRLG)
                                ? Dialogs::PickerKind::ItemG3 : Dialogs::PickerKind::Item;
+                    pickerOrder.clear();
+                    pickerLegalCount = 0;
                     pickerCount = Dialogs::pickerOptionCount(pickerKind);
                     pickerSel = pokemon->heldItem();
+                    preparePickerSearch();
                     pickerActive = true;
                 } else if (f == 15) {            // Ability
                     pickerKind = Dialogs::PickerKind::Ability;
@@ -2950,6 +3037,7 @@ namespace UI {
                                    ? Dialogs::PickerKind::PouchItemG3 : Dialogs::PickerKind::PouchItem;
                         pickerCount = static_cast<int>(pickerOrder.size());
                         pickerSel = 0;
+                        preparePickerSearch();
                         pickerActive = true;
                         itemEditDialogActive = false;   // picker takes over; the change applies on pick
                     } else {
@@ -3476,6 +3564,7 @@ namespace UI {
                                        : Dialogs::PickerKind::PouchItem;
                             pickerCount = static_cast<int>(pickerOrder.size());
                             pickerSel = 0;
+                            preparePickerSearch();
                             pickerActive = true;
                         } else if (blockedByCapacity) {
                             // A slot-based pocket (FRLG / GG / SWSH / PLA) that's full -- say so rather
