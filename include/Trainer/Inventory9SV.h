@@ -22,6 +22,11 @@ namespace Trainer
 
     constexpr size_t ITEM_SIZE9_SV = 0x10; // 16 bytes per item
 
+    // Bits of an item record's flags word (PKHeX InventoryItem9). The game sets OBTAINED on every item it
+    // holds, so a held item stored without it is a record only an editor writes.
+    constexpr uint8_t ITEM_NEW_FLAG9_SV = 0x01;
+    constexpr uint8_t ITEM_OBTAINED_FLAG9_SV = 0x04;
+
     constexpr size_t MAX_ITEM_ID9_SV = ITEM_BLOCK_SIZE9_SV / ITEM_SIZE9_SV; // 2992
 
     constexpr size_t POUCH_COUNT9_SV = 10; // Number of pouches (in-game bag order)

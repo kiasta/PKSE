@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "UI/Dialogs/PickerDialog.h"
 #include "UI/Dialogs/KeyboardDialog.h"
@@ -10,6 +11,7 @@
 #include "UI/ListSearch.h"   // the shared search box
 #include "UI/PKSEFramebuffer.h"
 #include "Trainer/Trainer.h"     // getNatureName / getAbilityName
+#include "Trainer/Inventory.h"   // InventoryItem -- what a pocket holds
 #include "Names/MoveNames.h"     // getMoveName / getMoveCount
 #include "Names/ItemNames.h"     // getItemNameFor -- every generation numbers items differently
 #include "Pokemon/Gen1Tables.h"  // getItemNameGen1
@@ -222,6 +224,11 @@ namespace UI
             return label != nullptr ? std::string(label) : std::string();
         }
 
+        static bool isPouchPickerKind(PickerKind kind)
+        {
+            return kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG1 || kind == PickerKind::PouchItemG3;
+        }
+
         void drawPickerDialog(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
         {
             const int screenWidth = framebuffer.getWidth(), H = framebuffer.getHeight();
@@ -264,8 +271,9 @@ namespace UI
 
             // Scrollable list window centered on the selection.
             const int rowH = 40;
+            constexpr int panelFooterHeight = 48;
             const int listTop = py + 60 + listSearchBoxHeight() + 4;
-            int listBottom = py + ph - 48;
+            int listBottom = py + ph - panelFooterHeight;
             // While the keyboard types this picker's query, only the rows above it can be seen -- so
             // the window centres the selection among those, not among rows hidden under the keyboard.
             if (const KeyboardState *keyboard = activeKeyboard())
@@ -315,6 +323,17 @@ namespace UI
                 screen.touchButtons.push_back({entryIndex, panelX + 12, rectY, panelWidth - 24, rowH - 4});
             }
 
+            // Add Item and Change Item To leave out every item the pocket already holds, since adding one
+            // again could only duplicate it. Left unsaid, an item the player holds reads as missing.
+            const std::vector<InventoryItem> *pouch =
+                (isPouchPickerKind(kind) && screen.selectedCategory >= 0 &&
+                    screen.selectedCategory < static_cast<int>(screen.trainer.items.size()))
+                    ? &screen.trainer.items[screen.selectedCategory]
+                    : nullptr;
+            const bool pouchHoldsItems =
+                pouch != nullptr && std::any_of(pouch->begin(), pouch->end(),
+                                                [](const InventoryItem &pouchItem) { return pouchItem.count > 0; });
+
             if (matchCount == 0)
             {
                 framebuffer.drawText(panelX + 28, listTop + 8, "Nothing matches that search.", Colors::TextDim);
@@ -345,11 +364,34 @@ namespace UI
                                     "Set it on the Egg Loc row instead.", Colors::Accent, TextStyle::Caption);
                     }
                 }
+
+                if (pouch != nullptr)
+                {
+                    const auto matchedPouchItem =
+                        std::find_if(pouch->begin(), pouch->end(), [&](const InventoryItem &pouchItem) {
+                            return pouchItem.count > 0 &&
+                                screen.pickerSearch.matches(pickerOptionLabel(kind, pouchItem.itemId));
+                        });
+                    if (matchedPouchItem != pouch->end())
+                    {
+                        framebuffer.drawText(panelX + 28, emptyStateY, std::string("\"")
+                            + pickerOptionLabel(kind, matchedPouchItem->itemId)
+                            + "\" is already in this pocket (x" + std::to_string(matchedPouchItem->count) + ").", Colors::Accent, TextStyle::Caption);
+                        framebuffer.drawText(panelX + 28, emptyStateY + framebuffer.lineHeight(TextStyle::Caption) + 4, "Change its amount from the pocket's list instead.", Colors::Accent, TextStyle::Caption);
+                    }
+                }
             }
 
             // Scrollbar on the panel's right edge (same thumb as everywhere else) when the list overflows.
             drawScrollbar(framebuffer, panelX + panelWidth - 14, listTop, visible * rowH, matchCount * rowH,
                           first * rowH);
+
+            if (pouchHoldsItems)
+            {
+                const int footerTextY = framebuffer.textYCenteredOn(py + ph - panelFooterHeight / 2, TextStyle::Caption);
+                framebuffer.drawText(panelX + 28, footerTextY, "Items already in this pocket aren't listed here.", Colors::TextDim, TextStyle::Caption);
+            }
+
 
             // No hint strip in the card. The screen's nav bar is the ONE place controls are listed; a
             // second copy right above it is two rows of buttons for one dialog, saying different things.
