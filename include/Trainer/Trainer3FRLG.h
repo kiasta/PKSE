@@ -14,8 +14,9 @@
 namespace Trainer
 {
     // Two slots (A@0x0000, B@0xE000) of 14 rotated 0x1000 sectors. Each sector carries its logical id
-    // in a footer (+0xFF4) and a save counter (+0xFFC); the ACTIVE slot is the one whose id-0 sector has
-    // the greater counter. Logical blocks are concatenations of their sectors' first 0xF80 data bytes:
+    // in a footer (+0xFF4) and a save counter (+0xFFC); the ACTIVE slot is the one holding all 14 ids, or
+    // when both do, the one whose id-0 sector has the greater counter. Logical blocks are concatenations
+    // of their sectors' first 0xF80 data bytes:
     //   Small   = id 0        (trainer info + security key)
     //   Large   = id 1..4     (party / items / money)
     //   Storage = id 5..13    (14 PC boxes; an 80-byte box pokemon may STRADDLE a sector boundary)
@@ -101,10 +102,9 @@ namespace Trainer
         /// FireRed, claiming the pair. A GBA save cannot say which of the two it is -- PKHeX's
         /// SAV3FRLG has Version as a settable property defaulting to FR for exactly this reason.
         ///
-        /// Nothing is lost by it here: FireRed and LeafGreen are separate Nintendo Switch Online
-        /// titles with separate title ids, so every caller that needs the real answer already has
-        /// it from Enums::getGameVersion(titleId), and FRLG is deliberately absent from the loose
-        /// probe chain (LOOSE_FORMATS) -- a Gen 3 save never arrives without a title id.
+        /// An installed title's id does say, and every caller that needs the real answer for one
+        /// reads it from Enums::getGameVersion(titleId). A GBA file has no id, so it is named as the
+        /// pair, exactly as a Ruby/Sapphire file is.
         GameVersion getGameVersion() const noexcept override { return GameVersion::FR; }
 
         /// True when these bytes are a FireRed/LeafGreen save, judged from CONTENT alone.
@@ -113,11 +113,10 @@ namespace Trainer
         /// inverted: fourteen well-formed sectors in either slot, then the fixed 1 at Small+0xAC
         /// that FR/LG write and Ruby/Sapphire/Emerald do not.
         ///
-        /// FRLG is still deliberately absent from LOOSE_FORMATS -- this is not a second way to
-        /// browse to one. It exists because a Switch save is found by TITLE ID, and FireRed and
-        /// LeafGreen ship a separate title per language, so a hand-kept id list silently hides
-        /// every localisation nobody has reported yet. SaveSelectScreen falls back to this for an
-        /// id it does not recognise; see the note on Enums::getGameVersion.
+        /// Two callers. The loose probe chain (LOOSE_FORMATS), which opens a GBA file. And the save
+        /// picker, for a TITLE ID it does not recognise: FireRed and LeafGreen ship a separate title
+        /// per language, so a hand-kept id list silently hides every localisation nobody has
+        /// reported yet. See the note on Enums::getGameVersion.
         static bool detect(const std::vector<uint8_t> &bytes) noexcept;
 
         uint8_t language() const noexcept override { return languageId; }
@@ -129,6 +128,11 @@ namespace Trainer
 
         // Recompute all 14 active-slot sector checksums into their footers (call before writing to disk).
         void finalizeChecksums();
+
+        /// Apply every edit into the raw save and refresh the sector checksums, then hand back the
+        /// bytes to write. Both writers need it: saveTrainerInfoFRLG for an installed title, and
+        /// saveExternalSave for a GBA file.
+        const std::vector<uint8_t> &serialize();
     };
 }
 

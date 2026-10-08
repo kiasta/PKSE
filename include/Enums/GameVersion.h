@@ -733,7 +733,7 @@ namespace Enums
      * rather than a title must not be told "unsupported" for a format PKSE implements.
      *
      * THIS GATES NOTHING. The save picker offers whatever getGameVersion(titleId) recognises and
-     * a loose file is admitted by Save::isExternalSave; neither consults this. What keeps a
+     * a loose file is admitted by Save::openExternalSave; neither consults this. What keeps a
      * half-finished format away from users is not writing its title id or its detect() entry yet
      * -- not leaving this false.
      */

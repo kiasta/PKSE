@@ -148,11 +148,8 @@ namespace Trainer
 
         /// Apply every edit into the raw save and refresh the sector checksums, then hand back the
         /// bytes to write. The order matters: the block writers all mutate sector DATA, so every one
-        /// of them has to run before the checksums are stamped over the result.
-        ///
-        /// Ruby/Sapphire/Emerald are the only Gen 3 games PKSE opens as a loose file, so unlike
-        /// FireRed -- which arrives with a title id and is written by saveTrainerInfoFRLG -- this one
-        /// is reached through saveExternalSave, which needs the whole image in one call.
+        /// of them has to run before the checksums are stamped over the result. Reached through
+        /// saveExternalSave, which needs the whole image in one call.
         const std::vector<uint8_t> &serialize();
     };
 }

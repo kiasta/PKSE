@@ -7,7 +7,7 @@
  * the file was always openable, it was just never offered.
  *
  * This is a NAME test and nothing more. It decides what to put on screen, cheaply, before
- * anything is read; whether the bytes really are a save is `Save::isExternalSave`'s question and
+ * anything is read; whether the bytes really are a save is `Save::openExternalSave`'s question and
  * is asked after the user picks. A name that passes here and fails there gets an explained
  * refusal with the file still listed, which is the intended flow.
  *
@@ -32,8 +32,16 @@ namespace Save
     /// Extensions a loose save is commonly given, lowercase and including the dot. Emulators,
     /// cartridge dumpers and save managers each pick their own, so this is a list of habits
     /// rather than a specification -- `00000001.sav`, `sav.dat` and `Pokemon Black.sav` are all
-    /// real names of real saves.
-    inline constexpr std::string_view SAVE_FILE_EXTENSIONS[] = {".sav", ".srm", ".dat", ".sgm"};
+    /// real names of real saves. Several wrap the save in an envelope PKSE takes off
+    /// (Save/SaveEnvelope.h): `.dsv` is DeSmuME's and DraStic's, `.duc` and `.dss` Action Replay DS
+    /// and MAX Drive dumps. `.fla` and `.saveram` (BizHawk) are in PKHeX's list too. The rest are
+    /// a second player's or a second slot's save: `.sa2`-`.sa4` from mGBA's multiplayer and TGB
+    /// Dual, `.srm2` from Gearboy's link mode, `.sav1`-`.sav9` from TWiLight Menu++'s save slots.
+    /// A DraStic save state is also `.dss`; it is listed, then refused with the file still on screen.
+    inline constexpr std::string_view SAVE_FILE_EXTENSIONS[] = {
+        ".sav",  ".srm",  ".dat",  ".sgm",  ".dsv",  ".duc",  ".dss",  ".fla",  ".saveram",
+        ".sa2",  ".sa3",  ".sa4",  ".srm2", ".sav1", ".sav2", ".sav3", ".sav4", ".sav5",
+        ".sav6", ".sav7", ".sav8", ".sav9"};
 
     /// Whole filenames that carry no extension. A 3DS save is just `main` -- Gen 6's X/Y and
     /// Omega Ruby/Alpha Sapphire, and Gen 7's Sun/Moon and Ultra Sun/Ultra Moon, every one of

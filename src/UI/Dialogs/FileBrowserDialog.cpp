@@ -96,11 +96,14 @@ namespace UI
         }
 
         void FileBrowserState::open(const std::string &windowTitle,
+                                    const std::string &filterLabel,
                                     const std::vector<std::string> &startDirs,
                                     const std::vector<std::string> &exts,
                                     const std::vector<std::string> &wholeFileNames)
         {
             title = windowTitle;
+            this->filterLabel = filterLabel;
+            noFilteredFilesMessage = "No " + toLower(filterLabel) + " here. Press X to show every file.";
             extensions.clear();
             for (const auto &e : exts)
                 extensions.push_back(toLower(e));
@@ -357,7 +360,7 @@ namespace UI
                                  fitPathFromLeft(framebuffer, entryStatus.directory, dialogWidth - 220),
                                  Colors::TextDim, TextStyle::Caption);
             {
-                const std::string mode = entryStatus.showAllFiles ? "All files" : "Bank files";
+                const std::string mode = entryStatus.showAllFiles ? "All files" : entryStatus.filterLabel;
                 int messageWidth, mh;
                 framebuffer.measureText(mode, messageWidth, mh, TextStyle::Caption);
                 const int panelWidth = messageWidth + 26, ph = 26;
@@ -376,22 +379,35 @@ namespace UI
 
             const int listY = dialogY + headerH;
             const int count = static_cast<int>(entryStatus.entries.size());
-            if (count == 0)
+            // ".." is the way back out, not something the folder holds: counted, every message below went
+            // unsaid in any folder but the root.
+            const bool hasParentRow = count > 0 && entryStatus.entries.front().isParent;
+            if (count == (hasParentRow ? 1 : 0))
             {
+                const int messageY = listY + (hasParentRow ? rowH : 0);
                 if (entryStatus.search.isFiltering())
                 {
-                    framebuffer.drawText(dialogX + 32, listY + 14, "Nothing here matches that search.",
+                    framebuffer.drawText(dialogX + 32, messageY + 14, "Nothing here matches that search.",
                                          Colors::TextDim);
-                    framebuffer.drawText(dialogX + 32, listY + 14 + framebuffer.lineHeight(TextStyle::Body) + 4,
+                    framebuffer.drawText(dialogX + 32, messageY + 14 + framebuffer.lineHeight(TextStyle::Body) + 4,
                                 "Y: change it, or clear it to see the whole folder.", Colors::TextDim,
                                 TextStyle::Caption);
-                    return;
                 }
-                const char *message = entryStatus.status.empty()
-                                      ? (entryStatus.showAllFiles ? "This folder is empty."
-                                                         : "No bank files here. Press X to show every file.")
-                                      : entryStatus.status.c_str();
-                framebuffer.drawText(dialogX + 32, listY + 16, message, Colors::TextDim, TextStyle::Body);
+                else
+                {
+                    const char *message = entryStatus.status.empty()
+                                          ? (entryStatus.showAllFiles ? "This folder is empty."
+                                                             : entryStatus.noFilteredFilesMessage.c_str())
+                                          : entryStatus.status.c_str();
+                    framebuffer.drawText(dialogX + 32, messageY + 16, message, Colors::TextDim, TextStyle::Body);
+                }
+            }
+            else if (!entryStatus.status.empty())
+            {
+                // Under the last row, in the strip the footer leaves free, so nothing moves and no row is covered.
+                framebuffer.drawText(dialogX + 24, listY + FileBrowserState::VISIBLE_ROWS * rowH + 4,
+                                     fitPathFromLeft(framebuffer, entryStatus.status, dialogWidth - 48),
+                                     Colors::Warning, TextStyle::Caption);
             }
 
             const int last = std::min(count, entryStatus.scroll + FileBrowserState::VISIBLE_ROWS);
