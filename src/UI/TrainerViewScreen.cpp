@@ -1661,7 +1661,7 @@ namespace UI
         // worth trying before dropping the user at the root of a card with hundreds of folders.
         // Every candidate is probed for existence, so a card without PKSM on it just opens at the root.
         fileBrowserPurpose = FileBrowserPurpose::PKSMBank;
-        fileBrowser.open("Select a PKSM Bank File",
+        fileBrowser.open("Select a PKSM Bank File", "Bank files",
                          {"sdmc:/3ds/PKSM/banks",
                           "sdmc:/3ds/PKSM/extDataBackup/banks",
                           "sdmc:/3ds/PKSM",
@@ -1677,7 +1677,7 @@ namespace UI
         fileBrowserPurpose = FileBrowserPurpose::TradePartner;
         // The same filters the save picker uses, so the list is exactly what openExternalSave can
         // open -- including a 3DS `main`, which has no extension and is matched by whole name.
-        fileBrowser.open("Select a Save to Trade With",
+        fileBrowser.open("Select a Save to Trade With", "Save files",
                          {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
                           "sdmc:/emulators/", "sdmc:/"},
                          Save::saveFileExtensions(), Save::saveFileExactNames());

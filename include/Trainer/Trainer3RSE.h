@@ -52,8 +52,6 @@ namespace Trainer
     constexpr size_t RSE_BOX_NAME_OFFSET = 0x8344; // Storage; PKHeX SAV3.GetBoxOffset(COUNT_BOX)
     constexpr size_t RSE_BOX_NAME_BYTES = 9;
     constexpr size_t RSE_BOX_NAME_CHARS = 8;
-    /// Every sector's footer carries this, and all 14 must be present for a slot to be usable.
-    constexpr uint32_t RSE_SECTOR_MAGIC = 0x08012025;
 
     class Trainer3RSE : public Trainer
     {

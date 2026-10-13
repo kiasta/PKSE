@@ -32,26 +32,19 @@ using namespace Encryption;
 
 namespace Trainer
 {
-    // The sector footer magic is ONE fact about Gen 3, and both containers spell it out
-    // separately. Two constants that must agree eventually do not -- this makes that a build
-    // failure instead of a save that silently fails to be recognised.
-    static_assert(RSE_SECTOR_MAGIC == FRLG_SECTOR_MAGIC,
-                  "Gen 3 sector magic disagrees between the RSE and FR/LG containers");
-
-
     namespace
     {
-        /// A slot is usable when all 14 logical sector ids are present, once each, behind the sector
-        /// magic. detect() and selectActiveSlot() must ask the same question, or a file passes the
-        /// probe and then fails to open.
+        /// A slot is usable when all 14 logical sector ids are present, once each -- PKHeX's
+        /// SAV3.IsAllMainSectorsPresent, which is the whole of what PKSE accepts. The sector footer
+        /// also carries a magic word (0x08012025 at +0xFF8) that this deliberately does NOT test:
+        /// PKHeX does not, and requiring it refused saves PKHeX opens. detect() and selectActiveSlot()
+        /// must ask the same question, or a file passes the probe and then fails to open.
         bool slotHoldsEverySector(const std::vector<uint8_t> &bytes, size_t slotBase, size_t &sectorZeroOffset)
         {
             bool seen[RSE_SECTORS] = {false};
             for (size_t sectorIndex = 0; sectorIndex < RSE_SECTORS; ++sectorIndex)
             {
                 const size_t byteOffset = slotBase + sectorIndex * RSE_SECTOR_SIZE;
-                if (readUInt32LittleEndian(&bytes[byteOffset + 0xFF8]) != RSE_SECTOR_MAGIC)
-                    return false;
                 const uint16_t sectionId = readUInt16LittleEndian(&bytes[byteOffset + 0xFF4]);
                 if (sectionId >= RSE_SECTORS || seen[sectionId])
                     return false;

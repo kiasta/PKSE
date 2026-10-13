@@ -103,9 +103,9 @@ namespace Save
     const char *saveEnvelopeName(SaveEnvelopeKind kind) noexcept;
 
     /// Why a file PKSE recognises cannot be opened, worded to follow its name ("Ruby.srm" + this):
-    /// RetroArch's SaveRAM compression, no$gba's LZ saves, Goomba Color, Retron 5, a ZIP archive, a whole
-    /// 3DS save container, or half a GBA save. Each needs something PKSE does not have -- a decompressor,
-    /// or the bytes the file lost -- so the honest answer is what the user can change. nullptr otherwise.
+    /// RetroArch's SaveRAM compression, no$gba's LZ saves, Goomba Color, Retron 5, a ZIP archive, or a
+    /// whole 3DS save container. Each needs something PKSE does not have -- a decompressor or a
+    /// container reader -- so the honest answer is what the user can change. nullptr otherwise.
     const char *describeUnreadableSaveContainer(const std::vector<uint8_t> &fileBytes) noexcept;
 }
 

@@ -27,9 +27,6 @@ namespace Trainer
     constexpr size_t FRLG_SLOT_A = 0x00000;
     constexpr size_t FRLG_SLOT_B = 0x0E000;
     constexpr size_t FRLG_SECTOR_SIZE = 0x1000;
-    /// Sector footer magic at +0xFF8. Identical across all five GBA games -- Trainer3RSE spells it
-    /// RSE_SECTOR_MAGIC and the two must stay the same number; it is one fact about Gen 3, not two.
-    constexpr uint32_t FRLG_SECTOR_MAGIC = 0x08012025;
     constexpr size_t FRLG_SECTOR_DATA = 0xF80; // usable data bytes per sector (footer follows)
     constexpr size_t FRLG_SECTORS = 14;        // sectors per slot
     constexpr size_t FRLG_BOX_COUNT = 14;
