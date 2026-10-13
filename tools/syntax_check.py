@@ -84,6 +84,13 @@ def read_makefile_vars() -> dict[str, str]:
 def expand(value: str, variables: dict[str, str], depth: int = 0) -> str:
     if depth > 8:
         return value
+    # $(wildcard dir ...) keeps the words that exist -- the Makefile uses it to add src/Test only
+    # in a working tree that has it.
+    value = re.sub(
+        r"\$\(wildcard ([^)]*)\)",
+        lambda m: " ".join(word for word in m.group(1).split() if (REPO / word).exists()),
+        value,
+    )
     return re.sub(
         r"\$[({]([A-Za-z_]\w*)[)}]",
         lambda m: expand(variables.get(m.group(1), ""), variables, depth + 1),

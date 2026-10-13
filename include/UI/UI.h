@@ -64,6 +64,11 @@ namespace UI
         /// There is no title id, no account and no backup directory to work from -- the path IS
         /// the save -- so this is a parallel entry point rather than a variation of the one above.
         void handleExternalSave(const std::string &path);
+        /// Runs the automated self test, when the build carries it (SELF_TEST_AVAILABLE). A third
+        /// entry point beside the two above, and for the same reason they are separate: it does not
+        /// open A save. It picks one save per title from everything the console has, copies each
+        /// into a scratch directory, and tests those.
+        void handleSelfTest();
     };
 }
 

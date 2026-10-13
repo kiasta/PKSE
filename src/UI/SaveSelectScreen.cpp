@@ -383,6 +383,11 @@ namespace UI
             openFileBrowser();
             return;
         }
+        if (SELF_TEST_AVAILABLE && (buttonsDown & HidNpadButton_Minus))
+        {
+            selfTestRequested = true;
+            return;
+        }
         // Touch (tap targets were captured last draw()).
         if (touch.justPressed())
         {
@@ -580,9 +585,12 @@ namespace UI
         else if (fileBrowser.active)
             drawNavBar(framebuffer, "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  B: Up / Close");
         else if (users.size() > 1)
-            drawNavBar(framebuffer, "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE
+                                        ? "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  -: Self Test  |  +: Exit"
+                                        : "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
         else
-            drawNavBar(framebuffer, "A: Select  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  Y: Open Save File  |  -: Self Test  |  +: Exit"
+                                                        : "A: Select  |  Y: Open Save File  |  +: Exit");
 
         // Drawn last so it sits above the grid.
         if (fileBrowser.active)

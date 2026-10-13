@@ -45,6 +45,20 @@ namespace Trainer
         /// also migrates the legacy per-game bank files (gg/swsh/za/... _bank.dat), if present.
         Bank();
 
+        /// Redirects the bank file to `dir` (which must exist) instead of sdmc:/PKSE/bank. Set to ""
+        /// to go back to the real one.
+        ///
+        /// This exists for exactly one caller: the on-console self test, which deposits sample
+        /// Pokemon, saves, reloads and byte-compares to prove the bank's byte-in == byte-out
+        /// contract. Doing that against the user's real bank would mean a test run rewriting the
+        /// file their whole collection lives in, so it gets a scratch bank instead. Legacy
+        /// migration is skipped while redirected -- importing the user's old per-group banks into
+        /// a throwaway file would be pointless work and a confusing log line.
+        ///
+        /// Process-wide and NOT thread safe; the self test is the only writer and it runs alone.
+        static void setRootOverride(const std::string &directory);
+        static bool rootOverridden() noexcept;
+
         /// (Re)loads the bank from its SD file, discarding any in-memory changes. Clears all
         /// slots first, so this doubles as the "discard changes" path (revert to on-disk state).
         void load();
@@ -131,6 +145,12 @@ namespace Trainer
         /// when the on-disk tag is what says which.
         static std::unique_ptr<::Pokemon::Pokemon> makePokemon(Enums::GameVersion group,
                                                                std::span<const std::byte> record);
+        /// Encrypt one DECRYPTED record into the form `group`'s entity constructors take -- the other
+        /// half of makePokemon(), exposed for the same reason. Gens 1 and 2 have no encryption and get
+        /// a plain copy. Returns a `new[]` buffer of `decryptedRecord.size()` bytes the caller
+        /// releases with `delete[]`, or nullptr for a group with no entity class.
+        static std::byte *encryptRecord(Enums::GameVersion group, std::span<const std::byte> decryptedRecord,
+                                        uint32_t encryptionConstant);
         /// Bytes one entity of `group` occupies -- the PARTY size, since several formats keep level
         /// and the battle stats in a tail the accessors index straight into.
         static size_t recordSizeFor(Enums::GameVersion group);

@@ -39,7 +39,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	PKSE
 BUILD		:=	build
-SOURCES		:=	src src/Pokemon src/Encryption src/Enums src/UI src/UI/Panels src/UI/Dialogs src/UI/Modals src/Trainer src/Names src/Utils src/Save src/Legality src/Conversion nanovg memecrypto
+SOURCES		:=	src src/Pokemon src/Encryption src/Enums src/UI src/UI/Panels src/UI/Dialogs src/UI/Modals src/Trainer src/Names src/Utils src/Save src/Legality src/Conversion $(wildcard src/Test) nanovg memecrypto
 DATA		:=	data
 INCLUDES	:=	include nanovg memecrypto
 APP_TITLE   :=  PKSE

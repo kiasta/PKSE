@@ -37,6 +37,12 @@ namespace UI
         bool hasSelectedFile() const { return fileSelected; }
         const std::string &getSelectedFilePath() const { return selectedFilePath; }
 
+        // Minus opens the self test (when the build carries it, see SELF_TEST_AVAILABLE) from here
+        // rather than from inside a save, because it wants EVERY generation the console has at
+        // once and picks its own targets. It is a sibling of "open a save", not an action inside one.
+        bool hasRequestedSelfTest() const { return selfTestRequested; }
+        bool selfTestRequested = false;
+
         AccountUid getSelectedUser() const { return selectedUserUid; }
         u64 getSelectedTitleId() const { return selectedTitleId; }
         const std::string &getSelectedTitleName() const { return selectedTitleName; }

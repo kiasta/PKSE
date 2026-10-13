@@ -70,6 +70,15 @@ namespace Utils {
     /// applet, so the frame rule above applies to it in full.
     KeyboardResult promptSystemText(const std::string& header, const std::string& guide,
                                     const std::string& initial, int maxChars);
+
+    /// How many prompts have been REFUSED because `g_suppressKeyboard` was set (see Globals.h).
+    ///
+    /// A suppressed prompt is not a neutral event: it means something reached a keyboard that, on a
+    /// console with a human in front of it, would have stopped and waited. During the self test that
+    /// is a journey doing something it did not intend, so the count is read per step and reported.
+    /// Monotonic within a run; `resetKeyboardSuppressionCount()` zeroes it.
+    int keyboardPromptsSuppressed();
+    void resetKeyboardSuppressionCount();
 }
 
 #endif

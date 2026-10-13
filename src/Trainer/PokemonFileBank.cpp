@@ -3,44 +3,42 @@
 #include <utility>
 
 #include "Trainer/Bank.h"
+#include "Utils/Logger.h"
 
 namespace Trainer::PokemonFile
 {
-    bool importIntoBank(Bank &bank, const std::string &path, size_t *outBox,
-                        size_t *outSlot, std::string *error)
+    bool importIntoBank(Bank &bank, const std::string &path, size_t *outBox, size_t *outSlot, std::string *error)
     {
+        // load() already hands back a Bank-ready, round-trip-verified record.
         LoadResult loaded = load(path);
         if (!loaded)
         {
-            if (error) *error = loaded.error;
+            if (error)
+                *error = loaded.error;
             return false;
         }
 
-        std::string bankError;
-        auto bankPokemon = prepareForBank(*loaded.pokemon, &bankError);
-        if (!bankPokemon)
+        for (size_t boxIndex = 0; boxIndex < bank.boxes.size(); ++boxIndex)
         {
-            if (error) *error = bankError.empty() ? "could not normalize Pokemon for Bank storage" : bankError;
-            return false;
-        }
-
-        for (size_t box = 0; box < bank.boxes.size(); ++box)
-        {
-            for (size_t slot = 0; slot < Bank::BANK_SLOTS_PER_BOX; ++slot)
+            for (size_t slotIndex = 0; slotIndex < Bank::BANK_SLOTS_PER_BOX; ++slotIndex)
             {
-                if (bank.boxes[box][slot])
+                if (bank.boxes[boxIndex][slotIndex])
                     continue;
 
-                bank.boxes[box][slot] = std::move(bankPokemon);
-                bank.currentBox = static_cast<uint16_t>(box);
-                if (outBox) *outBox = box;
-                if (outSlot) *outSlot = slot;
-                if (error) error->clear();
+                bank.boxes[boxIndex][slotIndex] = std::move(loaded.pokemon);
+                if (outBox)
+                    *outBox = boxIndex;
+                if (outSlot)
+                    *outSlot = slotIndex;
+                if (error)
+                    error->clear();
                 return true;
             }
         }
 
-        if (error) *error = "Bank is full";
+        Utils::logErrorToFile("PokemonFile: Bank is full");
+        if (error)
+            *error = "Bank is full";
         return false;
     }
 }
