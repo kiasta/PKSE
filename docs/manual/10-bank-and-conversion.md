@@ -636,8 +636,8 @@ the save was never written). Asking lets Discard rewind both sides and write not
 ## Pokémon files (`.pk1` … `.pa9`, `.ek3` … `.ea9`)
 
 `Trainer::PokemonFile` (`include/Trainer/PokemonFile.h`) reads and writes single-Pokémon files in
-PKHeX's formats. **Export** is Storage's action menu → Export, which writes to `sdmc:/PKSE/exports`
-(`POKEMON_EXPORT_DIRECTORY`). **Import** shares the browser behind `-` (Minus) with the PKSM bank:
+PKHeX's formats. **Export** is the per-Pokémon action menu → Export (A in Storage's Menu mode, Y
+in the Boxes view), which writes to `sdmc:/PKSE/exports` (`POKEMON_EXPORT_DIRECTORY`). **Import** shares the browser behind `-` (Minus) with the PKSM bank:
 the extension decides which reader runs, and a Pokémon file lands in the first free slot of the
 in-memory bank, so Storage's Save/Discard prompt makes it permanent.
 

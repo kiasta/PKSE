@@ -22,8 +22,7 @@ namespace UI
             constexpr int BUTTON_HEIGHT = TouchTargetMin;
 
             /// One "label ............ value" row; the value is right-aligned so a column of numbers lines up.
-            int statRow(PKSEFramebuffer &framebuffer, int rowX, int rowY, int rowWidth, const std::string &label,
-                        const std::string &value, Color labelCol, Color valueCol)
+            int statRow(PKSEFramebuffer &framebuffer, int rowX, int rowY, int rowWidth, const std::string &label, const std::string &value, Color labelCol, Color valueCol)
             {
                 int labelWidth, lh;
                 framebuffer.measureText(label, labelWidth, lh, TextStyle::Body);
@@ -35,8 +34,7 @@ namespace UI
             }
 
             /// The per-generation table. Returns the height it used.
-            int drawGenTable(PKSEFramebuffer &framebuffer, int genTableX, int genTableY, int genTableWidth,
-                             const Trainer::PKSMImportReport &report)
+            int drawGenTable(PKSEFramebuffer &framebuffer, int genTableX, int genTableY, int genTableWidth, const Trainer::PKSMImportReport &report)
             {
                 int used = 0;
                 for (int pKSM_GENIndex = 0; pKSM_GENIndex < Trainer::PKSM_GEN_COUNT; ++pKSM_GENIndex)
@@ -44,13 +42,9 @@ namespace UI
                     if (report.perGen[pKSM_GENIndex] == 0)
                         continue;
                     const bool isImportable = Trainer::pksmGenImportable(static_cast<uint32_t>(pKSM_GENIndex));
-                    const std::string label =
-                        std::string("   ") + Trainer::pksmGenName(static_cast<uint32_t>(pKSM_GENIndex));
-                    const std::string value = std::to_string(report.perGen[pKSM_GENIndex]) +
-                                              (isImportable ? "   import" : "   no PKSE format");
-                    used += statRow(framebuffer, genTableX, genTableY + used, genTableWidth, label, value,
-                                    isImportable ? Colors::Text : Colors::TextDim,
-                                    isImportable ? Colors::Text : Colors::TextDim);
+                    const std::string label = std::string("   ") + Trainer::pksmGenName(static_cast<uint32_t>(pKSM_GENIndex));
+                    const std::string value = std::to_string(report.perGen[pKSM_GENIndex]) + (isImportable ? "   import" : "   no PKSE format");
+                    used += statRow(framebuffer, genTableX, genTableY + used, genTableWidth, label, value, isImportable ? Colors::Text : Colors::TextDim, isImportable ? Colors::Text : Colors::TextDim);
                 }
                 return used;
             }
@@ -85,26 +79,20 @@ namespace UI
             const bool noteDamage = (r.damaged > 0);
             const bool noteG3 = (r.gen3NonFRLG > 0);
             const bool noteTight = (r.sourceBoxesUsed > screen.emptyBankBoxCount());
-            const int noteLines = (noteTight ? 1 : 0) + (noteSkip ? 1 : 0) +
-                                  (noteDamage ? 1 : 0) + (noteG3 ? 2 : 0);
+            const int noteLines = (noteTight ? 1 : 0) + (noteSkip ? 1 : 0) + (noteDamage ? 1 : 0) + (noteG3 ? 2 : 0);
 
             const int cardWidth = 900;
             const int cardHeight = 78 + 34 + 26 + genRows * 30 + 22 + 30 + noteLines * 24 + 26 + BUTTON_HEIGHT + 20;
             const int cardX = (framebuffer.getWidth() - cardWidth) / 2;
             const int cardY = cardTop(framebuffer, cardHeight);
 
-            int centerY = drawDialogFrame(framebuffer, cardX, cardY, cardWidth, cardHeight, "Import from PKSM Bank",
-                                          Colors::Text);
+            int centerY = drawDialogFrame(framebuffer, cardX, cardY, cardWidth, cardHeight, "Import from PKSM Bank", Colors::Text);
             const int centerX = cardX + 28, cw = cardWidth - 56;
 
             framebuffer.drawText(centerX, centerY, screen.pksmImport.fileName, Colors::Accent, TextStyle::Body);
             centerY += 34;
 
-            framebuffer.drawText(centerX, centerY,
-                                 "PKSM bank v" + std::to_string(r.containerVersion) + "  -  " +
-                                     std::to_string(r.sourceBoxes) + " boxes, " + std::to_string(r.occupied) +
-                                     " Pokemon stored",
-                                 Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(centerX, centerY, "PKSM bank v" + std::to_string(r.containerVersion) + "  -  " + std::to_string(r.sourceBoxes) + " boxes, " + std::to_string(r.occupied) + " Pokemon stored", Colors::TextDim, TextStyle::Caption);
             centerY += 26;
 
             centerY += drawGenTable(framebuffer, centerX, centerY, cw, r);
@@ -115,60 +103,41 @@ namespace UI
             // The headline: how many arrive, and into how many boxes. Each PKSM box that holds anything
             // is copied whole into an empty bank box, so the box count is what decides whether it fits --
             // not the Pokemon count.
-            framebuffer.drawText(centerX, centerY,
-                                 std::to_string(r.importable) + " Pokemon will be added, filling " +
-                                     std::to_string(r.sourceBoxesUsed) +
-                                     (r.sourceBoxesUsed == 1 ? " empty bank box." : " empty bank boxes."),
-                                 Colors::Text, TextStyle::Body);
+            framebuffer.drawText(centerX, centerY, std::to_string(r.importable) + " Pokemon will be added, filling " + std::to_string(r.sourceBoxesUsed) + (r.sourceBoxesUsed == 1 ? " empty bank box." : " empty bank boxes."), Colors::Text, TextStyle::Body);
             centerY += 30;
 
             if (r.sourceBoxesUsed > screen.emptyBankBoxCount())
             {
-                framebuffer.drawText(centerX, centerY,
-                                     "Only " + std::to_string(screen.emptyBankBoxCount()) +
-                                         " bank boxes are empty; the rest will go into any free slots.",
-                                     Colors::Warning, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, "Only " + std::to_string(screen.emptyBankBoxCount()) + " bank boxes are empty; the rest will go into any free slots.", Colors::Warning, TextStyle::Caption);
                 centerY += 24;
             }
 
             if (noteSkip)
             {
-                framebuffer.drawText(centerX, centerY,
-                                     std::to_string(r.unsupported) +
-                                         " will be skipped - PKSE has no format for their generation.",
-                                     Colors::Warning, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, std::to_string(r.unsupported) + " will be skipped - PKSE has no format for their generation.", Colors::Warning, TextStyle::Caption);
                 centerY += 24;
             }
             if (noteDamage)
             {
-                framebuffer.drawText(centerX, centerY,
-                                     std::to_string(r.damaged) + " records could not be read and will be skipped.",
-                                     Colors::Warning, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, std::to_string(r.damaged) + " records could not be read and will be skipped.", Colors::Warning, TextStyle::Caption);
                 centerY += 24;
             }
             if (noteG3)
             {
-                framebuffer.drawText(centerX, centerY,
-                                     std::to_string(r.gen3NonFRLG) +
-                                         " Gen 3 records list an origin other than FireRed/LeafGreen.",
-                                     Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, std::to_string(r.gen3NonFRLG) + " Gen 3 records list an origin other than FireRed/LeafGreen.", Colors::TextDim, TextStyle::Caption);
                 centerY += 24;
-                framebuffer.drawText(centerX, centerY,
-                                     "They import and behave normally; PKSE has no encounter data for them.",
-                                     Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, "They import and behave normally; PKSE has no encounter data for them.", Colors::TextDim, TextStyle::Caption);
                 centerY += 24;
             }
 
             centerY += 4;
-            framebuffer.drawText(centerX, centerY, "Nothing is written until you choose Save when leaving Storage.",
-                        Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(centerX, centerY, "Nothing is written until you choose Save when leaving Storage.", Colors::TextDim, TextStyle::Caption);
 
             // Buttons. Ids match the storage dialogs' convention: 0 = cancel, 1 = confirm.
             const int buttonY = cardY + cardHeight - BUTTON_HEIGHT - 16, bw = (cw - 16) / 2;
             screen.touchButtons.clear();
             drawEditChoiceButton(screen, framebuffer, centerX, buttonY, bw, BUTTON_HEIGHT, "B", "Cancel", 0);
-            drawEditChoiceButton(screen, framebuffer, centerX + bw + 16, buttonY, bw, BUTTON_HEIGHT, "A", "Import", 1,
-                                 Colors::Primary, Colors::PrimaryText);
+            drawEditChoiceButton(screen, framebuffer, centerX + bw + 16, buttonY, bw, BUTTON_HEIGHT, "A", "Import", 1, Colors::Primary, Colors::PrimaryText);
         }
 
         void drawPKSMImportResult(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
@@ -229,9 +198,7 @@ namespace UI
                 while (searchStart <= headline.size())
                 {
                     const size_t spacePosition = headline.find(' ', searchStart);
-                    const std::string word = headline.substr(
-                        searchStart,
-                        (spacePosition == std::string::npos ? headline.size() : spacePosition) - searchStart);
+                    const std::string word = headline.substr(searchStart, (spacePosition == std::string::npos ? headline.size() : spacePosition) - searchStart);
                     const std::string candidate = line.empty() ? word : line + " " + word;
                     int textWidth, th;
                     framebuffer.measureText(candidate, textWidth, th, TextStyle::Body);
@@ -254,13 +221,11 @@ namespace UI
 
             const bool tail = state.committed && r.placed > 0;
             const int cardWidth = 900;
-            const int cardHeight = 78 + static_cast<int>(headlineLines.size()) * 30 + 14 +
-                          static_cast<int>(rows.size()) * 30 + (tail ? 34 : 0) + 18 + BUTTON_HEIGHT + 20;
+            const int cardHeight = 78 + static_cast<int>(headlineLines.size()) * 30 + 14 + static_cast<int>(rows.size()) * 30 + (tail ? 34 : 0) + 18 + BUTTON_HEIGHT + 20;
             const int cardX = (framebuffer.getWidth() - cardWidth) / 2;
             const int cardY = cardTop(framebuffer, cardHeight);
 
-            int centerY = drawDialogFrame(framebuffer, cardX, cardY, cardWidth, cardHeight, title,
-                                          failed ? Colors::Warning : Colors::Text);
+            int centerY = drawDialogFrame(framebuffer, cardX, cardY, cardWidth, cardHeight, title, failed ? Colors::Warning : Colors::Text);
             const int centerX = cardX + 28, cw = cardWidth - 56;
 
             for (const auto &l : headlineLines)
@@ -274,14 +239,12 @@ namespace UI
                 framebuffer.drawHDivider(centerX, centerY, cw);
                 centerY += 10;
                 for (const auto &row : rows)
-                    centerY += statRow(framebuffer, centerX, centerY, cw, "   " + row.label, row.value,
-                                  Colors::TextDim, row.warn ? Colors::Warning : Colors::Text);
+                    centerY += statRow(framebuffer, centerX, centerY, cw, "   " + row.label, row.value, Colors::TextDim, row.warn ? Colors::Warning : Colors::Text);
             }
             if (tail)
             {
                 centerY += 8;
-                framebuffer.drawText(centerX, centerY, "Choose Save when you leave Storage to keep them.",
-                            Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(centerX, centerY, "Choose Save when you leave Storage to keep them.", Colors::TextDim, TextStyle::Caption);
             }
 
             const int buttonY = cardY + cardHeight - BUTTON_HEIGHT - 16, bw = 220;
@@ -289,8 +252,7 @@ namespace UI
             screen.touchButtons.clear();
             // The only button on this dialog, so it takes the cancel id -- there is nothing to
             // confirm, just an outcome to dismiss.
-            drawEditChoiceButton(screen, framebuffer, boxX, buttonY, bw, BUTTON_HEIGHT, "A", "OK", 0,
-                                 Colors::Primary, Colors::PrimaryText);
+            drawEditChoiceButton(screen, framebuffer, boxX, buttonY, bw, BUTTON_HEIGHT, "A", "OK", 0, Colors::Primary, Colors::PrimaryText);
         }
     }
 }

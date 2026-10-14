@@ -137,8 +137,7 @@ namespace Pokemon
         }
         uint32_t rd24be(size_t offset) const noexcept
         {
-            return (static_cast<uint32_t>(rd8(offset)) << 16) | (static_cast<uint32_t>(rd8(offset + 1)) << 8) |
-                   rd8(offset + 2);
+            return (static_cast<uint32_t>(rd8(offset)) << 16) | (static_cast<uint32_t>(rd8(offset + 1)) << 8) | rd8(offset + 2);
         }
         void wr8(size_t offset, uint8_t value) noexcept
         {
@@ -221,8 +220,7 @@ namespace Pokemon
         uint8_t ivSPD() const noexcept override { return dv16() & 0xF; }
         uint8_t ivHP() const noexcept override
         {
-            return static_cast<uint8_t>(((ivATK() & 1) << 3) | ((ivDEF() & 1) << 2) | ((ivSPE() & 1) << 1) |
-                                        (ivSPA() & 1));
+            return static_cast<uint8_t>(((ivATK() & 1) << 3) | ((ivDEF() & 1) << 2) | ((ivSPE() & 1) << 1) | (ivSPA() & 1));
         }
         void setIV(int statIndex, uint8_t value) noexcept override;
 

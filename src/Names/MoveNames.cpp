@@ -8325,8 +8325,7 @@ namespace Names {
         MOVE_NAMES_ZH_HANS,
         MOVE_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(MOVE_NAMES_BY_LANGUAGE) / sizeof(MOVE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "MOVE_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(MOVE_NAMES_BY_LANGUAGE) / sizeof(MOVE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "MOVE_NAMES_BY_LANGUAGE must carry one table per language");
 
     const char* getMoveName(uint16_t moveId) {
         constexpr unsigned count = sizeof(MOVE_NAMES_EN) / sizeof(MOVE_NAMES_EN[0]);

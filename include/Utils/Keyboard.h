@@ -51,9 +51,7 @@ namespace Utils {
     using KeyboardPresenter = std::function<KeyboardResult(const KeyboardRequest &request)>;
     void setKeyboardPresenter(KeyboardPresenter presenter);
 
-    KeyboardResult promptText(const std::string& header, const std::string& guide,
-                              const std::string& initial, int maxChars,
-                              const std::function<void(const std::string &)> &textChanged = nullptr);
+    KeyboardResult promptText(const std::string& header, const std::string& guide, const std::string& initial, int maxChars, const std::function<void(const std::string &)> &textChanged = nullptr);
 
     /**
      * Show the numeric keypad, seeded with `initial`. Returns the parsed value clamped to
@@ -68,8 +66,7 @@ namespace Utils {
     /// The console's own keyboard, whatever presenter is registered. It is the only way to type
     /// Japanese, Chinese or Korean -- PKSE's keyboard carries no input method -- and it is a library
     /// applet, so the frame rule above applies to it in full.
-    KeyboardResult promptSystemText(const std::string& header, const std::string& guide,
-                                    const std::string& initial, int maxChars);
+    KeyboardResult promptSystemText(const std::string& header, const std::string& guide, const std::string& initial, int maxChars);
 
     /// How many prompts have been REFUSED because `g_suppressKeyboard` was set (see Globals.h).
     ///

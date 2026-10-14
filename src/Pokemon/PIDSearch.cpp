@@ -10,11 +10,9 @@ namespace Pokemon
         /// The requirements the low half alone decides: the gender, and a Gen 3/4 ability bit.
         bool lowHalfFits(const PIDRequirements &requirements, uint32_t low)
         {
-            if (requirements.wantGender >= 0 && !genderIsFixed(requirements.genderRatio) &&
-                genderFromPID(low, requirements.genderRatio) != requirements.wantGender)
+            if (requirements.wantGender >= 0 && !genderIsFixed(requirements.genderRatio) && genderFromPID(low, requirements.genderRatio) != requirements.wantGender)
                 return false;
-            if (requirements.wantAbilityBit >= 0 && requirements.abilityBitIndex >= 0 && requirements.abilityBitIndex < 16 &&
-                static_cast<int>((low >> requirements.abilityBitIndex) & 1) != requirements.wantAbilityBit)
+            if (requirements.wantAbilityBit >= 0 && requirements.abilityBitIndex >= 0 && requirements.abilityBitIndex < 16 && static_cast<int>((low >> requirements.abilityBitIndex) & 1) != requirements.wantAbilityBit)
                 return false;
             return true;
         }
@@ -24,8 +22,7 @@ namespace Pokemon
         {
             if (requirements.wantNature >= 0 && static_cast<int>(candidate % 25) != requirements.wantNature)
                 return false;
-            if (requirements.wantAbilityBit >= 0 && requirements.abilityBitIndex >= 16 &&
-                static_cast<int>((candidate >> requirements.abilityBitIndex) & 1) != requirements.wantAbilityBit)
+            if (requirements.wantAbilityBit >= 0 && requirements.abilityBitIndex >= 16 && static_cast<int>((candidate >> requirements.abilityBitIndex) & 1) != requirements.wantAbilityBit)
                 return false;
             if (requirements.wantShiny >= 0)
             {

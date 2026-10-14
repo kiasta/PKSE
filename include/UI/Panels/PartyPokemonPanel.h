@@ -22,8 +22,7 @@ namespace UI
 {
     namespace Panels
     {
-        void drawPartyPokemon(UI::PKSEFramebuffer &framebuffer, const Trainer::Trainer &trainer, int partyPokemonX,
-                              int partyPokemonY, int partyPokemonWidth, int partyPokemonHeight, int selectedIndex = -1);
+        void drawPartyPokemon(UI::PKSEFramebuffer &framebuffer, const Trainer::Trainer &trainer, int partyPokemonX, int partyPokemonY, int partyPokemonWidth, int partyPokemonHeight, int selectedIndex = -1);
     }
 }
 

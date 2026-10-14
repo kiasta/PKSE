@@ -38,9 +38,7 @@ int main()
                 std::printf(",\n");
             first = false;
             const char *stem = Pokemon::getFormSpriteName(species, form);
-            std::printf("  {\"species\":%u,\"form\":%u,\"spriteId\":%u,\"stem\":\"%s\",\"english\":\"%s\"}",
-                        species, form, Pokemon::getFormSpriteId(species, form),
-                        stem ? stem : "", englishName);
+            std::printf("  {\"species\":%u,\"form\":%u,\"spriteId\":%u,\"stem\":\"%s\",\"english\":\"%s\"}", species, form, Pokemon::getFormSpriteId(species, form), stem ? stem : "", englishName);
         }
     }
     std::printf("\n]\n");

@@ -67,10 +67,7 @@ namespace UI
         // Hold the screen until whatever answered the prompt is let go. The screen reads the same pad
         // the moment this returns, and a + still held from OK would otherwise reach it as a press --
         // which closes the app. Stick directions are not waited on: a drifting stick never lets go.
-        constexpr u64 answeringButtons = HidNpadButton_A | HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y |
-                                         HidNpadButton_L | HidNpadButton_R | HidNpadButton_ZL | HidNpadButton_ZR |
-                                         HidNpadButton_Plus | HidNpadButton_Minus | HidNpadButton_Up |
-                                         HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
+        constexpr u64 answeringButtons = HidNpadButton_A | HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y | HidNpadButton_L | HidNpadButton_R | HidNpadButton_ZL | HidNpadButton_ZR | HidNpadButton_Plus | HidNpadButton_Minus | HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
         constexpr int releaseFrameLimit = 60;
         for (int releaseFrame = 0; releaseFrame < releaseFrameLimit && appletMainLoop(); ++releaseFrame)
         {
@@ -129,10 +126,7 @@ namespace UI
 
             if (selectScreen.hasSelectedTitle())
             {
-                handleBackupSelection(selectScreen.getSelectedUser(),
-                                      selectScreen.getSelectedTitleId(),
-                                      selectScreen.getSelectedTitleName(),
-                                      selectScreen.getSelectedTitleFolder());
+                handleBackupSelection(selectScreen.getSelectedUser(), selectScreen.getSelectedTitleId(), selectScreen.getSelectedTitleName(), selectScreen.getSelectedTitleFolder());
                 // Back from backup/trainer -> return so run() rebuilds the picker (re-lists saves).
                 return;
             }
@@ -145,8 +139,7 @@ namespace UI
             {
                 // A loose save skips backup selection entirely: there is no backup tree for a file
                 // the user pointed at, and no "live save vs older backup" choice to make.
-                handleExternalSave(selectScreen.takeSelectedFileTrainer(), selectScreen.getSelectedFileLabel(),
-                                   selectScreen.getSelectedFilePath());
+                handleExternalSave(selectScreen.takeSelectedFileTrainer(), selectScreen.getSelectedFileLabel(), selectScreen.getSelectedFilePath());
                 return;
             }
         }
@@ -266,8 +259,7 @@ namespace UI
     // A save the user pointed at on the SD card, rather than one belonging to an installed title.
     // Everything the normal path derives from the title id -- which game, where the backups live,
     // which account owns it -- is either absent or comes from the file itself here.
-    void UIManager::handleExternalSave(std::unique_ptr<Trainer::Trainer> trainer, const std::string &label,
-                                       const std::string &path)
+    void UIManager::handleExternalSave(std::unique_ptr<Trainer::Trainer> trainer, const std::string &label, const std::string &path)
     {
         // The trainer is owned through the base pointer because the concrete type is not known
         // until the probe chain runs -- thirteen formats across seven generations arrive this way.

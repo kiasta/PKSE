@@ -30,8 +30,7 @@ namespace UI
             {"ZR", "+100", 35},
         };
 
-        inline void drawEditStepButton(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer,
-                                       int boxX, int boxY, int boxWidth, int boxHeight, const EditStep &step)
+        inline void drawEditStepButton(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, int boxHeight, const EditStep &step)
         {
             framebuffer.drawFilledRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, Colors::PanelAlt);
             framebuffer.drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, Colors::Border, 1);
@@ -39,14 +38,12 @@ namespace UI
             buttonGlyph(framebuffer, boxX + (boxWidth - glyphWidth) / 2, boxY + 18, step.glyph, false); // badge above
             int textWidth, th;
             framebuffer.measureText(step.delta, textWidth, th, TextStyle::Caption);
-            framebuffer.drawText(boxX + (boxWidth - textWidth) / 2, boxY + boxHeight - th - 6, step.delta, Colors::Text,
-                                 TextStyle::Caption); // delta below
+            framebuffer.drawText(boxX + (boxWidth - textWidth) / 2, boxY + boxHeight - th - 6, step.delta, Colors::Text, TextStyle::Caption); // delta below
             screen.touchButtons.push_back({step.buttonId, boxX, boxY, boxWidth, boxHeight});
         }
 
         // Lay the six step buttons across [x, x+w], centred, at rowY (height rowH).
-        inline void drawEditStepRow(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int editStepRowX,
-                                    int editStepRowWidth, int rowY, int rowH)
+        inline void drawEditStepRow(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int editStepRowX, int editStepRowWidth, int rowY, int rowH)
         {
             constexpr int count = 6, gap = 8;
             const int boxWidth = (editStepRowWidth - 32 - (count - 1) * gap) / count;
@@ -66,12 +63,9 @@ namespace UI
         // rect drifted from its button was invisible until someone tapped the wrong place. Doing both
         // here also means every dialog button gets the HELD look for free while a tap on it is
         // waiting to fire -- see TrainerViewScreen::armTap for why that frame exists.
-        inline void drawEditChoiceButton(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int boxX, int boxY,
-                                         int boxWidth, int boxHeight, const char *glyph, const char *label, int itemId,
-                                         Color fill = Colors::PanelAlt, Color textColor = Colors::Text)
+        inline void drawEditChoiceButton(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, int boxHeight, const char *glyph, const char *label, int itemId, Color fill = Colors::PanelAlt, Color textColor = Colors::Text)
         {
-            drawGlyphButton(framebuffer, boxX, boxY, boxWidth, boxHeight, glyph, label, fill, textColor,
-                            screen.pendingTapButtonId == itemId);
+            drawGlyphButton(framebuffer, boxX, boxY, boxWidth, boxHeight, glyph, label, fill, textColor, screen.pendingTapButtonId == itemId);
             screen.touchButtons.push_back({itemId, boxX, boxY, boxWidth, boxHeight});
         }
     }

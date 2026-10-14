@@ -149,8 +149,7 @@ void checkSCBlock(const char* label, const std::string& path) {
     {
         const uint8_t got = freshMon->metLevel();
         char buffer[192];
-        std::snprintf(buffer, sizeof(buffer), "%s: %u -> %u, read back %u",
-                      species.c_str(), oldMet, newMet, got);
+        std::snprintf(buffer, sizeof(buffer), "%s: %u -> %u, read back %u", species.c_str(), oldMet, newMet, got);
         report(label, "met level", got == newMet, buffer);
     }
 
@@ -161,8 +160,7 @@ void checkSCBlock(const char* label, const std::string& path) {
             if (it.itemId == itemId) { got = it.count; found = true; break; }
         }
         char buffer[192];
-        std::snprintf(buffer, sizeof(buffer), "item id %u: %u -> %u, read back %u%s",
-                      itemId, oldCount, newCount, got, found ? "" : " (ITEM MISSING)");
+        std::snprintf(buffer, sizeof(buffer), "item id %u: %u -> %u, read back %u%s", itemId, oldCount, newCount, got, found ? "" : " (ITEM MISSING)");
         report(label, "item count", found && got == newCount, buffer);
     }
 
@@ -180,18 +178,13 @@ void checkSCBlock(const char* label, const std::string& path) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::printf("usage: editpersist <save-root>\n"
-                    "  Expects, relative to <save-root>:\n"
-                    "  One folder per TITLE, any filename inside:\n"
-                    "    Shield/  Violet/  Legends Z-A/  Legends Arceus/\n");
+        std::printf("usage: editpersist <save-root>\n  Expects, relative to <save-root>:\n  One folder per TITLE, any filename inside:\n    Shield/  Violet/  Legends Z-A/  Legends Arceus/\n");
         return 2;
     }
     const std::string root = argv[1];
     g_saveRoot = root;
 
-    std::printf("PKSE edit-persistence harness\n"
-                "edit -> serialize -> RE-PARSE -> assert the new value survived. roundtrip.cpp\n"
-                "proves a no-op reproduces the file; this proves an edit is not silently dropped.\n\n");
+    std::printf("PKSE edit-persistence harness\nedit -> serialize -> RE-PARSE -> assert the new value survived. roundtrip.cpp\nproves a no-op reproduces the file; this proves an edit is not silently dropped.\n\n");
 
     // Found by TITLE FOLDER; see SaveTree.h.
     checkSCBlock<Trainer::Trainer9SV>("Violet",         SaveTree::violet(root));

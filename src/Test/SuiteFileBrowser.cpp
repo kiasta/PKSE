@@ -151,9 +151,7 @@ namespace Test
         const int fixtureRows = static_cast<int>(sizeof(FIXTURE) / sizeof(FIXTURE[0]));
         for (int firstRow = 0; firstRow < fixtureRows; ++firstRow)
             for (int secondRow = firstRow + 1; secondRow < fixtureRows; ++secondRow)
-                context.check(folded(FIXTURE[firstRow].name) != folded(FIXTURE[secondRow].name),
-                          "two file-browser fixture names differ only by case, which the SD card stores as one file",
-                          std::string("names=\"") + FIXTURE[firstRow].name + "\",\"" + FIXTURE[secondRow].name + "\"");
+                context.check(folded(FIXTURE[firstRow].name) != folded(FIXTURE[secondRow].name), "two file-browser fixture names differ only by case, which the SD card stores as one file", std::string("names=\"") + FIXTURE[firstRow].name + "\",\"" + FIXTURE[secondRow].name + "\"");
 
         const std::string root = context.workDir + "/browsertest";
         removeFixture(root); // a previous run that was interrupted must not change this one
@@ -172,10 +170,7 @@ namespace Test
         const bool subdirFileMade = writeEmptyFile(subdirPath + "/" + FIXTURE_SUBDIR_FILE);
 
         const int fixtureCount = static_cast<int>(sizeof(FIXTURE) / sizeof(FIXTURE[0]));
-        if (!context.check(created == fixtureCount && subdirFileMade,
-                       "could not build the file-browser fixture",
-                       "dir=\"" + root + "\" created=" + std::to_string(created) +
-                           " of " + std::to_string(fixtureCount)))
+        if (!context.check(created == fixtureCount && subdirFileMade, "could not build the file-browser fixture", "dir=\"" + root + "\" created=" + std::to_string(created) + " of " + std::to_string(fixtureCount)))
         {
             removeFixture(root);
             return;
@@ -185,21 +180,18 @@ namespace Test
 
         // This is the check the shipped bug would have failed: `main` is a save and was not listed.
         browser.open("Open a Save File", "Save files", {root}, Save::saveFileExtensions(), Save::saveFileExactNames());
-        context.check(browser.directory == root, "the browser did not land in the fixture directory",
-                  "wanted=\"" + root + "\" got=\"" + browser.directory + "\"");
+        context.check(browser.directory == root, "the browser did not land in the fixture directory", "wanted=\"" + root + "\" got=\"" + browser.directory + "\"");
 
         for (const FixtureFile &fixture : FIXTURE)
         {
             const bool isListed = listed(browser, fixture.name);
             if (fixture.shouldBeListed)
             {
-                context.check(isListed, "the file browser does not offer a real save file",
-                          std::string("name=\"") + fixture.name + "\" why=\"" + fixture.why + "\"");
+                context.check(isListed, "the file browser does not offer a real save file", std::string("name=\"") + fixture.name + "\" why=\"" + fixture.why + "\"");
             }
             else
             {
-                context.check(!isListed, "the file browser offers a file that is not a save",
-                          std::string("name=\"") + fixture.name + "\" why=\"" + fixture.why + "\"");
+                context.check(!isListed, "the file browser offers a file that is not a save", std::string("name=\"") + fixture.name + "\" why=\"" + fixture.why + "\"");
             }
         }
 
@@ -210,20 +202,12 @@ namespace Test
         // which is exactly how the picker and the self test drifted apart in the first place.
         for (const FixtureFile &fixture : FIXTURE)
         {
-            context.check(Save::isSaveFileName(fixture.name) == fixture.shouldBeListed,
-                      "Save::isSaveFileName disagrees with what the file browser offers",
-                      std::string("name=\"") + fixture.name + "\" browser=" +
-                          (fixture.shouldBeListed ? "offers" : "hides") + " rule=" +
-                          (Save::isSaveFileName(fixture.name) ? "save" : "not a save"));
+            context.check(Save::isSaveFileName(fixture.name) == fixture.shouldBeListed, "Save::isSaveFileName disagrees with what the file browser offers", std::string("name=\"") + fixture.name + "\" browser=" + (fixture.shouldBeListed ? "offers" : "hides") + " rule=" + (Save::isSaveFileName(fixture.name) ? "save" : "not a save"));
         }
-        context.check(Save::isSaveFileName(FIXTURE_SUBDIR_FILE),
-                  "Save::isSaveFileName does not accept an upper-cased 3DS save name",
-                  std::string("name=\"") + FIXTURE_SUBDIR_FILE + "\"");
+        context.check(Save::isSaveFileName(FIXTURE_SUBDIR_FILE), "Save::isSaveFileName does not accept an upper-cased 3DS save name", std::string("name=\"") + FIXTURE_SUBDIR_FILE + "\"");
 
         // A filter that hid folders would make every save in a subdirectory unreachable.
-        context.check(listed(browser, FIXTURE_SUBDIR),
-                  "the file browser hid a directory because it did not match the file filter",
-                  std::string("name=\"") + FIXTURE_SUBDIR + "\"");
+        context.check(listed(browser, FIXTURE_SUBDIR), "the file browser hid a directory because it did not match the file filter", std::string("name=\"") + FIXTURE_SUBDIR + "\"");
         context.check(listed(browser, ".."), "the file browser offered no way back out of a subdirectory");
 
         // The escape hatch that made the bug survivable, so it has to keep working.
@@ -237,9 +221,7 @@ namespace Test
                 ++hiddenStillMissing;
             }
         }
-        context.check(hiddenStillMissing == 0,
-                  "\"show all files\" still hid something",
-                  "missing=" + std::to_string(hiddenStillMissing));
+        context.check(hiddenStillMissing == 0, "\"show all files\" still hid something", "missing=" + std::to_string(hiddenStillMissing));
         browser.showAllFiles = false;
         browser.refresh();
 
@@ -259,18 +241,12 @@ namespace Test
             browser.selectedIndex = subdirRow;
             const bool chose = browser.activate();
             context.check(!chose, "entering a directory reported a file had been chosen");
-            context.check(browser.directory != root, "activating a directory did not enter it",
-                      "still=\"" + browser.directory + "\"");
-            context.check(listed(browser, FIXTURE_SUBDIR_FILE),
-                      "the save inside the subdirectory was not listed",
-                      std::string("name=\"") + FIXTURE_SUBDIR_FILE + "\" why=\"an upper-cased 3DS save name\"");
+            context.check(browser.directory != root, "activating a directory did not enter it", "still=\"" + browser.directory + "\"");
+            context.check(listed(browser, FIXTURE_SUBDIR_FILE), "the save inside the subdirectory was not listed", std::string("name=\"") + FIXTURE_SUBDIR_FILE + "\" why=\"an upper-cased 3DS save name\"");
 
             context.check(browser.goUp(), "the browser could not go back up out of a subdirectory");
-            context.check(browser.directory == root, "going up did not return to the fixture directory",
-                      "got=\"" + browser.directory + "\"");
-            context.check(browser.entries[browser.selectedIndex].name == FIXTURE_SUBDIR,
-                      "going up did not put the cursor back on the folder just left",
-                      "row=\"" + browser.entries[browser.selectedIndex].name + "\"");
+            context.check(browser.directory == root, "going up did not return to the fixture directory", "got=\"" + browser.directory + "\"");
+            context.check(browser.entries[browser.selectedIndex].name == FIXTURE_SUBDIR, "going up did not put the cursor back on the folder just left", "row=\"" + browser.entries[browser.selectedIndex].name + "\"");
         }
 
         for (int row = 0; row < static_cast<int>(browser.entries.size()); ++row)
@@ -284,17 +260,12 @@ namespace Test
         context.check(browser.chosenPath.empty(), "the browser had already chosen a path before A was pressed");
         const bool choseFile = browser.activate();
         context.check(choseFile, "activating a save file did not choose it");
-        context.check(browser.chosenPath == root + "/main",
-                  "the browser reported the wrong path for the chosen file",
-                  "got=\"" + browser.chosenPath + "\"");
+        context.check(browser.chosenPath == root + "/main", "the browser reported the wrong path for the chosen file", "got=\"" + browser.chosenPath + "\"");
 
         browser.move(-1000);
-        context.check(browser.selectedIndex == 0, "moving up past the top left the cursor out of range",
-                  "index=" + std::to_string(browser.selectedIndex));
+        context.check(browser.selectedIndex == 0, "moving up past the top left the cursor out of range", "index=" + std::to_string(browser.selectedIndex));
         browser.move(1000);
-        context.check(browser.selectedIndex == static_cast<int>(browser.entries.size()) - 1,
-                  "moving down past the end left the cursor out of range",
-                  "index=" + std::to_string(browser.selectedIndex));
+        context.check(browser.selectedIndex == static_cast<int>(browser.entries.size()) - 1, "moving down past the end left the cursor out of range", "index=" + std::to_string(browser.selectedIndex));
 
         browser.close();
         context.check(!browser.active, "closing the browser left it active");

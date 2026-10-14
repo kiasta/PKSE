@@ -88,11 +88,7 @@ namespace UI
             static constexpr size_t MAX_DIRECTORY_ENTRIES = 4000; // guard against a pathological folder
 
             /// Opens at the first of `startDirs` that exists, falling back to the SD root.
-            void open(const std::string &windowTitle,
-                      const std::string &filterLabel,
-                      const std::vector<std::string> &startDirs,
-                      const std::vector<std::string> &exts,
-                      const std::vector<std::string> &wholeFileNames = {});
+            void open(const std::string &windowTitle, const std::string &filterLabel, const std::vector<std::string> &startDirs, const std::vector<std::string> &exts, const std::vector<std::string> &wholeFileNames = {});
             void close();
 
             void refresh();       // re-list `dir` (also called after every navigation)

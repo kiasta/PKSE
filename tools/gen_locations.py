@@ -163,8 +163,7 @@ def main():
         for lang in LANGUAGES:
             p.append(f"        {arr}_{IDENTIFIER_SUFFIX[lang]},\n")
         p.append("    };\n")
-        p.append(f"    static_assert(sizeof({arr}_BY_LANGUAGE) / sizeof({arr}_BY_LANGUAGE[0]) == LANGUAGE_COUNT,\n")
-        p.append(f'                  "{arr} must carry one table per language");\n')
+        p.append(f'    static_assert(sizeof({arr}_BY_LANGUAGE) / sizeof({arr}_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "{arr} must carry one table per language");\n')
 
     # Bank-0 (in-world) tables first, then the special banks each set has.
     for prefix, label, _cases, scheme, banks in GAMES:
@@ -179,19 +178,14 @@ def main():
              "        return (table && locationId < count) ? table[locationId] : \"\";\n"
              "    }\n\n")
     p.append("    // LocationSet6 banking (Gen 5+): id / 10000 selects the bank.\n"
-             "    static const char* lookupBanked(\n"
-             "            const char* const* bank0, size_t count0, const char* const* bank3, size_t count3,\n"
-             "            const char* const* bank4, size_t count4, const char* const* bank6, size_t count6,\n"
-             "            uint16_t locationId) {\n"
+             "    static const char* lookupBanked(const char* const* bank0, size_t count0, const char* const* bank3, size_t count3, const char* const* bank4, size_t count4, const char* const* bank6, size_t count6, uint16_t locationId) {\n"
              "        if (locationId >= 60000) return lookup(bank6, count6, static_cast<uint16_t>(locationId - 60000));\n"
              "        if (locationId >= 40000) return lookup(bank4, count4, static_cast<uint16_t>(locationId - 40000));\n"
              "        if (locationId >= 30000) return lookup(bank3, count3, static_cast<uint16_t>(locationId - 30000));\n"
              "        return lookup(bank0, count0, locationId);\n"
              "    }\n\n")
     p.append("    // LocationSet4 banking (Gen 4): banks at 0 / 2000 / 3000.\n"
-             "    static const char* lookupBanked4(\n"
-             "            const char* const* bank0, size_t count0, const char* const* bank2, size_t count2,\n"
-             "            const char* const* bank3, size_t count3, uint16_t locationId) {\n"
+             "    static const char* lookupBanked4(const char* const* bank0, size_t count0, const char* const* bank2, size_t count2, const char* const* bank3, size_t count3, uint16_t locationId) {\n"
              "        if (locationId >= 3000) return lookup(bank3, count3, static_cast<uint16_t>(locationId - 3000));\n"
              "        if (locationId >= 2000) return lookup(bank2, count2, static_cast<uint16_t>(locationId - 2000));\n"
              "        return lookup(bank0, count0, locationId);\n"

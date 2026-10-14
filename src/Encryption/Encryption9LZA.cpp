@@ -38,8 +38,7 @@ namespace Encryption
     std::byte *decryptArray9LZA(std::span<const std::byte> encryptedData)
     {
 
-        const uint32_t personalityValue =
-            readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
+        const uint32_t personalityValue = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
 
         const uint32_t shuffleValue = (personalityValue >> 13) & 31;
 

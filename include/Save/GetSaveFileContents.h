@@ -39,8 +39,7 @@ using namespace Trainer;
 namespace Save
 {
     // Type alias for trainer variants (supports different generation trainers)
-    using TrainerVariant =
-        std::variant<Trainer7LGPE, Trainer8SWSH, Trainer9LZA, Trainer9SV, Trainer8LA, Trainer8BDSP, Trainer3FRLG>;
+    using TrainerVariant = std::variant<Trainer7LGPE, Trainer8SWSH, Trainer9LZA, Trainer9SV, Trainer8LA, Trainer8BDSP, Trainer3FRLG>;
 
     /**
      * Save File Reading/Writing Functions
@@ -98,18 +97,15 @@ namespace Save
      */
     std::unique_ptr<Trainer::Trainer> readTitleSaveAsTrainer(const char *backupDir, u64 titleId);
 
-    bool saveTrainerInfo(Trainer::Trainer &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                         bool injectToTitle);
+    bool saveTrainerInfo(Trainer::Trainer &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer7LGPE readTrainerInfoLetsGo(const char *backupDir);
 
-    bool saveTrainerInfoLetsGo(Trainer7LGPE &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                               bool injectToTitle);
+    bool saveTrainerInfoLetsGo(Trainer7LGPE &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer8SWSH readTrainerInfoSwSh(const char *backupDir);
 
-    bool saveTrainerInfoSwSh(Trainer8SWSH &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoSwSh(Trainer8SWSH &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer9LZA readTrainerInfoLZA(const char *backupDir);
 
@@ -120,33 +116,28 @@ namespace Save
      */
     Trainer9SV readTrainerInfoSV(const char *backupDir);
 
-    bool saveTrainerInfoLZA(Trainer9LZA &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                            bool injectToTitle);
+    bool saveTrainerInfoLZA(Trainer9LZA &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /**
      * Saves trainer info to a Pokemon Scarlet/Violet save file (dedicated Trainer9SV, packed slots).
      */
-    bool saveTrainerInfoSV(Trainer9SV &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                           bool injectToTitle);
+    bool saveTrainerInfoSV(Trainer9SV &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads trainer info from a Pokemon Legends: Arceus save file (PA8; box slots are stored-size). */
     Trainer8LA readTrainerInfoLA(const char *backupDir);
     /** Saves a Legends: Arceus save (party + box serialize; LA item write is deferred). */
-    bool saveTrainerInfoLA(Trainer8LA &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                           bool injectToTitle);
+    bool saveTrainerInfoLA(Trainer8LA &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads a BDSP (SAV8BDSP) FLAT save (SaveData.bin) into a Trainer8BDSP — no SwishCrypto decrypt. */
     Trainer8BDSP readTrainerInfoBDSP(const char *backupDir);
     /** Saves a BDSP save: flat party/box serialize + whole-file MD5 rehash (SaveData.bin + Backup.bin). */
-    bool saveTrainerInfoBDSP(Trainer8BDSP &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoBDSP(Trainer8BDSP &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads a GBA FireRed/LeafGreen (SAV3FRLG) 128 KiB save into a Trainer3FRLG (scans the dir for the
      *  128 KiB / *.sav file so Checkpoint exports like "FireRed_e.sav" are found automatically). */
     Trainer3FRLG readTrainerInfoFRLG(const char *backupDir);
     /** Saves an FRLG save: re-encrypt party/boxes/items in place + recompute all 14 sector checksums. */
-    bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /**
      * Writes a Gen 1 save back to the file it was opened from.
@@ -180,13 +171,11 @@ namespace Save
     /// `label` receives a display name for the title bar. `refusalText` receives why the file was
     /// refused, worded to follow its name: the file browser shows it, so the user is never left to
     /// guess why nothing opened.
-    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes, const std::string &path,
-                                                       std::string *label, std::string *refusalText = nullptr);
+    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes, const std::string &path, std::string *label, std::string *refusalText = nullptr);
 
     /// Splits a loose save FILE into the envelope around it and the save inside, by the one rule
     /// openExternalSave and saveExternalSave both follow. False when no loose format is in there.
-    bool findExternalSaveEnvelope(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope,
-                                  std::vector<uint8_t> &saveImage);
+    bool findExternalSaveEnvelope(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope, std::vector<uint8_t> &saveImage);
 
     /**
      * True when a save of this GROUP arrives as a loose FILE rather than as installed save data.

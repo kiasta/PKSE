@@ -81,8 +81,7 @@ namespace Pokemon
 
         std::unique_ptr<Pokemon> clone() const override
         {
-            std::byte *encryptedRecord =
-                Encryption::encryptArray5B2W2(std::span<const std::byte>(data.data(), dataSize));
+            std::byte *encryptedRecord = Encryption::encryptArray5B2W2(std::span<const std::byte>(data.data(), dataSize));
             auto copiedPokemon = std::make_unique<Pokemon5B2W2>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;
@@ -94,15 +93,11 @@ namespace Pokemon
         uint8_t rd8(size_t offset) const noexcept { return offset < dataSize ? static_cast<uint8_t>(data[offset]) : 0; }
         uint16_t rd16(size_t offset) const noexcept
         {
-            return (offset + 1 < dataSize)
-                       ? Utils::readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset))
-                       : 0;
+            return (offset + 1 < dataSize) ? Utils::readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
         uint32_t rd32(size_t offset) const noexcept
         {
-            return (offset + 3 < dataSize)
-                       ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset))
-                       : 0;
+            return (offset + 3 < dataSize) ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
         void wr8(size_t offset, uint8_t value) noexcept
         {

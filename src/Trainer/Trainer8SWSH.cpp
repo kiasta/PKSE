@@ -81,9 +81,7 @@ namespace Trainer
 
     void Trainer8SWSH::parsePartyBlock(const Block &block)
     {
-        const std::span<const std::byte> blockSpan(
-            reinterpret_cast<const std::byte *>(block.data.data()),
-            block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t slot = 0; slot < MAX_PARTY_SLOTS; ++slot)
         {
@@ -94,8 +92,7 @@ namespace Trainer
             std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY8_SWSH);
 
             bool isEmptySlot = true;
-            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_SWSH && slotSpanIndex < slotSpan.size();
-                 ++slotSpanIndex)
+            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_SWSH && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
             {
                 if (slotSpan[slotSpanIndex] != std::byte{0})
                 {
@@ -170,9 +167,7 @@ namespace Trainer
 
     void Trainer8SWSH::parseBoxBlock(const Block &block)
     {
-        const std::span<const std::byte> blockSpan(
-            reinterpret_cast<const std::byte *>(block.data.data()),
-            block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t boxIndex = 0; boxIndex < BOX_COUNT8_SWSH; ++boxIndex)
         {
@@ -187,8 +182,7 @@ namespace Trainer
                 std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY8_SWSH);
 
                 bool isEmptySlot = true;
-                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_SWSH && slotSpanIndex < slotSpan.size();
-                     ++slotSpanIndex)
+                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_SWSH && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
                 {
                     if (slotSpan[slotSpanIndex] != std::byte{0})
                     {
@@ -216,9 +210,7 @@ namespace Trainer
             size_t offset = boxIndex * BOX_NAME_LENGTH8_SWSH;
             if (offset + BOX_NAME_LENGTH8_SWSH <= block.data.size())
             {
-                std::u16string boxNameU16 = getString(
-                    block.data.data() + offset,
-                    BOX_NAME_LENGTH8_SWSH);
+                std::u16string boxNameU16 = getString(block.data.data() + offset, BOX_NAME_LENGTH8_SWSH);
                 std::string boxName = utf16ToUtf8(boxNameU16);
 
                 if (boxName.empty())
@@ -264,8 +256,7 @@ namespace Trainer
         this->gameVersionString = "v1.3";
 
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Save revision reported as: %d (%s, %s)",
-                 this->saveRevision, this->saveRevisionString.c_str(), this->gameVersionString.c_str());
+        snprintf(buffer, sizeof(buffer), "Save revision reported as: %d (%s, %s)", this->saveRevision, this->saveRevisionString.c_str(), this->gameVersionString.c_str());
         logInfoToFile(buffer);
     }
 
@@ -325,10 +316,8 @@ namespace Trainer
 
                     std::vector<std::byte> encryptedRecord(SIZE_PARTY8_SWSH);
                     std::memcpy(encryptedRecord.data(), &block.data[byteOffset], SIZE_PARTY8_SWSH);
-                    std::byte *decryptedRecord = decryptArray8SWSH(
-                        std::span<const std::byte>(encryptedRecord.data(), SIZE_PARTY8_SWSH));
-                    alreadyEmpty[partySlotIndex] = (readUInt16LittleEndian(
-                                           reinterpret_cast<const uint8_t *>(decryptedRecord) + 0x08) == 0);
+                    std::byte *decryptedRecord = decryptArray8SWSH(std::span<const std::byte>(encryptedRecord.data(), SIZE_PARTY8_SWSH));
+                    alreadyEmpty[partySlotIndex] = (readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(decryptedRecord) + 0x08) == 0);
                     delete[] decryptedRecord;
                 }
 
@@ -339,10 +328,8 @@ namespace Trainer
                 std::vector<uint8_t> blankSlot;
                 {
                     std::vector<std::byte> zero(SIZE_PARTY8_SWSH, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray8SWSH(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
-                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord),
-                                     reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY8_SWSH);
+                    std::byte *encryptedRecord = encryptArray8SWSH(std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
+                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY8_SWSH);
                     delete[] encryptedRecord;
                 }
 
@@ -355,20 +342,16 @@ namespace Trainer
                     std::memcpy(&block.data[offset], blankSlot.data(), SIZE_PARTY8_SWSH);
                 };
 
-                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-                     ++partySlotIndex)
+                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
                 {
                     const size_t offset = partySlotIndex * SIZE_PARTY8_SWSH;
 
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
                         const ::Pokemon::Pokemon *pokemon = party[partySlotIndex].get();
-                        uint32_t encryptionConstant = readUInt32LittleEndian(
-                            reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                        uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                        std::span<const std::byte> decryptedSpan(
-                            pokemon->getData().data(),
-                            pokemon->getDataSize());
+                        std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                         std::byte *encryptedData = encryptArray8SWSH(decryptedSpan, encryptionConstant);
 
@@ -414,8 +397,7 @@ namespace Trainer
                 const size_t offset = boxIndex * BOX_NAME_LENGTH8_SWSH;
                 if (offset + BOX_NAME_LENGTH8_SWSH > block.data.size())
                     break;
-                setString(block.data.data() + offset, BOX_NAME_LENGTH8_SWSH,
-                          utf8ToUtf16(boxNames[boxIndex]), MAX_BOX_NAME_CHARS8_SWSH);
+                setString(block.data.data() + offset, BOX_NAME_LENGTH8_SWSH, utf8ToUtf16(boxNames[boxIndex]), MAX_BOX_NAME_CHARS8_SWSH);
             }
             break;
         }
@@ -481,8 +463,7 @@ namespace Trainer
                             const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * SIZE_PARTY8_SWSH;
                             if (byteOffset + SIZE_PARTY8_SWSH <= block.data.size())
                             {
-                                blankSlot.assign(block.data.begin() + byteOffset,
-                                                 block.data.begin() + byteOffset + SIZE_PARTY8_SWSH);
+                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + SIZE_PARTY8_SWSH);
                                 break;
                             }
                         }
@@ -491,8 +472,7 @@ namespace Trainer
                 if (blankSlot.empty())
                 {
                     std::vector<std::byte> zero(SIZE_PARTY8_SWSH, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray8SWSH(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
+                    std::byte *encryptedRecord = encryptArray8SWSH(std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
                     // assign() from the pointer range, not resize()-then-fill. Both branches above
                     // are inlined into one body, and GCC cannot prove blankSlot is still empty
                     // here -- so it reads the resize as APPENDING 344 bytes onto the 344 the
@@ -516,12 +496,9 @@ namespace Trainer
                         {
                             const auto &pokemon = boxes[boxIndex][slot];
 
-                            uint32_t encryptionConstant = readUInt32LittleEndian(
-                                reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                            uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                            std::span<const std::byte> decryptedSpan(
-                                pokemon->getData().data(),
-                                pokemon->getDataSize());
+                            std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                             std::byte *encryptedData = encryptArray8SWSH(decryptedSpan, encryptionConstant);
 
@@ -549,10 +526,8 @@ namespace Trainer
         // -> a clean species-0, Sanity-0, checksum-valid entity. Raw zeros in the ctor would decrypt
         // to garbage (BAD EGG); the encrypt->decrypt round-trip is what makes the blank valid.
         std::vector<std::byte> zero(SIZE_PARTY8_SWSH, std::byte{0});
-        std::byte *encryptedRecord = encryptArray8SWSH(
-            std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
-        auto clone = std::make_unique<Pokemon8SWSH>(
-            std::span<const std::byte>(encryptedRecord, SIZE_PARTY8_SWSH));
+        std::byte *encryptedRecord = encryptArray8SWSH(std::span<const std::byte>(zero.data(), SIZE_PARTY8_SWSH), 0);
+        auto clone = std::make_unique<Pokemon8SWSH>(std::span<const std::byte>(encryptedRecord, SIZE_PARTY8_SWSH));
         delete[] encryptedRecord;
         return clone;
     }
@@ -626,10 +601,7 @@ namespace Trainer
             const size_t want = static_cast<size_t>(x.count) * ::Pokemon::DEX8SWSH_ENTRY_SIZE;
             if (x.data->size() != want)
             {
-                logErrorToFile("Pokedex block size unexpected; registrations into it will be skipped",
-                               (std::string(x.name) + ": got " + std::to_string(x.data->size()) + ", expected " +
-                                std::to_string(want))
-                                   .c_str());
+                logErrorToFile("Pokedex block size unexpected; registrations into it will be skipped", (std::string(x.name) + ": got " + std::to_string(x.data->size()) + ", expected " + std::to_string(want)).c_str());
             }
         }
 
@@ -681,9 +653,7 @@ namespace Trainer
 
             // CAUGHT flags (u32 at 0x20).
             const size_t cOfs = base + SWSH_OFS_CAUGHT;
-            uint32_t flags = static_cast<uint32_t>((*dex)[cOfs]) | (static_cast<uint32_t>((*dex)[cOfs + 1]) << 8) |
-                             (static_cast<uint32_t>((*dex)[cOfs + 2]) << 16) |
-                             (static_cast<uint32_t>((*dex)[cOfs + 3]) << 24);
+            uint32_t flags = static_cast<uint32_t>((*dex)[cOfs]) | (static_cast<uint32_t>((*dex)[cOfs + 1]) << 8) | (static_cast<uint32_t>((*dex)[cOfs + 2]) << 16) | (static_cast<uint32_t>((*dex)[cOfs + 3]) << 24);
             const bool wasOwned = (flags & 1u) != 0;
             flags |= 1u; // bit 0: owned
             const int lang = swshLangSlot(pokemon->language());
@@ -769,10 +739,7 @@ namespace Trainer
                     const PouchInfo8SWSH &info = getPouchInfo8SWSH(pouchType);
                     const auto &pouch = items[pIndex];
                     const size_t slotCount = static_cast<size_t>(info.maxCount);
-                    const std::vector<ItemPlacement> placement =
-                        placePouchPositional(slotCount, pouch,
-                                             pIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pIndex]
-                                                                                          : std::vector<ItemOrigin>{});
+                    const std::vector<ItemPlacement> placement = placePouchPositional(slotCount, pouch, pIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pIndex] : std::vector<ItemOrigin>{});
 
                     for (size_t itemSlotIndex = 0; itemSlotIndex < slotCount; itemSlotIndex++)
                     {

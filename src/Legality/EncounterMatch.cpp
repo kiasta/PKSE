@@ -224,12 +224,7 @@ namespace Legality
         /// raw IVs for the same reason. (Stat MATHS is the other way round -- see effectiveIV.)
         int flawlessCount(const Pokemon::Pokemon &pokemon)
         {
-            return (pokemon.ivHP() == 31) +
-                   (pokemon.ivATK() == 31) +
-                   (pokemon.ivDEF() == 31) +
-                   (pokemon.ivSPE() == 31) +
-                   (pokemon.ivSPA() == 31) +
-                   (pokemon.ivSPD() == 31);
+            return (pokemon.ivHP() == 31) + (pokemon.ivATK() == 31) + (pokemon.ivDEF() == 31) + (pokemon.ivSPE() == 31) + (pokemon.ivSPA() == 31) + (pokemon.ivSPD() == 31);
         }
 
         /// Everything about a matched template that the Pokemon contradicts.
@@ -311,8 +306,7 @@ namespace Legality
                 // to pass 16 and then 32, so the binding number is the highest edge walked, not the
                 // nearest one. getEvolutionLevelFloor answers that for a whole walk; asked one step
                 // at a time here, because the walk is already happening.
-                const uint8_t edgeFloor =
-                    Pokemon::getEvolutionLevelFloor(group, currentSpecies, edgeForm, 1);
+                const uint8_t edgeFloor = Pokemon::getEvolutionLevelFloor(group, currentSpecies, edgeForm, 1);
                 if (edgeFloor > levelFloor)
                     levelFloor = edgeFloor;
                 out[chainLength++] = Candidate{pSpecies, pForm, levelFloor};
@@ -366,9 +360,7 @@ namespace Legality
          *   weaker than the met-level test it replaces; a record that cannot say where or when it
          *   was caught cannot be held to either.
          */
-        void sweep(const EncounterTable &table, const Candidate *chain, int chainLength, uint8_t versionBit,
-                   uint16_t metLocation, uint8_t metLevel, const Pokemon::Pokemon &pokemon, bool shiny, int flawless,
-                   MatchState &state, bool hasMetData)
+        void sweep(const EncounterTable &table, const Candidate *chain, int chainLength, uint8_t versionBit, uint16_t metLocation, uint8_t metLevel, const Pokemon::Pokemon &pokemon, bool shiny, int flawless, MatchState &state, bool hasMetData)
         {
             for (int chainIndex = 0; chainIndex < chainLength && !state.matched; ++chainIndex)
             {
@@ -414,8 +406,7 @@ namespace Legality
                     // levels below the twenty a Hoothoot needs, so a flat "Noctowl must be 20"
                     // would flag a perfectly ordinary catch. A level of 0 means the record does not
                     // report one (a stored-size box entity), so nothing is claimed.
-                    if (chain[chainIndex].levelFloor != 0 && pokemon.level() != 0 &&
-                        pokemon.level() < chain[chainIndex].levelFloor)
+                    if (chain[chainIndex].levelFloor != 0 && pokemon.level() != 0 && pokemon.level() < chain[chainIndex].levelFloor)
                     {
                         if (state.evolutionFloor == 0 || chain[chainIndex].levelFloor < state.evolutionFloor)
                         {
@@ -431,9 +422,7 @@ namespace Legality
                     // ENCOUNTER_FLAG_MET_LEVEL_ZERO. Crystal's in-game trades are the case: compared
                     // as an ordinary span, Kyle's Onix met at level 0 matched no row at all.
                     const bool metLevelIsZero = (row.flags & ENCOUNTER_FLAG_MET_LEVEL_ZERO) != 0;
-                    const bool levelFails = !hasMetData      ? pokemon.level() < row.levelMin
-                                            : metLevelIsZero ? metLevel != 0 || pokemon.level() < row.levelMin
-                                                             : !levelMatches(row, metLevel);
+                    const bool levelFails = !hasMetData ? pokemon.level() < row.levelMin : metLevelIsZero ? metLevel != 0 || pokemon.level() < row.levelMin : !levelMatches(row, metLevel);
                     if (levelFails)
                     {
                         if (state.stage <= STAGE_LEVEL)
@@ -492,8 +481,7 @@ namespace Legality
             Enums::GameVersion partnerGroup;
         };
 
-        TimeCapsuleScope getTimeCapsuleScope(Enums::GameVersion formatGroup, bool hasMetData, const Candidate *chain,
-                                             int chainLength, uint8_t versionBit)
+        TimeCapsuleScope getTimeCapsuleScope(Enums::GameVersion formatGroup, bool hasMetData, const Candidate *chain, int chainLength, uint8_t versionBit)
         {
             TimeCapsuleScope scope{versionBit, nullptr, Enums::GameVersion::Invalid};
             if (formatGroup == Enums::GameVersion::GSC)
@@ -540,8 +528,7 @@ namespace Legality
          * instead turned "Butterfree at level 9 would have to evolve from Metapod at 10" into a
          * sentence about a Caterpie egg the record never mentioned.
          */
-        bool eggExplainsWithoutMetData(const EncounterTable &table, const Pokemon::Pokemon &pokemon,
-                                       const Candidate *chain, int chainLength)
+        bool eggExplainsWithoutMetData(const EncounterTable &table, const Pokemon::Pokemon &pokemon, const Candidate *chain, int chainLength)
         {
             if (!table.egg.hasBreeding || !breedable(table, chain[chainLength - 1].species))
                 return false;
@@ -603,9 +590,7 @@ namespace Legality
          * all: the sweep skips every EGG row, and the first shape asks for a field the format does
          * not have.
          */
-        const EncounterRow *matchingGiftEgg(const EncounterTable &table, const Pokemon::Pokemon &pokemon,
-                                            const Candidate *chain, int chainLength, uint8_t versionBit,
-                                            uint16_t eggLocation)
+        const EncounterRow *matchingGiftEgg(const EncounterTable &table, const Pokemon::Pokemon &pokemon, const Candidate *chain, int chainLength, uint8_t versionBit, uint16_t eggLocation)
         {
             const bool formatCarriesEggLocation = pokemon.hasEggData();
             for (int chainIndex = 0; chainIndex < chainLength; ++chainIndex)
@@ -630,8 +615,7 @@ namespace Legality
                             return &row;
                         continue;
                     }
-                    if (pokemon.isEgg() && pokemon.metLocation() == row.location &&
-                        pokemon.metLevel() == row.levelMin)
+                    if (pokemon.isEgg() && pokemon.metLocation() == row.location && pokemon.metLevel() == row.levelMin)
                         return &row;
                 }
             }
@@ -645,21 +629,17 @@ namespace Legality
          * the requirement that the bottom of its evolution chain is something the daycare
          * will actually produce.
          */
-        void checkEgg(const EncounterTable &table, const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup,
-                      uint8_t originVersion, uint8_t versionBit, const Candidate *chain, int chainLength,
-                      uint16_t eggLocation, Report &report)
+        void checkEgg(const EncounterTable &table, const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup, uint8_t originVersion, uint8_t versionBit, const Candidate *chain, int chainLength, uint16_t eggLocation, Report &report)
         {
             const EggRule &egg = table.egg;
             const uint16_t baseSpecies = chain[chainLength - 1].species;
             const std::string groupName = Enums::getGameVersionName(originGroup);
             if (!egg.hasBreeding)
             {
-                add(report, Severity::Warning,
-                    groupName + " has no breeding, but this Pokémon carries an egg location");
+                add(report, Severity::Warning, groupName + " has no breeding, but this Pokémon carries an egg location");
                 return;
             }
-            const EncounterRow *giftEggRow =
-                matchingGiftEgg(table, pokemon, chain, chainLength, versionBit, eggLocation);
+            const EncounterRow *giftEggRow = matchingGiftEgg(table, pokemon, chain, chainLength, versionBit, eggLocation);
             const bool giftEgg = giftEggRow != nullptr;
             // Name a MYSTERY GIFT egg, and only that. Accepting a distribution egg in silence is also what
             // a row that can never match looks like, so nothing could tell the two apart. The other egg rows
@@ -672,16 +652,13 @@ namespace Legality
             }
             if (eggLocation != 0 && !giftEgg && !isBredEggLocation(egg, eggLocation))
             {
-                add(report, Severity::Warning,
-                    "Egg location " + locationText(originVersion, eggLocation) + " is not where " + groupName +
-                        " hands out eggs");
+                add(report, Severity::Warning, "Egg location " + locationText(originVersion, eggLocation) + " is not where " + groupName + " hands out eggs");
             }
             // A gift egg is handed over directly, so the daycare's breeding rules do not apply
             // to is — Riolu is unbreedable in BDSP and Riley gives you one anyway.
             if (!giftEgg && !breedable(table, baseSpecies))
             {
-                add(report, Severity::Warning,
-                    std::string(Trainer::getSpeciesName(baseSpecies)) + " cannot hatch from an egg");
+                add(report, Severity::Warning, std::string(Trainer::getSpeciesName(baseSpecies)) + " cannot hatch from an egg");
             }
             // not hatched yet, no metadata to check
             if (pokemon.isEgg()) return;
@@ -689,14 +666,11 @@ namespace Legality
             const uint16_t metLocation = pokemon.metLocation();
             if (!canHatchAt(egg, metLocation, versionBit))
             {
-                add(report, Severity::Warning,
-                    locationText(originVersion, metLocation) + " is not somewhere an egg can hatch in " + groupName);
+                add(report, Severity::Warning, locationText(originVersion, metLocation) + " is not somewhere an egg can hatch in " + groupName);
             }
             if (pokemon.metLevel() != egg.hatchLevel)
             {
-                add(report, Severity::Warning,
-                    "A hatched egg is met at level " + std::to_string(egg.hatchLevel) + ", not " +
-                        std::to_string(pokemon.metLevel()));
+                add(report, Severity::Warning, "A hatched egg is met at level " + std::to_string(egg.hatchLevel) + ", not " + std::to_string(pokemon.metLevel()));
             }
             // A HATCHLING IS NOT BELOW THE LEVEL IT HATCHES AT. Gen 2 and Gen 3 eggs hatch at level
             // 5 and everything since at level 1, so a level 3 Gen 3 record did not come from one
@@ -704,9 +678,7 @@ namespace Legality
             // path just checked (0 in Gen 3), which is why the table carries both.
             if (pokemon.level() != 0 && pokemon.level() < egg.hatchCurrentLevel)
             {
-                add(report, Severity::Invalid,
-                    "An egg hatches at level " + std::to_string(egg.hatchCurrentLevel) + " in " + groupName +
-                        ", but this Pokémon is level " + std::to_string(pokemon.level()));
+                add(report, Severity::Invalid, "An egg hatches at level " + std::to_string(egg.hatchCurrentLevel) + " in " + groupName + ", but this Pokémon is level " + std::to_string(pokemon.level()));
             }
             // WHAT HATCHES IS THE BOTTOM OF THE CHAIN, so everything above it had to be evolved
             // into — and an egg gives no way round an evolution level the way a wild slot can. A
@@ -715,11 +687,7 @@ namespace Legality
             const uint8_t evolutionFloor = chain[chainLength - 1].levelFloor;
             if (evolutionFloor != 0 && pokemon.level() != 0 && pokemon.level() < evolutionFloor)
             {
-                add(report, Severity::Invalid,
-                    "A hatched egg produces " + std::string(Trainer::getSpeciesName(baseSpecies)) +
-                        ", which has to reach level " + std::to_string(evolutionFloor) + " to become " +
-                        std::string(Trainer::getSpeciesName(pokemon.speciesID())) + " — this Pokémon is level " +
-                        std::to_string(pokemon.level()));
+                add(report, Severity::Invalid, "A hatched egg produces " + std::string(Trainer::getSpeciesName(baseSpecies)) + ", which has to reach level " + std::to_string(evolutionFloor) + " to become " + std::string(Trainer::getSpeciesName(pokemon.speciesID())) + " — this Pokémon is level " + std::to_string(pokemon.level()));
             }
         }
 
@@ -730,9 +698,7 @@ namespace Legality
             if (violations & VIOLATION_SHINY_FORCED)
                 add(report, Severity::Warning, "This encounter is always shiny, but the Pokémon is not shiny");
             if (violations & VIOLATION_BALL)
-                add(report, Severity::Warning,
-                    std::string("This encounter has a fixed ball, but this is a ") +
-                        Enums::getBallName(pokemon.ball()));
+                add(report, Severity::Warning, std::string("This encounter has a fixed ball, but this is a ") + Enums::getBallName(pokemon.ball()));
             if (violations & VIOLATION_GENDER)
                 add(report, Severity::Warning, "The encounter has a different fixed gender than the Pokémon's gender");
             if (violations & VIOLATION_NATURE)
@@ -756,8 +722,7 @@ namespace Legality
         /// have as an EGG move specifically, which needs per-species egg-move tables PKSE does not
         /// carry. So the learnable pool is the same one Layer 2 uses for the current moveset, and a
         /// move inside it is left alone rather than guessed at.
-        void checkRelearnMoves(const Pokemon::Pokemon &pokemon, Report &report,
-                               Enums::GameVersion originGroup, uint16_t species)
+        void checkRelearnMoves(const Pokemon::Pokemon &pokemon, Report &report, Enums::GameVersion originGroup, uint16_t species)
         {
             uint16_t relearn[4] = {0, 0, 0, 0};
             bool any = false;
@@ -775,15 +740,13 @@ namespace Legality
                     continue;
                 if (std::string(Names::getMoveName(relearn[slot])) == "-")
                 {
-                    add(report, Severity::Invalid,
-                        "Unknown relearn move in slot " + std::to_string(slot + 1));
+                    add(report, Severity::Invalid, "Unknown relearn move in slot " + std::to_string(slot + 1));
                     continue;
                 }
                 for (int other = slot + 1; other < 4; ++other)
                     if (relearn[slot] == relearn[other])
                     {
-                        add(report, Severity::Invalid,
-                            "Duplicate relearn move: " + std::string(Names::getMoveName(relearn[slot])));
+                        add(report, Severity::Invalid, "Duplicate relearn move: " + std::string(Names::getMoveName(relearn[slot])));
                         break;
                     }
             }
@@ -798,8 +761,7 @@ namespace Legality
                 if (relearn[slot] == 0)
                     continue;
                 if (!Pokemon::isLearnable(species, pokemon.form(), originGroup, relearn[slot]))
-                    add(report, Severity::Warning,
-                        "Relearn move may not be learnable: " + std::string(Names::getMoveName(relearn[slot])));
+                    add(report, Severity::Warning, "Relearn move may not be learnable: " + std::string(Names::getMoveName(relearn[slot])));
             }
         }
 
@@ -815,15 +777,13 @@ namespace Legality
         /// The egg case is deliberately softer. An unhatched egg has not been anywhere to earn a
         /// ribbon -- but PKHeX's own verifier notes that some EVENT eggs are distributed carrying
         /// them, so a fateful-encounter egg is left alone entirely and everything else is a Warning.
-        void checkRibbons(const Pokemon::Pokemon &pokemon, Report &report,
-                          Enums::GameVersion originVersion, bool fatefulEncounter)
+        void checkRibbons(const Pokemon::Pokemon &pokemon, Report &report, Enums::GameVersion originVersion, bool fatefulEncounter)
         {
             // Read-only: getMonRibbons() is the whole ribbon surface PKSE has, and it answers both
             // questions below. A mark is named as one -- the tables spell every mark "... Mark" so
             // it reads distinctly from a ribbon in the details view -- so counting them apart needs
             // no second table and no per-bit addressing.
-            const std::vector<std::string> held = Names::getMonRibbons(
-                reinterpret_cast<const uint8_t *>(pokemon.getData().data()), pokemon.getGameGroup());
+            const std::vector<std::string> held = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(pokemon.getData().data()), pokemon.getGameGroup());
             // none set, including every format that stores none
             if (held.empty()) return;
 
@@ -842,14 +802,10 @@ namespace Legality
             // compare against -- silence, not a finding.
             const int originGeneration = Enums::getVersionGeneration(static_cast<uint8_t>(originVersion));
             if (markCount > 0 && originGeneration > 0 && originGeneration < 8)
-                add(report, Severity::Invalid,
-                    "Marks were introduced in Sword/Shield, but this Pokémon carries " +
-                        firstMark + " and originated in " + Enums::getGameVersionName(originVersion));
+                add(report, Severity::Invalid, "Marks were introduced in Sword/Shield, but this Pokémon carries " + firstMark + " and originated in " + Enums::getGameVersionName(originVersion));
 
             if (pokemon.isEgg() && !fatefulEncounter)
-                add(report, Severity::Warning,
-                    "An unhatched egg carries " + std::to_string(held.size()) +
-                        " ribbon/mark(s), which it has not been anywhere to earn");
+                add(report, Severity::Warning, "An unhatched egg carries " + std::to_string(held.size()) + " ribbon/mark(s), which it has not been anywhere to earn");
         }
 
         /// The Pokemon HOME tracker.
@@ -869,26 +825,20 @@ namespace Legality
         /// -- flagging that as illegal would be flagging the feature, which is the same policy the
         /// met-location check follows. The finding says what is missing and leaves the judgement to
         /// the reader.
-        void checkHomeTracker(const Pokemon::Pokemon &pokemon, Report &report,
-                              Enums::GameVersion originVersion)
+        void checkHomeTracker(const Pokemon::Pokemon &pokemon, Report &report, Enums::GameVersion originVersion)
         {
             // no such field, or it is present -- either way nothing to say
             if (!pokemon.hasHomeTracker() || pokemon.homeTracker() != 0) return;
 
-            const int currentGeneration = Enums::getVersionGeneration(
-                static_cast<uint8_t>(Enums::getGroupRepVersion(pokemon.getGameGroup())));
+            const int currentGeneration = Enums::getVersionGeneration(static_cast<uint8_t>(Enums::getGroupRepVersion(pokemon.getGameGroup())));
             const int originGeneration = Enums::getVersionGeneration(static_cast<uint8_t>(originVersion));
             // the record does not say where it came from; nothing to compare
             if (originGeneration == 0) return;
 
             if (originGeneration < 8)
-                add(report, Severity::Warning,
-                    "Came from " + Enums::getGameVersionName(originVersion) +
-                        ", which can only reach this game through Pokémon HOME, but carries no HOME tracker");
+                add(report, Severity::Warning, "Came from " + Enums::getGameVersionName(originVersion) + ", which can only reach this game through Pokémon HOME, but carries no HOME tracker");
             else if (originGeneration != currentGeneration)
-                add(report, Severity::Warning,
-                    "Came from another generation (" + Enums::getGameVersionName(originVersion) +
-                        ") but carries no HOME tracker");
+                add(report, Severity::Warning, "Came from another generation (" + Enums::getGameVersionName(originVersion) + ") but carries no HOME tracker");
         }
 
         /// Original Trainer and handling trainer.
@@ -901,20 +851,16 @@ namespace Legality
         void checkTrainers(const Pokemon::Pokemon &pokemon, Report &report)
         {
             if (pokemon.otName().empty())
-                add(report, Severity::Warning,
-                    "This Pokémon has no Original Trainer recorded");
+                add(report, Severity::Warning, "This Pokémon has no Original Trainer recorded");
 
             // Gens 1-5 have no handler field; nothing to be consistent with
             if (!pokemon.hasHandler()) return;
 
             const bool handlerNamed = !pokemon.htName().empty();
             if (pokemon.currentHandler() == 1 && !handlerNamed)
-                add(report, Severity::Invalid,
-                    "The handling trainer is marked as the current handler, but no handling trainer is set");
+                add(report, Severity::Invalid, "The handling trainer is marked as the current handler, but no handling trainer is set");
             if (!handlerNamed && pokemon.htFriendship() != 0)
-                add(report, Severity::Warning,
-                    "Handling-trainer friendship is set (" + std::to_string(pokemon.htFriendship()) +
-                        ") but no handling trainer is");
+                add(report, Severity::Warning, "Handling-trainer friendship is set (" + std::to_string(pokemon.htFriendship()) + ") but no handling trainer is");
         }
     }
 
@@ -937,10 +883,7 @@ namespace Legality
         // learnability question here -- a Sword Pokemon sitting in a Violet box is still a Sword one.
         // A format that records no origin falls back to its own group, which is the only pool there
         // is for it and matches what the met-location display already does.
-        checkRelearnMoves(pokemon, report,
-                          pokemon.hasOriginGame() && originRaw != 0 ? Enums::getGameGroup(originVersion)
-                                                                    : pokemon.getGameGroup(),
-                          species);
+        checkRelearnMoves(pokemon, report, pokemon.hasOriginGame() && originRaw != 0 ? Enums::getGameGroup(originVersion) : pokemon.getGameGroup(), species);
 
         // AN ORIGIN CANNOT BE FROM A LATER GENERATION THAN THE RECORD HOLDING IT. Transfers only
         // ever go forward, so a PK9 claiming Sword is ordinary and a PK3 claiming HeartGold is
@@ -958,14 +901,10 @@ namespace Legality
         // means the byte matches no game at all, which is a DIFFERENT statement -- that one falls
         // through to the "no encounter data" note below rather than being called impossible.
         const int originGeneration = Enums::getVersionGeneration(originRaw);
-        const int formatGeneration =
-            Enums::getVersionGeneration(Enums::getGroupRepVersion(pokemon.getGameGroup()));
+        const int formatGeneration = Enums::getVersionGeneration(Enums::getGroupRepVersion(pokemon.getGameGroup()));
         if (originGeneration != 0 && formatGeneration != 0 && originGeneration > formatGeneration)
         {
-            add(report, Severity::Invalid,
-                "Origin game " + Enums::getGameVersionName(originVersion) + " is from Generation " +
-                    std::to_string(originGeneration) + ", which this Generation " +
-                    std::to_string(formatGeneration) + " record cannot have come from");
+            add(report, Severity::Invalid, "Origin game " + Enums::getGameVersionName(originVersion) + " is from Generation " + std::to_string(originGeneration) + ", which this Generation " + std::to_string(formatGeneration) + " record cannot have come from");
             return;
         }
 
@@ -980,12 +919,9 @@ namespace Legality
         // Granite Cave, so a perfectly ordinary transferred Geodude read as "Granite Cave is not a
         // place Geodude can be encountered in FireRed". Abstain rather than answer in the wrong
         // namespace.
-        if (originGeneration != 0 && formatGeneration != 0 && originGeneration < formatGeneration &&
-            originGeneration <= 4)
+        if (originGeneration != 0 && formatGeneration != 0 && originGeneration < formatGeneration && originGeneration <= 4)
         {
-            add(report, Severity::Info,
-                "Transferred out of " + Enums::getGameVersionName(originVersion) +
-                    ", which replaced its met location — encounter check skipped");
+            add(report, Severity::Info, "Transferred out of " + Enums::getGameVersionName(originVersion) + ", which replaced its met location — encounter check skipped");
             return;
         }
 
@@ -996,8 +932,7 @@ namespace Legality
         // of that group's games, every one of them counts -- a mask of all bits, so a row for any
         // of Red, Green, Blue or Yellow is a row this Pokemon could have come from.
         const bool originIsFormatGroup = !pokemon.hasOriginGame();
-        const EncounterTable *table = originIsFormatGroup ? getEncounterTable(pokemon.getGameGroup())
-                                                          : getEncounterTable(originVersion);
+        const EncounterTable *table = originIsFormatGroup ? getEncounterTable(pokemon.getGameGroup()) : getEncounterTable(originVersion);
         const uint8_t versionBit = originIsFormatGroup ? 0xFF : encounterVersionBit(originVersion);
 
         // No tables for this origin, so say that the check did not run
@@ -1016,16 +951,12 @@ namespace Legality
                 // and it reads like corrupt data rather than the plain coverage gap it is. The id
                 // stays, after the name, for the case the name cannot be resolved.
                 const std::string originName = Enums::getGameVersionName(originVersion);
-                const std::string originLabel =
-                    (originName.empty() || originName == "Unknown")
-                        ? "Origin game ID " + std::to_string(originRaw)
-                        : originName + " (origin game ID " + std::to_string(originRaw) + ")";
+                const std::string originLabel = (originName.empty() || originName == "Unknown") ? "Origin game ID " + std::to_string(originRaw) : originName + " (origin game ID " + std::to_string(originRaw) + ")";
                 add(report, Severity::Info, originLabel + " has no encounter data — encounter check skipped");
             }
             return;
         }
-        const Enums::GameVersion originGroup =
-            originIsFormatGroup ? pokemon.getGameGroup() : Enums::getGameGroup(originVersion);
+        const Enums::GameVersion originGroup = originIsFormatGroup ? pokemon.getGameGroup() : Enums::getGameGroup(originVersion);
         const std::string gameName = Enums::getGameVersionName(originGroup);
         // A FORMAT WITH NO ORIGIN BYTE NAMES ITS LOCATIONS THROUGH ITS GROUP. Crystal records a met
         // location with no version beside it, and the name lookup is keyed by version, so every Gen 2
@@ -1045,17 +976,10 @@ namespace Legality
         // Gen 1 and Gen 2 records narrow which of their own games count, and may have to be asked of
         // the other generation as well -- see getTimeCapsuleScope. Every other format passes through.
         const bool hasMetData = pokemon.hasMetData();
-        const TimeCapsuleScope capsule =
-            originIsFormatGroup ? getTimeCapsuleScope(originGroup, hasMetData, chain, chainLength, versionBit)
-                                : TimeCapsuleScope{versionBit, nullptr, Enums::GameVersion::Invalid};
+        const TimeCapsuleScope capsule = originIsFormatGroup ? getTimeCapsuleScope(originGroup, hasMetData, chain, chainLength, versionBit) : TimeCapsuleScope{versionBit, nullptr, Enums::GameVersion::Invalid};
         Candidate partnerChain[Pokemon::EVO_MAX_CHAIN + 1];
-        const int partnerChainLength =
-            capsule.partnerTable != nullptr
-                ? buildChain(capsule.partnerGroup, species, pokemon.form(), partnerChain, Pokemon::EVO_MAX_CHAIN + 1)
-                : 0;
-        const std::string searchedGameName =
-            capsule.partnerTable != nullptr ? gameName + " or " + Enums::getGameVersionName(capsule.partnerGroup)
-                                            : gameName;
+        const int partnerChainLength = capsule.partnerTable != nullptr ? buildChain(capsule.partnerGroup, species, pokemon.form(), partnerChain, Pokemon::EVO_MAX_CHAIN + 1) : 0;
+        const std::string searchedGameName = capsule.partnerTable != nullptr ? gameName + " or " + Enums::getGameVersionName(capsule.partnerGroup) : gameName;
 
         // An egg location is definitive where the format has the field: Gen 3
         // has none, so a hatched FRLG egg is recognized by its fixed hatch location
@@ -1064,8 +988,7 @@ namespace Legality
         const bool fromEgg = hasEggLocation(eggLocation);
         if (fromEgg || pokemon.isEgg())
         {
-            checkEgg(*table, pokemon, originGroup, locationNameVersion, capsule.versionBit, chain, chainLength,
-                     fromEgg ? eggLocation : 0, report);
+            checkEgg(*table, pokemon, originGroup, locationNameVersion, capsule.versionBit, chain, chainLength, fromEgg ? eggLocation : 0, report);
             return;
         }
 
@@ -1073,25 +996,19 @@ namespace Legality
         const int flawless = flawlessCount(pokemon);
 
         MatchState state;
-        sweep(*table, chain, chainLength, capsule.versionBit, metLocation, pokemon.metLevel(), pokemon, isShiny,
-              flawless, state, hasMetData);
+        sweep(*table, chain, chainLength, capsule.versionBit, metLocation, pokemon.metLevel(), pokemon, isShiny, flawless, state, hasMetData);
         if (state.matched)
         {
-            add(report, Severity::Info,
-                std::string("Matches a ") + kindText(state.bestKind) + " in " + gameName +
-                    (hasMetData ? " at " + locationText(locationNameVersion, metLocation) : ""));
+            add(report, Severity::Info, std::string("Matches a ") + kindText(state.bestKind) + " in " + gameName + (hasMetData ? " at " + locationText(locationNameVersion, metLocation) : ""));
             return;
         }
         if (capsule.partnerTable != nullptr)
         {
             MatchState partnerState;
-            sweep(*capsule.partnerTable, partnerChain, partnerChainLength, 0xFF, metLocation, pokemon.metLevel(),
-                  pokemon, isShiny, flawless, partnerState, hasMetData);
+            sweep(*capsule.partnerTable, partnerChain, partnerChainLength, 0xFF, metLocation, pokemon.metLevel(), pokemon, isShiny, flawless, partnerState, hasMetData);
             if (partnerState.matched)
             {
-                add(report, Severity::Info, std::string("Matches a ") + kindText(partnerState.bestKind) + " in " +
-                                                Enums::getGameVersionName(capsule.partnerGroup) +
-                                                ", traded through the Time Capsule");
+                add(report, Severity::Info, std::string("Matches a ") + kindText(partnerState.bestKind) + " in " + Enums::getGameVersionName(capsule.partnerGroup) + ", traded through the Time Capsule");
                 return;
             }
             mergeMatchState(state, partnerState);
@@ -1101,8 +1018,7 @@ namespace Legality
         // tables for. Abstain -- see isExternalTransferLocation.
         if (arrivedFromOutside)
         {
-            add(report, Severity::Info,
-                "Came from Pokémon GO/HOME — those encounters are not modelled, encounter check skipped");
+            add(report, Severity::Info, "Came from Pokémon GO/HOME — those encounters are not modelled, encounter check skipped");
             return;
         }
 
@@ -1112,12 +1028,9 @@ namespace Legality
         // encounter produces, since the games never write met level 0 for anything caught. Read it
         // as an egg before concluding the Pokemon has no origin. Restricted to formats without the
         // field — everywhere else the field already answered, above.
-        if (hasMetData && table->egg.hasBreeding && table->egg.eggLocation == 0 &&
-            pokemon.metLevel() == table->egg.hatchLevel &&
-            canHatchAt(table->egg, metLocation, capsule.versionBit))
+        if (hasMetData && table->egg.hasBreeding && table->egg.eggLocation == 0 && pokemon.metLevel() == table->egg.hatchLevel && canHatchAt(table->egg, metLocation, capsule.versionBit))
         {
-            checkEgg(*table, pokemon, originGroup, locationNameVersion, capsule.versionBit, chain, chainLength, 0,
-                     report);
+            checkEgg(*table, pokemon, originGroup, locationNameVersion, capsule.versionBit, chain, chainLength, 0, report);
             return;
         }
         // A RECORD WITH NO MET DATA CANNOT SHOW THAT PAIR, so for it an egg is only ever POSSIBLE --
@@ -1133,12 +1046,9 @@ namespace Legality
                 add(report, Severity::Info, "Could have hatched from an egg in " + gameName);
                 return;
             }
-            if (capsule.partnerTable != nullptr &&
-                eggExplainsWithoutMetData(*capsule.partnerTable, pokemon, partnerChain, partnerChainLength))
+            if (capsule.partnerTable != nullptr && eggExplainsWithoutMetData(*capsule.partnerTable, pokemon, partnerChain, partnerChainLength))
             {
-                add(report, Severity::Info, "Could have hatched from an egg in " +
-                                                Enums::getGameVersionName(capsule.partnerGroup) +
-                                                ", traded through the Time Capsule");
+                add(report, Severity::Info, "Could have hatched from an egg in " + Enums::getGameVersionName(capsule.partnerGroup) + ", traded through the Time Capsule");
                 return;
             }
         }
@@ -1154,48 +1064,28 @@ namespace Legality
         switch (state.stage)
         {
         case STAGE_NONE:
-            add(report, hard,
-                "No encounter in " + searchedGameName + " produces " + describe(species, pokemon.form()) +
-                    (event ? " — event Pokémon are not checked" : ""));
+            add(report, hard, "No encounter in " + searchedGameName + " produces " + describe(species, pokemon.form()) + (event ? " — event Pokémon are not checked" : ""));
             break;
         case STAGE_EVOLUTION:
-            add(report, hard,
-                "Nothing in " + searchedGameName + " produces " + describe(species, pokemon.form()) +
-                    " at level " + std::to_string(pokemon.level()) + ": it would have to evolve from " +
-                    std::string(Trainer::getSpeciesName(state.evolutionFrom)) + " at level " +
-                    std::to_string(state.evolutionFloor) +
-                    (event ? " — event Pokémon are not checked" : ""));
+            add(report, hard, "Nothing in " + searchedGameName + " produces " + describe(species, pokemon.form()) + " at level " + std::to_string(pokemon.level()) + ": it would have to evolve from " + std::string(Trainer::getSpeciesName(state.evolutionFrom)) + " at level " + std::to_string(state.evolutionFloor) + (event ? " — event Pokémon are not checked" : ""));
             break;
         case STAGE_FORM:
-            add(report, hard,
-                describe(species, pokemon.form()) + " has no encounter in " + searchedGameName + " in this form:");
+            add(report, hard, describe(species, pokemon.form()) + " has no encounter in " + searchedGameName + " in this form:");
             break;
         case STAGE_LOCATION:
-            add(report, hard,
-                locationText(locationNameVersion, metLocation) + " is not a place " +
-                    std::string(Trainer::getSpeciesName(species)) + " can be encountered in " + searchedGameName +
-                    (event ? " — event Pokémon are not checked" : ""));
+            add(report, hard, locationText(locationNameVersion, metLocation) + " is not a place " + std::string(Trainer::getSpeciesName(species)) + " can be encountered in " + searchedGameName + (event ? " — event Pokémon are not checked" : ""));
             break;
         case STAGE_LEVEL:
         {
-            const std::string band =
-                state.bestLevelMin == state.bestLevelMax
-                    ? std::to_string(state.bestLevelMin)
-                    : std::to_string(state.bestLevelMin) + "-" + std::to_string(state.bestLevelMax);
+            const std::string band = state.bestLevelMin == state.bestLevelMax ? std::to_string(state.bestLevelMin) : std::to_string(state.bestLevelMin) + "-" + std::to_string(state.bestLevelMax);
             // A record with no met data is being judged on its CURRENT level against a floor, so
             // the met-level wording would name a field it does not have.
             if (!hasMetData)
             {
-                add(report, Severity::Warning,
-                    "The lowest level " + std::string(Trainer::getSpeciesName(species)) + " is available at in " +
-                        searchedGameName + " is " + std::to_string(state.bestLevelMin) +
-                        ", above this Pokémon's level of " + std::to_string(pokemon.level()));
+                add(report, Severity::Warning, "The lowest level " + std::string(Trainer::getSpeciesName(species)) + " is available at in " + searchedGameName + " is " + std::to_string(state.bestLevelMin) + ", above this Pokémon's level of " + std::to_string(pokemon.level()));
                 break;
             }
-            add(report, Severity::Warning,
-                "No encounter for " + std::string(Trainer::getSpeciesName(species)) + " at " +
-                    locationText(locationNameVersion, metLocation) + " is met at level " +
-                    std::to_string(pokemon.metLevel()) + " (nearest is " + band + ")");
+            add(report, Severity::Warning, "No encounter for " + std::string(Trainer::getSpeciesName(species)) + " at " + locationText(locationNameVersion, metLocation) + " is met at level " + std::to_string(pokemon.metLevel()) + " (nearest is " + band + ")");
             break;
         }
         case STAGE_FULL:

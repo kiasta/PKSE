@@ -19,19 +19,16 @@ namespace UI
         // Draw a type ICON sprite scaled to `h` px tall at (x, y); returns drawn width (0 if none).
         // Named apart from PKSEFramebuffer::drawTypeBadge deliberately -- that one renders a coloured
         // text pill, this one blits the type's artwork. They are different things, not a duplication.
-        static int drawTypeIcon(PKSEFramebuffer &framebuffer, Sprite *type, int typeIconX, int typeIconY,
-                                int typeIconHeight)
+        static int drawTypeIcon(PKSEFramebuffer &framebuffer, Sprite *type, int typeIconX, int typeIconY, int typeIconHeight)
         {
             if (!type || !type->data)
                 return 0;
             int cardWidth = (type->width * typeIconHeight) / type->height;
-            framebuffer.drawImageScaled(typeIconX, typeIconY, type->width, type->height, cardWidth, typeIconHeight,
-                                        type->data, type->channels);
+            framebuffer.drawImageScaled(typeIconX, typeIconY, type->width, type->height, cardWidth, typeIconHeight, type->data, type->channels);
             return cardWidth;
         }
 
-        void drawPartyPokemon(PKSEFramebuffer &framebuffer, const Trainer::Trainer &trainer, int partyPokemonX,
-                              int partyPokemonY, int partyPokemonWidth, int partyPokemonHeight, int selectedIndex)
+        void drawPartyPokemon(PKSEFramebuffer &framebuffer, const Trainer::Trainer &trainer, int partyPokemonX, int partyPokemonY, int partyPokemonWidth, int partyPokemonHeight, int selectedIndex)
         {
             const auto &party = trainer.party;
 
@@ -61,19 +58,15 @@ namespace UI
                 constexpr int slotR = 12;
                 if (selected)
                     framebuffer.drawSoftShadow(cardX, cardY, colW, slotH, slotR);
-                framebuffer.drawFilledRoundedRect(cardX, cardY, colW, slotH, slotR,
-                                                  selected ? Colors::Selected : Colors::PanelAlt);
-                framebuffer.drawRoundedRect(cardX, cardY, colW, slotH, slotR,
-                                            selected ? Colors::Accent : Colors::Border, selected ? 2 : 1);
+                framebuffer.drawFilledRoundedRect(cardX, cardY, colW, slotH, slotR, selected ? Colors::Selected : Colors::PanelAlt);
+                framebuffer.drawRoundedRect(cardX, cardY, colW, slotH, slotR, selected ? Colors::Accent : Colors::Border, selected ? 2 : 1);
 
                 constexpr int pad = 14;
-                const Pokemon::Pokemon *pokemon =
-                    (index < static_cast<int>(party.size())) ? party[index].get() : nullptr;
+                const Pokemon::Pokemon *pokemon = (index < static_cast<int>(party.size())) ? party[index].get() : nullptr;
 
                 if (!pokemon || pokemon->speciesID() == 0)
                 {
-                    framebuffer.drawText(cardX + pad, cardY + slotH / 2 - 12,
-                                "Slot " + std::to_string(index + 1) + ":  Empty", Colors::TextDim);
+                    framebuffer.drawText(cardX + pad, cardY + slotH / 2 - 12, "Slot " + std::to_string(index + 1) + ":  Empty", Colors::TextDim);
                     continue;
                 }
 
@@ -125,8 +118,7 @@ namespace UI
                     int base, iv, evav, stat;
                 };
                 const StatRow rows[6] = {
-                    {"HP", pokemon->baseHP(), pokemon->ivHP(), usesAwakeningValues ? pokemon->avHP() : pokemon->evHP(),
-                     pokemon->statHPMax()},
+                    {"HP", pokemon->baseHP(), pokemon->ivHP(), usesAwakeningValues ? pokemon->avHP() : pokemon->evHP(), pokemon->statHPMax()},
                     {"Atk", pokemon->baseATK(), pokemon->ivATK(),
                      usesAwakeningValues ? pokemon->avATK() : pokemon->evATK(), pokemon->statATK()},
                     {"Def", pokemon->baseDEF(), pokemon->ivDEF(),
@@ -150,8 +142,7 @@ namespace UI
                 const Color colHdr = selected ? Colors::Text : Colors::TextDim;
                 framebuffer.drawText(cBase, statRowY, "Base", colHdr, TextStyle::Caption);
                 framebuffer.drawText(ivColumnX, statRowY, "IV", colHdr, TextStyle::Caption);
-                framebuffer.drawText(evColumnX, statRowY, usesAwakeningValues ? "AV" : "EV", colHdr,
-                                     TextStyle::Caption);
+                framebuffer.drawText(evColumnX, statRowY, usesAwakeningValues ? "AV" : "EV", colHdr, TextStyle::Caption);
                 framebuffer.drawText(cStat, statRowY, "Stat", colHdr, TextStyle::Caption);
                 statRowY += lineH;
 
@@ -166,8 +157,7 @@ namespace UI
                 }
 
                 // Type badges (stacked) + sprite (right side)
-                Pokemon::TypePair types = Pokemon::getPokemonTypes(pokemon->speciesID(), pokemon->form(),
-                                                                   pokemon->getGameGroup());
+                Pokemon::TypePair types = Pokemon::getPokemonTypes(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup());
                 const int typeX = cardX + 286;
                 drawTypeIcon(framebuffer, SpriteManager::getTypeSprite(types.type1), typeX, cardY + 42, 16);
                 if (Pokemon::hasSecondType(types))
@@ -181,9 +171,7 @@ namespace UI
                     const int spriteBoxSize = 96;
                     int spriteX = cardX + colW - pad - spriteBoxSize;
                     int spriteY = cardY + 30;
-                    framebuffer.drawSpriteIdle(spriteX, spriteY, spriteBoxSize, spriteBoxSize, sprite->width,
-                                               sprite->height, sprite->data, sprite->channels,
-                                               static_cast<float>(index) * 1.1f);
+                    framebuffer.drawSpriteIdle(spriteX, spriteY, spriteBoxSize, spriteBoxSize, sprite->width, sprite->height, sprite->data, sprite->channels, static_cast<float>(index) * 1.1f);
                 }
             }
         }

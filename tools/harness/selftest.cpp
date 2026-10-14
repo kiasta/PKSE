@@ -98,10 +98,7 @@ namespace {
     /// The scratch directory a suite may write into, as the runner's work directory is on console.
     std::string g_workDir;
 
-    void runSuite(Test::Report& rep, const char* name, const std::string& target,
-                  Enums::GameVersion group, Enums::GameVersion version,
-                  int (*plan)(Test::Context&), void (*run)(Test::Context&, int),
-                  Trainer::Trainer* trainer = nullptr) {
+    void runSuite(Test::Report& rep, const char* name, const std::string& target, Enums::GameVersion group, Enums::GameVersion version, int (*plan)(Test::Context&), void (*run)(Test::Context&, int), Trainer::Trainer* trainer = nullptr) {
         Test::Context context;
         context.rep     = &rep;
         context.suite   = name;
@@ -135,8 +132,7 @@ namespace {
     /// Run every suite that needs a loaded save, against one. The save is never written back --
     /// the write path is the one part of the "save" suite that genuinely needs a console, so it
     /// is not run here at all rather than half-run.
-    void runTargetSuites(Test::Report& rep, const std::string& target, Enums::GameVersion group,
-                         Trainer::Trainer& trainer) {
+    void runTargetSuites(Test::Report& rep, const std::string& target, Enums::GameVersion group, Trainer::Trainer& trainer) {
         // The trainer names its own title -- the same answer the on-console runner uses for a
         // loose save -- so the harness and the console bucket samples identically.
         const Enums::GameVersion version = trainer.getGameVersion();
@@ -170,8 +166,7 @@ namespace {
     /// An SCBlock game (SwSh / BDSP-less / LA / SV / Z-A): decrypt the file into blocks and hand
     /// them to that game's Trainer, exactly as Save::readTrainerInfo does on console.
     template <typename TrainerT>
-    bool openSCBlock(Test::Report& rep, const char* label, Enums::GameVersion group,
-                     const std::string& path) {
+    bool openSCBlock(Test::Report& rep, const char* label, Enums::GameVersion group, const std::string& path) {
         std::vector<uint8_t> bytes = readFile(path);
         if (bytes.empty()) return false;
         // decrypt() takes a non-const pointer (it decrypts the XOR pad in place on a copy it makes
@@ -186,27 +181,19 @@ namespace {
         // Sword or Shield, not both, and the report should say which. `label` is only the fallback
         // for a format that cannot tell (and the printed name if the save failed to parse).
         const Enums::GameVersion version = trainer.getGameVersion();
-        runTargetSuites(rep, version == Enums::GameVersion::Invalid
-                                 ? std::string(label)
-                                 : Enums::getGameVersionName(version),
-                        group, trainer);
+        runTargetSuites(rep, version == Enums::GameVersion::Invalid ? std::string(label) : Enums::getGameVersionName(version), group, trainer);
         return true;
     }
 }
 
 int main(int argc, char** argv) {
     const std::string outPath  = (argc > 1) ? argv[1] : std::string("selftest-report.log");
-    const std::string saveRoot = (argc > 2) ? argv[2]
-                               : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves"
-                                                      : std::string());
+    const std::string saveRoot = (argc > 2) ? argv[2] : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves" : std::string());
 
     // build-selftest.sh points this into build-harness/, which is ignored; run by hand, it goes next
     // to the report.
     const char* workEnv = std::getenv("PKSE_SELFTEST_WORK");
-    g_workDir = workEnv ? std::string(workEnv)
-                        : (outPath.find('/') == std::string::npos ? std::string(".")
-                                                                  : outPath.substr(0, outPath.rfind('/'))) +
-                              "/selftest-work";
+    g_workDir = workEnv ? std::string(workEnv) : (outPath.find('/') == std::string::npos ? std::string(".") : outPath.substr(0, outPath.rfind('/'))) + "/selftest-work";
     mkdir(g_workDir.c_str(), 0755);
 
     Test::Report rep;
@@ -215,13 +202,10 @@ int main(int argc, char** argv) {
 
     std::printf("PKSE self-test framework, host run\n\n");
 
-    runSuite(rep, "tables", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid,
-             Test::tablesPlan, Test::tablesRun);
+    runSuite(rep, "tables", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::tablesPlan, Test::tablesRun);
 
     for (Enums::GameVersion group : ALL_SAVE_GROUPS)
-        runSuite(rep, "gentables", Enums::getGameVersionName(group), group,
-                 static_cast<Enums::GameVersion>(Enums::getGroupRepVersion(group)),
-                 Test::genTablesPlan, Test::genTablesRun);
+        runSuite(rep, "gentables", Enums::getGameVersionName(group), group, static_cast<Enums::GameVersion>(Enums::getGroupRepVersion(group)), Test::genTablesPlan, Test::genTablesRun);
 
     int opened = 0;
     if (!saveRoot.empty()) {
@@ -242,17 +226,14 @@ int main(int argc, char** argv) {
                     if (held) rep.pass();
                     else      rep.record(Test::Severity::Fail, what, "");
                 };
-                expect(Trainer::Trainer3FRLG::detect(frlg),
-                       "a real FireRed save is identified by content");
+                expect(Trainer::Trainer3FRLG::detect(frlg), "a real FireRed save is identified by content");
                 std::vector<uint8_t> hoennProbe = readFile(SaveTree::ruby(saveRoot));
                 if (hoennProbe.empty())
                     hoennProbe = readFile(SaveTree::emerald(saveRoot));
                 if (!hoennProbe.empty()) {
                     Save::stripRtcFooter(hoennProbe);
-                    expect(!Trainer::Trainer3FRLG::detect(hoennProbe),
-                           "a Ruby/Emerald save is NOT mistaken for FireRed/LeafGreen");
-                    expect(!Trainer::Trainer3RSE::detect(frlg),
-                           "a FireRed save is NOT mistaken for Ruby/Sapphire/Emerald");
+                    expect(!Trainer::Trainer3FRLG::detect(hoennProbe), "a Ruby/Emerald save is NOT mistaken for FireRed/LeafGreen");
+                    expect(!Trainer::Trainer3RSE::detect(frlg), "a FireRed save is NOT mistaken for Ruby/Sapphire/Emerald");
                 }
                 Trainer::Trainer3FRLG trainer(frlg, "FireRed_e.sav");
                 runTargetSuites(rep, "FireRed", Enums::GameVersion::FRLG, trainer);
@@ -266,9 +247,7 @@ int main(int argc, char** argv) {
         // Every one of these files carries an emulator RTC footer, so they are trimmed the way
         // Save::openExternalSave trims them before a Trainer ever sees the bytes.
         for (const char* title : { "Ruby", "Sapphire", "Emerald" }) {
-            const std::string path = (std::string(title) == "Ruby")     ? SaveTree::ruby(saveRoot)
-                                   : (std::string(title) == "Sapphire") ? SaveTree::sapphire(saveRoot)
-                                                                        : SaveTree::emerald(saveRoot);
+            const std::string path = (std::string(title) == "Ruby") ? SaveTree::ruby(saveRoot) : (std::string(title) == "Sapphire") ? SaveTree::sapphire(saveRoot) : SaveTree::emerald(saveRoot);
             std::vector<uint8_t> hoenn = readFile(path);
             if (hoenn.empty())
                 continue;
@@ -289,8 +268,7 @@ int main(int argc, char** argv) {
         // game it came from, and running one file as "Red/Blue" reports a pair when the user told
         // us a game.
         for (const char* title : { "Red", "Blue" }) {
-            const std::string path = (std::string(title) == "Red") ? SaveTree::red(saveRoot)
-                                                                   : SaveTree::blue(saveRoot);
+            const std::string path = (std::string(title) == "Red") ? SaveTree::red(saveRoot) : SaveTree::blue(saveRoot);
             std::vector<uint8_t> rby = readFile(path);
             bool japanese = false;
             if (!rby.empty() && Trainer::Trainer1RBY::detect(rby, japanese)) {
@@ -359,55 +337,44 @@ int main(int argc, char** argv) {
             }
             if (ok) ++opened;
         }
-        opened += openSCBlock<Trainer::Trainer8SWSH>(rep, "Sword/Shield", Enums::GameVersion::SWSH,
-                                                     SaveTree::shield(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer8LA>(rep, "Legends Arceus", Enums::GameVersion::PLA,
-                                                   SaveTree::legendsArceus(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9SV>(rep, "Scarlet/Violet", Enums::GameVersion::SV,
-                                                   SaveTree::violet(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9LZA>(rep, "Legends Z-A", Enums::GameVersion::ZA,
-                                                    SaveTree::legendsZA(saveRoot)) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer8SWSH>(rep, "Sword/Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot)) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer8LA>(rep, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot)) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer9SV>(rep, "Scarlet/Violet", Enums::GameVersion::SV, SaveTree::violet(saveRoot)) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer9LZA>(rep, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot)) ? 1 : 0;
     }
     if (opened == 0) {
         rep.setScope("-", "plan");
         Test::Context context;
         context.rep = &rep;
-        context.skip("no saves were opened, so the entity / setters / legality / conversion suites did "
-                 "not run", "saveRoot=\"" + saveRoot + "\"");
+        context.skip("no saves were opened, so the entity / setters / legality / conversion suites did not run", "saveRoot=\"" + saveRoot + "\"");
     } else {
-        runSuite(rep, "conversion", "cross-title", Enums::GameVersion::Any,
-                 Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
+        runSuite(rep, "conversion", "cross-title", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
         // AND AGAIN WITH AUTO-LEGALIZE ON. The console runs the suite under whatever the user has set,
         // and that setting changes what a Gen 3 conversion does -- so a host that only ever ran the
         // default passed while a console with the toggle on reported 24 failures. Both, every run.
         const bool autoLegalizeBefore = g_autoLegalizeTransfers;
         g_autoLegalizeTransfers = true;
-        runSuite(rep, "conversion", "cross-title (auto-legalize)", Enums::GameVersion::Any,
-                 Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
+        runSuite(rep, "conversion", "cross-title (auto-legalize)", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
         g_autoLegalizeTransfers = autoLegalizeBefore;
         // The bank, against a scratch bank in the work directory, from the samples the entity
         // sweep collected. Its other chunk reads the user's real bank, which is not on this machine
         // and so reads as empty.
-        runSuite(rep, "bank", "bank", Enums::GameVersion::Any, Enums::GameVersion::Invalid,
-                 Test::bankPlan, Test::bankRun);
+        runSuite(rep, "bank", "bank", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::bankPlan, Test::bankRun);
     }
 
     std::printf("\n");
     for (const auto& t : rep.tallies())
-        std::printf("  %-34s %-10s %7d checks  %4d fail  %4d warn  %4d skip\n",
-                    t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
+        std::printf("  %-34s %-10s %7d checks  %4d fail  %4d warn  %4d skip\n", t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
 
     std::printf("\nfindings:\n");
     for (const auto& g : rep.groups()) {
-        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(),
-                    g.what.c_str(), g.count);
+        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
         for (size_t i = 0; i < g.samples.size() && i < 4; ++i)
             std::printf("        %s\n", g.samples[i].c_str());
     }
     if (rep.groups().empty()) std::printf("  (none)\n");
 
     rep.write(outPath, "PKSE SELF TEST (host, data tables only)\n");
-    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  -> %s\n",
-                rep.checks(), rep.failures(), rep.warnings(), rep.skips(), rep.notes(), outPath.c_str());
+    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  -> %s\n", rep.checks(), rep.failures(), rep.warnings(), rep.skips(), rep.notes(), outPath.c_str());
     return rep.failures() == 0 ? 0 : 1;
 }

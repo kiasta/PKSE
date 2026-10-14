@@ -40,8 +40,7 @@ namespace Pokemon
         std::unique_ptr<Pokemon> clone() const override
         {
             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data()));
-            std::byte *encryptedRecord =
-                encryptArray9SV(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
+            std::byte *encryptedRecord = encryptArray9SV(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
             auto copiedPokemon = std::make_unique<Pokemon9SV>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;
@@ -56,8 +55,7 @@ namespace Pokemon
             // from #917 on -- convert like PKHeX PK9 (SpeciesConverter.GetNational9), the same way FRLG
             // already converts Gen 3's internal order (gen3InternalToNational). Reading it raw showed the wrong
             // species (name/sprite/type/legality) for every newer Paldea Pokemon.
-            return gen9InternalToNational(
-                readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x08)));
+            return gen9InternalToNational(readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x08)));
         }
 
         const char *species() const noexcept override;
@@ -473,8 +471,7 @@ namespace Pokemon
         {
             // Store the INTERNAL index (inverse of speciesID's read conversion) -- the game reads this
             // field, so writing the National Dex number raw makes it show a different species.
-            writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x08),
-                                    gen9NationalToInternal(species));
+            writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x08), gen9NationalToInternal(species));
             recalculateStats();
             refreshChecksum();
         }
@@ -485,8 +482,7 @@ namespace Pokemon
             // Maushold and Dudunsparce read their form from EncryptionConstant % 100, so the form byte
             // alone is only half the edit -- left mismatched the Pokemon is illegal, and the games
             // cannot produce that state. A no-op for every other species. See FormInfo.
-            setEncryptionConstant(
-                correctEncryptionConstantForForm(speciesID(), formValue, encryptionConstant()));
+            setEncryptionConstant(correctEncryptionConstantForForm(speciesID(), formValue, encryptionConstant()));
             recalculateStats();
             refreshChecksum();
         }

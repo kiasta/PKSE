@@ -219,9 +219,7 @@ namespace Pokemon
         uint32_t pidValue = 0;
         if (!findPID(requirements, pidValue))
         {
-            Utils::logErrorToFile("Pokemon4HGSS::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) +
-                                  " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(wantNature) +
-                                  "; the Pokemon is unchanged");
+            Utils::logErrorToFile("Pokemon4HGSS::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(wantNature) + "; the Pokemon is unchanged");
             return false;
         }
         wr32(0x00, pidValue);
@@ -258,8 +256,7 @@ namespace Pokemon
         // A species whose gender is fixed, or a PID that already gives this gender: the stored bits
         // are all that change. Otherwise the PID has to give the new gender too.
         const uint8_t genderRatio = personal().genderRatio;
-        if (genderValue > 1 || genderRatio == 0 || genderRatio == 254 || genderRatio == 255 ||
-            genderFromPID(pid(), genderRatio) == genderValue)
+        if (genderValue > 1 || genderRatio == 0 || genderRatio == 254 || genderRatio == 255 || genderFromPID(pid(), genderRatio) == genderValue)
         {
             writeStoredGender(genderValue);
             refreshChecksum();

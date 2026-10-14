@@ -217,8 +217,7 @@ namespace Names
         TYPE_NAMES_ZH_HANS,
         TYPE_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(TYPE_NAMES_BY_LANGUAGE) / sizeof(TYPE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "TYPE_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(TYPE_NAMES_BY_LANGUAGE) / sizeof(TYPE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "TYPE_NAMES_BY_LANGUAGE must carry one table per language");
 
     const char *getTypeName(uint8_t id)
     {

@@ -88,8 +88,7 @@ namespace Utils
 
     void setKeyboardPresenter(KeyboardPresenter presenter) { g_keyboardPresenter = std::move(presenter); }
 
-    KeyboardResult promptSystemText(const std::string &header, const std::string &guide,
-                                    const std::string &initial, int maxChars)
+    KeyboardResult promptSystemText(const std::string &header, const std::string &guide, const std::string &initial, int maxChars)
     {
         KeyboardResult result;
         result.accepted = runKeyboard(SwkbdType_QWERTY, header, guide, initial, maxChars, result.text);

@@ -32,23 +32,18 @@ namespace UI
         }
 
         // Draw a compact, non-interactive preview of the current box (disc + sprite per slot).
-        static void drawBoxPreview(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int boxPreviewX,
-                                   int boxPreviewY, int boxPreviewWidth, int boxPreviewHeight)
+        static void drawBoxPreview(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int boxPreviewX, int boxPreviewY, int boxPreviewWidth, int boxPreviewHeight)
         {
             constexpr int headerH = 40;
-            framebuffer.drawFilledRoundedRect(boxPreviewX, boxPreviewY, boxPreviewWidth, headerH, 16,
-                                              Colors::AccentDim);
+            framebuffer.drawFilledRoundedRect(boxPreviewX, boxPreviewY, boxPreviewWidth, headerH, 16, Colors::AccentDim);
             framebuffer.drawFilledRect(boxPreviewX, boxPreviewY + headerH - 16, boxPreviewWidth, 16, Colors::AccentDim);
 
             const int box = screen.selectedBoxIndex;
             const bool inRange = box >= 0 && box < static_cast<int>(screen.trainer.boxes.size());
-            std::string boxName = (inRange && box < static_cast<int>(screen.trainer.boxNames.size()))
-                                      ? screen.trainer.boxNames[box]
-                                      : ("Box " + std::to_string(box + 1));
+            std::string boxName = (inRange && box < static_cast<int>(screen.trainer.boxNames.size())) ? screen.trainer.boxNames[box] : ("Box " + std::to_string(box + 1));
             int boxNameWidth, bnH;
             framebuffer.measureText(boxName, boxNameWidth, bnH, TextStyle::Body);
-            framebuffer.drawText(boxPreviewX + (boxPreviewWidth - boxNameWidth) / 2, boxPreviewY + (headerH - bnH) / 2,
-                                 boxName, Colors::Text);
+            framebuffer.drawText(boxPreviewX + (boxPreviewWidth - boxNameWidth) / 2, boxPreviewY + (headerH - bnH) / 2, boxName, Colors::Text);
             if (!inRange)
                 return;
 
@@ -86,14 +81,10 @@ namespace UI
                     else
                     {
                         bool shiny = pokemon->isShiny(pokemon->id32(), pokemon->species());
-                        Sprite *internalSpeciesId =
-                            SpriteManager::getIconSprite(pokemon->speciesID(), pokemon->form(), shiny);
+                        Sprite *internalSpeciesId = SpriteManager::getIconSprite(pokemon->speciesID(), pokemon->form(), shiny);
                         if (internalSpeciesId && internalSpeciesId->data)
                         {
-                            framebuffer.drawImageScaled(centerX - markerSize / 2, centerY - markerSize / 2,
-                                                        internalSpeciesId->width, internalSpeciesId->height, markerSize,
-                                                        markerSize, internalSpeciesId->data,
-                                                        internalSpeciesId->channels);
+                            framebuffer.drawImageScaled(centerX - markerSize / 2, centerY - markerSize / 2, internalSpeciesId->width, internalSpeciesId->height, markerSize, markerSize, internalSpeciesId->data, internalSpeciesId->channels);
                         }
                     }
                 }
@@ -102,16 +93,14 @@ namespace UI
 
         // Simple vector icons for the menu's circular buttons (no icon assets). `col` = glyph color,
         // `bg` = the button fill (used to punch holes). kind: 0 Items (bag), 1 Trainer (person), 2 Settings (gear).
-        static void drawMenuIcon(PKSEFramebuffer &framebuffer, int centerX, int centerY, int cornerRadius, int kind,
-                                 Color iconColor, Color backgroundColor)
+        static void drawMenuIcon(PKSEFramebuffer &framebuffer, int centerX, int centerY, int cornerRadius, int kind, Color iconColor, Color backgroundColor)
         {
             if (kind == 0)
             { // Items: a satchel/bag
                 const int boxWidth = 2 * cornerRadius, bh = 2 * cornerRadius - 4;
                 const int boxX = centerX - boxWidth / 2, by = centerY - bh / 2 + 4;
                 framebuffer.drawFilledRoundedRect(boxX, by, boxWidth, bh, 8, iconColor);                    // body
-                framebuffer.drawFilledRoundedRect(centerX - cornerRadius + 4, by - 8, 2 * cornerRadius - 8, 14, 6,
-                                                  iconColor); // flap
+                framebuffer.drawFilledRoundedRect(centerX - cornerRadius + 4, by - 8, 2 * cornerRadius - 8, 14, 6, iconColor); // flap
                 // clasp (punch)
                 framebuffer.drawFilledRoundedRect(centerX - 3, centerY - 2, 6, bh / 2, 3, backgroundColor);
             }
@@ -120,8 +109,7 @@ namespace UI
                 // head
                 framebuffer.drawFilledCircle(centerX, centerY - cornerRadius / 2, cornerRadius / 2 - 1, iconColor);
                 const int shapeWidth = 2 * cornerRadius - 6, sh = cornerRadius + 2;
-                framebuffer.drawFilledRoundedRect(centerX - shapeWidth / 2, centerY + 2, shapeWidth, sh, shapeWidth / 2,
-                                                  iconColor); // shoulders
+                framebuffer.drawFilledRoundedRect(centerX - shapeWidth / 2, centerY + 2, shapeWidth, sh, shapeWidth / 2, iconColor); // shoulders
             }
             else
             { // Settings: a gear
@@ -129,10 +117,8 @@ namespace UI
                 for (int index = 0; index < 8; ++index)
                 {
                     double spokeAngleRadians = index * piRadians / 4.0;
-                    int spokeX =
-                        centerX + static_cast<int>(std::lround(std::cos(spokeAngleRadians) * (cornerRadius - 2)));
-                    int spokeY =
-                        centerY + static_cast<int>(std::lround(std::sin(spokeAngleRadians) * (cornerRadius - 2)));
+                    int spokeX = centerX + static_cast<int>(std::lround(std::cos(spokeAngleRadians) * (cornerRadius - 2)));
+                    int spokeY = centerY + static_cast<int>(std::lround(std::sin(spokeAngleRadians) * (cornerRadius - 2)));
                     framebuffer.drawFilledCircle(spokeX, spokeY, 4, iconColor); // teeth
                 }
                 framebuffer.drawFilledCircle(centerX, centerY, cornerRadius - 6, iconColor);      // body
@@ -185,8 +171,7 @@ namespace UI
 
                 int labelWidth, lH;
                 framebuffer.measureText(p.label, labelWidth, lH, TextStyle::Heading);
-                framebuffer.drawText(rightColumnX + 36, panelY + (pillH - lH) / 2, p.label, labelColor,
-                                     TextStyle::Heading);
+                framebuffer.drawText(rightColumnX + 36, panelY + (pillH - lH) / 2, p.label, labelColor, TextStyle::Heading);
 
                 // Count sub-pill on the right.
                 int subtitleWidth, sH;
@@ -194,8 +179,7 @@ namespace UI
                 const int subW = subtitleWidth + 28, subH = 30;
                 const int subX = rightColumnX + rW - subW - 20, subY = panelY + (pillH - subH) / 2;
                 framebuffer.drawPill(subX, subY, subW, subH, focused ? Colors::PrimaryText : Colors::Panel);
-                framebuffer.drawText(subX + 14, subY + (subH - sH) / 2, p.subtitle,
-                                     focused ? Colors::Primary : Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(subX + 14, subY + (subH - sH) / 2, p.subtitle, focused ? Colors::Primary : Colors::TextDim, TextStyle::Caption);
 
                 screen.touchButtons.push_back({100 + p.menuIndex, rightColumnX, panelY, rW, pillH});
                 panelY += pillH + pillGap;
@@ -218,23 +202,17 @@ namespace UI
                 const int centerY = iconTop + iconR;
                 const bool focused = (screen.homeMenuIndex == ic.menuIndex);
                 if (focused)
-                    framebuffer.drawFilledCircle(
-                        centerX, centerY, iconR + 5,
-                        Color(Colors::Primary.red, Colors::Primary.green, Colors::Primary.blue, 70));
+                    framebuffer.drawFilledCircle(centerX, centerY, iconR + 5, Color(Colors::Primary.red, Colors::Primary.green, Colors::Primary.blue, 70));
                 framebuffer.drawFilledCircle(centerX, centerY, iconR, focused ? Colors::Primary : Colors::PanelAlt);
                 framebuffer.drawCircle(centerX, centerY, iconR, focused ? Colors::Primary : Colors::Border, 2);
 
-                drawMenuIcon(framebuffer, centerX, centerY, iconR - 12, innerIndex,
-                             focused ? Colors::PrimaryText : Colors::Text,
-                             focused ? Colors::Primary : Colors::PanelAlt);
+                drawMenuIcon(framebuffer, centerX, centerY, iconR - 12, innerIndex, focused ? Colors::PrimaryText : Colors::Text, focused ? Colors::Primary : Colors::PanelAlt);
 
                 int labelWidth, lH;
                 framebuffer.measureText(ic.label, labelWidth, lH, TextStyle::Caption);
-                framebuffer.drawText(centerX - labelWidth / 2, centerY + iconR + 8, ic.label,
-                                     focused ? Colors::Primary : Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(centerX - labelWidth / 2, centerY + iconR + 8, ic.label, focused ? Colors::Primary : Colors::TextDim, TextStyle::Caption);
 
-                screen.touchButtons.push_back(
-                    {100 + ic.menuIndex, centerX - iconR, centerY - iconR, 2 * iconR, 2 * iconR + 24});
+                screen.touchButtons.push_back({100 + ic.menuIndex, centerX - iconR, centerY - iconR, 2 * iconR, 2 * iconR + 24});
             }
         }
     }

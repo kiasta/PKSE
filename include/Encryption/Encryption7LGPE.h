@@ -25,8 +25,7 @@ namespace Encryption {
 
     void cryptPokemon7LGPE(std::span<std::byte> data, uint32_t personalityValue, size_t blockSize);
 
-    void shuffleArray7LGPE(std::span<const std::byte> data, std::span<std::byte> result, uint32_t shuffleValue,
-                           size_t blockSize);
+    void shuffleArray7LGPE(std::span<const std::byte> data, std::span<std::byte> result, uint32_t shuffleValue, size_t blockSize);
 
     std::byte* decryptArray7LGPE(std::span<const std::byte> encryptedData);
 

@@ -316,8 +316,7 @@ namespace {
         "TM53",                    // 253
         "TM54",                    // 254
     };
-    static_assert(sizeof(ITEM_NAMES) / sizeof(ITEM_NAMES[0]) == 255,
-                  "Gen 1 item name table must cover every id 0..254");
+    static_assert(sizeof(ITEM_NAMES) / sizeof(ITEM_NAMES[0]) == 255, "Gen 1 item name table must cover every id 0..254");
 
     // Bit set = the id may legitimately sit in a Gen 1 bag (PKHeX ItemStorage1.General).
     constexpr uint8_t ITEM_LEGAL[] = {

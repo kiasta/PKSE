@@ -67,8 +67,7 @@ void check(bool ok, const std::string& what) {
 template <typename T>
 void checkEq(T got, T want, const std::string& what) {
     const bool ok = (got == want);
-    std::printf("  [%s] %s (got %lld, want %lld)\n", ok ? " OK " : "FAIL", what.c_str(),
-                static_cast<long long>(got), static_cast<long long>(want));
+    std::printf("  [%s] %s (got %lld, want %lld)\n", ok ? " OK " : "FAIL", what.c_str(), static_cast<long long>(got), static_cast<long long>(want));
     if (!ok) ++g_failures;
 }
 
@@ -141,8 +140,7 @@ std::vector<uint8_t> makeSyntheticPB7(uint16_t species, uint8_t level) {
     std::vector<uint8_t> rec(232, 0);
     Utils::writeUInt32LittleEndian(rec.data() + 0x00, 0xCAFEBABE);
     Utils::writeUInt16LittleEndian(rec.data() + 0x08, species);
-    Utils::writeUInt32LittleEndian(rec.data() + 0x10,
-        Pokemon::getExpForLevel(level, Pokemon::getGrowthRate(species)));
+    Utils::writeUInt32LittleEndian(rec.data() + 0x10, Pokemon::getExpForLevel(level, Pokemon::getGrowthRate(species)));
     Utils::writeUInt32LittleEndian(rec.data() + 0x1C, 0x7FFFFFFFu);
     Utils::writeUInt32LittleEndian(rec.data() + 0x18, 0x11223344);
     uint16_t sum = 0;
@@ -152,8 +150,7 @@ std::vector<uint8_t> makeSyntheticPB7(uint16_t species, uint8_t level) {
 }
 
 /// Wrap a set of records into a minimal v3 container so scan() sees a real file.
-std::vector<uint8_t> makeBank(uint32_t boxes,
-                              const std::vector<std::pair<size_t, std::pair<uint32_t, std::vector<uint8_t>>>>& at) {
+std::vector<uint8_t> makeBank(uint32_t boxes, const std::vector<std::pair<size_t, std::pair<uint32_t, std::vector<uint8_t>>>>& at) {
     std::vector<uint8_t> f(16 + static_cast<size_t>(boxes) * 30 * 0x150, 0xFF);
     std::memcpy(f.data(), "PKSMBANK", 8);
     Utils::writeUInt32LittleEndian(f.data() + 8, 3);
@@ -170,9 +167,7 @@ std::vector<uint8_t> makeBank(uint32_t boxes,
 
 int main(int argc, char** argv) {
     const char* home = std::getenv("HOME");
-    const std::string path = (argc > 1)
-        ? argv[1]
-        : std::string(home ? home : ".") + "/pkse-test-saves/pksm_1.bnk";
+    const std::string path = (argc > 1) ? argv[1] : std::string(home ? home : ".") + "/pkse-test-saves/pksm_1.bnk";
 
     std::printf("PKSM bank import harness\n  file: %s\n\n", path.c_str());
 
@@ -201,16 +196,13 @@ int main(int argc, char** argv) {
     checkEq<size_t>(ref.empty + refOccupied, ref.total, "every slot accounted for");
     for (int t = 0; t < Trainer::PKSM_GEN_COUNT; ++t) {
         if (r.perGen[t] == 0 && ref.perTag[t] == 0) continue;
-        checkEq<size_t>(r.perGen[t], ref.perTag[t],
-                        std::string("tag ") + std::to_string(t) + " (" + Trainer::pksmGenName(t) + ") count");
+        checkEq<size_t>(r.perGen[t], ref.perTag[t], std::string("tag ") + std::to_string(t) + " (" + Trainer::pksmGenName(t) + ") count");
     }
 
     std::printf("\n  version %u, %zu boxes, %zu occupied\n", r.containerVersion, r.sourceBoxes, r.occupied);
     for (int t = 0; t < Trainer::PKSM_GEN_COUNT; ++t)
-        if (r.perGen[t]) std::printf("    %-9s %5zu  %s\n", Trainer::pksmGenName(t), r.perGen[t],
-                                     Trainer::pksmGenImportable(t) ? "-> importable" : "-> no PKSE format");
-    std::printf("  importable %zu   unsupported %zu   damaged %zu   gen3-non-FRLG %zu\n\n",
-                r.importable, r.unsupported, r.damaged, r.gen3NonFRLG);
+        if (r.perGen[t]) std::printf("    %-9s %5zu  %s\n", Trainer::pksmGenName(t), r.perGen[t], Trainer::pksmGenImportable(t) ? "-> importable" : "-> no PKSE format");
+    std::printf("  importable %zu   unsupported %zu   damaged %zu   gen3-non-FRLG %zu\n\n", r.importable, r.unsupported, r.damaged, r.gen3NonFRLG);
 
     check(r.damaged == 0, "no record failed to decode (a wrong stride would fail here)");
     checkEq<size_t>(r.importable + r.unsupported + r.damaged, r.occupied, "every occupied slot classified");
@@ -228,8 +220,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> srcNames;
     if (!namesRaw.empty()) {
         srcNames = Trainer::parsePKSMBoxNames(std::span<const uint8_t>(namesRaw.data(), namesRaw.size()));
-        std::printf("  sidecar %s -> %zu names (first \"%s\")\n", sidecar.c_str(), srcNames.size(),
-                    srcNames.empty() ? "" : srcNames[0].c_str());
+        std::printf("  sidecar %s -> %zu names (first \"%s\")\n", sidecar.c_str(), srcNames.size(), srcNames.empty() ? "" : srcNames[0].c_str());
         check(!srcNames.empty(), "box-name sidecar parsed despite its trailing NUL");
         imp.setBoxNames(srcNames);
     }
@@ -239,8 +230,7 @@ int main(int argc, char** argv) {
     checkEq<size_t>(placed, staged, "every staged Pokemon was placed");
     checkEq<size_t>(imp.report().overflow, static_cast<size_t>(0), "nothing overflowed an empty bank");
     checkEq<size_t>(imp.report().scattered, static_cast<size_t>(0), "no first-fit fallback was needed");
-    std::printf("  %zu placed across %zu bank boxes, %zu names carried\n",
-                placed, imp.report().boxesUsed, imp.report().namesCarried);
+    std::printf("  %zu placed across %zu bank boxes, %zu names carried\n", placed, imp.report().boxesUsed, imp.report().namesCarried);
 
     // Every placed pokemon must survive the bank's own encrypt -> decrypt contract, and its checksum
     // must still validate: that is what Bank::verifyImage enforces on save, checked up front.
@@ -252,8 +242,7 @@ int main(int argc, char** argv) {
             ++live;
             if (pk->checksum() != pk->calculateChecksum()) ++checksumFails;
             auto copy = pk->clone();        // clone re-encrypts then re-decrypts through the ctor
-            if (!copy || copy->getDataSize() != pk->getDataSize() ||
-                std::memcmp(copy->getData().data(), pk->getData().data(), pk->getDataSize()) != 0)
+            if (!copy || copy->getDataSize() != pk->getDataSize() || std::memcmp(copy->getData().data(), pk->getData().data(), pk->getDataSize()) != 0)
                 ++roundTripFails;
         }
     }
@@ -283,8 +272,7 @@ int main(int argc, char** argv) {
                 switch (tg) {
                 case 6u:
                     // Gen 3 species is the INTERNAL id at 0x20 of the canonical record.
-                    want.push_back({ sl, Pokemon::gen3InternalToNational(
-                        Utils::readUInt16LittleEndian(rec + 0x20)) });
+                    want.push_back({ sl, Pokemon::gen3InternalToNational(Utils::readUInt16LittleEndian(rec + 0x20)) });
                     break;
                 case 7u:
                     // Gen 1 species is the INTERNAL index at the first byte of the PokeList1 body,
@@ -338,10 +326,7 @@ int main(int argc, char** argv) {
                 // different numbering schemes and reading one as the other names the wrong game.
                 const Enums::GameVersion group = pk->getGameGroup();
                 if (!shownGroups.insert(group).second) continue;
-                std::printf("    %-14s box %2zu slot %2zu  #%-4u %-12s Lv.%-3u OT %-8s nick %-12s\n",
-                            Enums::getGameVersionName(group).c_str(), b + 1, s + 1,
-                            pk->speciesID(), pk->species(), pk->level(),
-                            u16ToUtf8(pk->otName()).c_str(), u16ToUtf8(pk->nickname()).c_str());
+                std::printf("    %-14s box %2zu slot %2zu  #%-4u %-12s Lv.%-3u OT %-8s nick %-12s\n", Enums::getGameVersionName(group).c_str(), b + 1, s + 1, pk->speciesID(), pk->species(), pk->level(), u16ToUtf8(pk->otName()).c_str(), u16ToUtf8(pk->nickname()).c_str());
             }
         }
     }
@@ -367,8 +352,7 @@ int main(int argc, char** argv) {
         checkEq<size_t>(r2.unsupported, static_cast<size_t>(0), "no tag is unsupported any more");
         checkEq<size_t>(r2.damaged, static_cast<size_t>(2), "2 damaged (bogus tag + species-0 PK6)");
         checkEq<size_t>(r2.occupied, static_cast<size_t>(4), "a bogus tag still counts as an occupied slot");
-        checkEq<size_t>(r2.importable + r2.unsupported + r2.damaged, r2.occupied,
-                        "the three outcomes still add up to occupied");
+        checkEq<size_t>(r2.importable + r2.unsupported + r2.damaged, r2.occupied, "the three outcomes still add up to occupied");
 
         Trainer::Bank b2;
         for (auto& box : b2.boxes) for (auto& s : box) s.reset();
@@ -396,8 +380,7 @@ int main(int argc, char** argv) {
                                      { 30, { 5u, c } }, { 31, { 5u, d } } });
         Trainer::PKSMBankImport imp3;
         imp3.scan(std::span<const uint8_t>(f.data(), f.size()));
-        checkEq<size_t>(imp3.report().sourceBoxesUsed, static_cast<size_t>(2),
-                        "two source boxes hold content");
+        checkEq<size_t>(imp3.report().sourceBoxesUsed, static_cast<size_t>(2), "two source boxes hold content");
 
         Trainer::Bank b3;
         for (auto& box : b3.boxes) for (auto& s : box) s.reset();
@@ -439,8 +422,7 @@ int main(int argc, char** argv) {
     std::printf("\n--- box-name sidecar edge cases ---\n");
     {
         auto parse = [](const char* s, size_t n) {
-            return Trainer::parsePKSMBoxNames(
-                std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(s), n));
+            return Trainer::parsePKSMBoxNames(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(s), n));
         };
         const char withNul[] = "[\n  \"Alpha\",\n  \"Be\\u00e9ta\"\n]\0";
         auto a = parse(withNul, sizeof(withNul) - 1);
@@ -450,8 +432,7 @@ int main(int argc, char** argv) {
         const char notArray[] = "{\"pksm_1\":150}";
         check(parse(notArray, sizeof(notArray) - 1).empty(), "the banks.json registry yields no names");
         const char truncated[] = "[\"one\", \"tw";
-        checkEq<size_t>(parse(truncated, sizeof(truncated) - 1).size(), static_cast<size_t>(1),
-                        "a truncated array keeps the complete names");
+        checkEq<size_t>(parse(truncated, sizeof(truncated) - 1).size(), static_cast<size_t>(1), "a truncated array keeps the complete names");
     }
 
     std::printf("\n--- rejection paths ---\n");
@@ -474,7 +455,6 @@ int main(int argc, char** argv) {
         check(!fut.scan(std::span<const uint8_t>(future.data(), future.size())), "a future version is refused");
     }
 
-    std::printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "PASSED",
-                g_failures, g_failures == 1 ? "" : "s");
+    std::printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "PASSED", g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;
 }

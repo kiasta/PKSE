@@ -146,13 +146,10 @@ void analyzeOne(const ::Pokemon::Pokemon& pk, Enums::GameVersion group, Tally& t
         t.byShape[shapeOf(is.text)]++;
         if (g_verbose) {
             if (!printed) {
-                std::printf("    %-14s form %-2u  met %5u lv %-3u  origin %-3u\n",
-                            pk.species(), pk.form(), pk.metLocation(), pk.metLevel(), pk.originGame());
+                std::printf("    %-14s form %-2u  met %5u lv %-3u  origin %-3u\n", pk.species(), pk.form(), pk.metLocation(), pk.metLevel(), pk.originGame());
                 printed = true;
             }
-            std::printf("        %s %s\n",
-                        is.severity == Legality::Severity::Invalid ? "[illegal]" : "[warning]",
-                        is.text.c_str());
+            std::printf("        %s %s\n", is.severity == Legality::Severity::Invalid ? "[illegal]" : "[warning]", is.text.c_str());
         }
     }
     if (noted) ++t.noted;
@@ -202,13 +199,11 @@ void biteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersion gro
     bool flagged = false;
     for (const auto& is : rep.issues) {
         if (is.severity == Legality::Severity::Info) continue;
-        if (is.text.find("can be encountered") != std::string::npos ||
-            is.text.find("egg can hatch") != std::string::npos) { flagged = true; break; }
+        if (is.text.find("can be encountered") != std::string::npos || is.text.find("egg can hatch") != std::string::npos) { flagged = true; break; }
     }
     if (flagged) { ++g_biteOk; return; }
     ++g_biteMiss;
-    std::printf("        BITE CHECK FAILED: %s stayed clean with met location %u (%s)\n",
-                pk.species(), bogusLocation, label);
+    std::printf("        BITE CHECK FAILED: %s stayed clean with met location %u (%s)\n", pk.species(), bogusLocation, label);
 }
 
 int g_eventOk = 0, g_eventMiss = 0, g_eventSkip = 0, g_eventSkipNoRows = 0;
@@ -238,8 +233,7 @@ void eventBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersio
     // version counting -- the same fallback checkEncounter applies.
     const bool noOrigin = !pk.hasOriginGame();
     const Enums::GameVersion donorVersion = static_cast<Enums::GameVersion>(pk.originGame());
-    const Legality::EncounterTable* table =
-        Legality::getEncounterTable(noOrigin ? group : donorVersion);
+    const Legality::EncounterTable* table = Legality::getEncounterTable(noOrigin ? group : donorVersion);
     const uint8_t donorVersionBit = noOrigin ? 0xFF : Legality::encounterVersionBit(donorVersion);
     if (!table || donorVersionBit == 0) { ++g_eventSkip; return; }
 
@@ -335,10 +329,7 @@ void eventBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersio
         if (is.text.find("Mystery Gift distribution") != std::string::npos) { ++g_eventOk; return; }
     }
     ++g_eventMiss;
-    std::printf("        EVENT CHECK FAILED: %s -- species %u form %u at location %u level %u "
-                "(shiny=%u ball=%u flawless=%u gender=%u nature=%u) did not match its own distribution row\n",
-                label, want->species, want->form, want->location, want->levelMin,
-                want->shiny, want->fixedBall, want->flawlessIVs, want->gender, want->nature);
+    std::printf("        EVENT CHECK FAILED: %s -- species %u form %u at location %u level %u (shiny=%u ball=%u flawless=%u gender=%u nature=%u) did not match its own distribution row\n", label, want->species, want->form, want->location, want->levelMin, want->shiny, want->fixedBall, want->flawlessIVs, want->gender, want->nature);
     for (const auto& is : rep.issues)
         std::printf("            said: %s\n", is.text.c_str());
 }
@@ -360,8 +351,7 @@ void wildBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersion
     // version counting -- the same fallback checkEncounter applies.
     const bool noOrigin = !pk.hasOriginGame();
     const Enums::GameVersion donorVersion = static_cast<Enums::GameVersion>(pk.originGame());
-    const Legality::EncounterTable* table =
-        Legality::getEncounterTable(noOrigin ? group : donorVersion);
+    const Legality::EncounterTable* table = Legality::getEncounterTable(noOrigin ? group : donorVersion);
     if (!table) { ++g_wildSkip; return; }
 
     // THE ROW HAS TO BELONG TO THE DONOR'S OWN VERSION TOO. Half of every paired generation is
@@ -426,10 +416,7 @@ void wildBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersion
         if (is.text.rfind("Matches a", 0) == 0) { ++g_wildOk; return; }
     }
     ++g_wildMiss;
-    std::printf("        WILD CHECK FAILED: %s -- species %u at location %u level %u did not match "
-                "its own wild row (posed as species %u at %u level %u, origin %u)\n",
-                label, want->species, want->location, want->levelMin,
-                poseSpecies, poseLoc, poseMetLv, poseOrigin);
+    std::printf("        WILD CHECK FAILED: %s -- species %u at location %u level %u did not match its own wild row (posed as species %u at %u level %u, origin %u)\n", label, want->species, want->location, want->levelMin, poseSpecies, poseLoc, poseMetLv, poseOrigin);
     for (const auto& is : rep.issues)
         std::printf("            said: %s\n", is.text.c_str());
 }
@@ -458,17 +445,14 @@ void reportedSeadraCheck() {
     // The pose is only decisive while the tables still say what it assumes, so say so rather than
     // passing quietly if an upstream correction moves either species.
     auto isCaughtAt = [&](uint16_t species, uint16_t location) {
-        for (uint16_t rowIndex = table->speciesIndex[species]; rowIndex < table->speciesIndex[species + 1];
-             ++rowIndex) {
+        for (uint16_t rowIndex = table->speciesIndex[species]; rowIndex < table->speciesIndex[species + 1]; ++rowIndex) {
             const Legality::EncounterRow& row = table->rows[rowIndex];
             if (row.location == location && (row.versions & versionBit) != 0) return true;
         }
         return false;
     };
     if (!isCaughtAt(HORSEA, ROUTE_24) || isCaughtAt(SEADRA, ROUTE_24)) {
-        std::printf("        SEADRA CHECK: the tables no longer describe the reported case "
-                    "(horsea@24=%d seadra@24=%d)\n",
-                    isCaughtAt(HORSEA, ROUTE_24) ? 1 : 0, isCaughtAt(SEADRA, ROUTE_24) ? 1 : 0);
+        std::printf("        SEADRA CHECK: the tables no longer describe the reported case (horsea@24=%d seadra@24=%d)\n", isCaughtAt(HORSEA, ROUTE_24) ? 1 : 0, isCaughtAt(SEADRA, ROUTE_24) ? 1 : 0);
         ++g_seadraMiss;
         return;
     }
@@ -503,20 +487,17 @@ void reportedSeadraCheck() {
         return;
     }
     if (saysAbout("is not a place")) {
-        std::printf("        SEADRA CHECK FAILED: a level 15 Seadra met on Route 24 was blamed on "
-                    "the location, which is the one field the record has right\n");
+        std::printf("        SEADRA CHECK FAILED: a level 15 Seadra met on Route 24 was blamed on the location, which is the one field the record has right\n");
         ++g_seadraMiss;
     } else if (!saysAbout("would have to evolve from")) {
-        std::printf("        SEADRA CHECK FAILED: a level 15 Seadra met on Route 24 was not "
-                    "explained as an evolution it cannot have made\n");
+        std::printf("        SEADRA CHECK FAILED: a level 15 Seadra met on Route 24 was not explained as an evolution it cannot have made\n");
         ++g_seadraMiss;
     }
 
     // Past the evolution level: Horsea's own row explains it, so Layer 3 must say nothing at all.
     pk->setLevel(40);
     if (pk->level() == 40 && (saysAbout("is not a place") || saysAbout("would have to evolve from"))) {
-        std::printf("        SEADRA CHECK FAILED: a level 40 Seadra met on Route 24 -- an ordinary "
-                    "evolved Horsea -- was reported as impossible\n");
+        std::printf("        SEADRA CHECK FAILED: a level 40 Seadra met on Route 24 -- an ordinary evolved Horsea -- was reported as impossible\n");
         ++g_seadraMiss;
     }
 }
@@ -545,11 +526,7 @@ void evolutionBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVe
     // generations' tables, because the Time Capsule carried Pokemon both ways -- so "the evolution is
     // caught nowhere" has to hold in both, or the checker rightly explains the pose as a catch from the
     // other one: Gold and Crystal have a level 7 wild Butterfree.
-    const Legality::EncounterTable* timeCapsuleTable =
-        !noOrigin                             ? nullptr
-        : group == Enums::GameVersion::RBY    ? Legality::getEncounterTable(Enums::GameVersion::GSC)
-        : group == Enums::GameVersion::GSC    ? Legality::getEncounterTable(Enums::GameVersion::RBY)
-                                              : nullptr;
+    const Legality::EncounterTable* timeCapsuleTable = !noOrigin ? nullptr : group == Enums::GameVersion::RBY ? Legality::getEncounterTable(Enums::GameVersion::GSC) : group == Enums::GameVersion::GSC ? Legality::getEncounterTable(Enums::GameVersion::RBY) : nullptr;
 
     // TWO POSES, AND THE SECOND IS THE ONE THAT BITES.
     //
@@ -583,9 +560,7 @@ void evolutionBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVe
             const uint16_t begin = table->speciesIndex[candidate];
             const uint16_t end = table->speciesIndex[candidate + 1];
             if (begin == end) {
-                const bool caughtThroughTimeCapsule =
-                    timeCapsuleTable != nullptr && candidate + 1 < timeCapsuleTable->speciesIndexLength &&
-                    timeCapsuleTable->speciesIndex[candidate] != timeCapsuleTable->speciesIndex[candidate + 1];
+                const bool caughtThroughTimeCapsule = timeCapsuleTable != nullptr && candidate + 1 < timeCapsuleTable->speciesIndexLength && timeCapsuleTable->speciesIndex[candidate] != timeCapsuleTable->speciesIndex[candidate + 1];
                 if (!nowhere.row && !caughtThroughTimeCapsule) nowhere = EvolutionPose{&row, candidate, floorLevel};
                 break;
             }
@@ -653,9 +628,7 @@ void evolutionBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVe
             if (is.text.find("would have to evolve from") != std::string::npos) { ++ok; return; }
         }
         ++miss;
-        std::printf("        EVOLUTION CHECK FAILED (%s): %s -- species %u posed at level %u, below "
-                    "the level %u it evolves from species %u at, was not explained as an evolution\n",
-                    shape, label, pose.evolvedSpecies, poseLevel, pose.evolvedFloor, pose.row->species);
+        std::printf("        EVOLUTION CHECK FAILED (%s): %s -- species %u posed at level %u, below the level %u it evolves from species %u at, was not explained as an evolution\n", shape, label, pose.evolvedSpecies, poseLevel, pose.evolvedFloor, pose.row->species);
         for (const auto& is : rep.issues)
             std::printf("            said: %s\n", is.text.c_str());
     };
@@ -674,16 +647,14 @@ void sweepTrainer(const char* label, TrainerT& trainer) {
         for (const auto& p : box)
             if (p) analyzeOne(*p, group, t);
 
-    std::printf("  %-20s %4d Pokemon | %4d clean | %4d matched an encounter | %3d illegal, %3d warnings\n",
-                label, t.total, t.clean, t.matched, t.invalid, t.warning);
+    std::printf("  %-20s %4d Pokemon | %4d clean | %4d matched an encounter | %3d illegal, %3d warnings\n", label, t.total, t.clean, t.matched, t.invalid, t.warning);
     for (const auto& kv : t.byShape)
         std::printf("        %4d x  %s\n", kv.second, kv.first.c_str());
     for (const auto& kv : t.notes)
         std::printf("        %4d -  %s\n", kv.second, kv.first.c_str());
     const int unexplained = t.total - t.matched - t.noted;
     if (unexplained > 0)
-        std::printf("        %4d ?  neither matched nor noted -- these are the hatched eggs,"
-                    " which take the egg path and get no match note\n", unexplained);
+        std::printf("        %4d ?  neither matched nor noted -- these are the hatched eggs, which take the egg path and get no match note\n", unexplained);
 
     // The four pose checks need a DONOR, and it must not be an unhatched egg: an egg is routed
     // down the egg path before the encounter sweep is ever reached, so posing one as a wild slot
@@ -696,8 +667,7 @@ void sweepTrainer(const char* label, TrainerT& trainer) {
     ::Pokemon::Pokemon* foreignDonor = nullptr;
     auto consider = [&](::Pokemon::Pokemon* candidate) {
         if (!candidate || candidate->speciesID() == 0 || candidate->isEgg()) return;
-        const Enums::GameVersion candidateGroup =
-            Enums::getGameGroup(static_cast<Enums::GameVersion>(candidate->originGame()));
+        const Enums::GameVersion candidateGroup = Enums::getGameGroup(static_cast<Enums::GameVersion>(candidate->originGame()));
         if (candidateGroup == group) { if (!donor) donor = candidate; }
         else if (!foreignDonor) { foreignDonor = candidate; }
     };
@@ -712,8 +682,7 @@ void sweepTrainer(const char* label, TrainerT& trainer) {
     // it matched an encounter, and falls back to the ordinary donor only where no Pokemon did.
     ::Pokemon::Pokemon* locationDonor = nullptr;
     auto considerLocationDonor = [&](::Pokemon::Pokemon* candidate) {
-        if (locationDonor || !candidate || candidate->speciesID() == 0 || candidate->isEgg() ||
-            !candidate->hasMetData())
+        if (locationDonor || !candidate || candidate->speciesID() == 0 || candidate->isEgg() || !candidate->hasMetData())
             return;
         const Legality::Report report = Legality::analyze(*candidate, group);
         bool matched = false;
@@ -807,12 +776,7 @@ int main(int argc, char** argv) {
         else root = a;
     }
     if (root.empty()) {
-        std::printf("usage: legality <save-root> [--verbose]\n"
-                    "  Expects, relative to <save-root>, any of:\n"
-                    "  One folder per TITLE, any filename inside, named as the self test names the\n"
-                    "  title (case, spaces and a leading \"Pokemon\" aside) -- Red/  Silver/  FireRed/\n"
-                    "  Emerald/  HeartGold/  White 2/  Alpha Sapphire/  Ultra Moon/  LetsGoEevee/\n"
-                    "  Sword/  ShiningPearl/  Violet/  Legends Z-A/  Legends Arceus/  and the rest.\n");
+        std::printf("usage: legality <save-root> [--verbose]\n  Expects, relative to <save-root>, any of:\n  One folder per TITLE, any filename inside, named as the self test names the\n  title (case, spaces and a leading \"Pokemon\" aside) -- Red/  Silver/  FireRed/\n  Emerald/  HeartGold/  White 2/  Alpha Sapphire/  Ultra Moon/  LetsGoEevee/\n  Sword/  ShiningPearl/  Violet/  Legends Z-A/  Legends Arceus/  and the rest.\n");
         return 2;
     }
     g_saveRoot = root;
@@ -821,9 +785,7 @@ int main(int argc, char** argv) {
     // alone, so it is asked on every invocation rather than only where a FireRed file turns up.
     reportedSeadraCheck();
 
-    std::printf("PKSE legality harness\n"
-                "Real saves are (almost) all legal Pokemon, so every finding here is a claim the\n"
-                "checker has to earn. Findings are grouped by shape; counts are what to watch.\n\n");
+    std::printf("PKSE legality harness\nReal saves are (almost) all legal Pokemon, so every finding here is a claim the\nchecker has to earn. Findings are grouped by shape; counts are what to watch.\n\n");
 
     // Found by TITLE FOLDER; see SaveTree.h.
     // EVERY TITLE FOLDER THE SELF TEST KNOWS, not a sample of them. A gate that sweeps one save per
@@ -851,8 +813,7 @@ int main(int argc, char** argv) {
     sweepLooseFile<Trainer::Trainer6XY>("X",             "X",          SaveTree::forTitle(root, "X"));
     sweepLooseFile<Trainer::Trainer6XY>("Y",             "Y",          SaveTree::forTitle(root, "Y"));
     sweepLooseFile<Trainer::Trainer6ORAS>("Omega Ruby",  "Omega Ruby", SaveTree::forTitle(root, "Omega Ruby"));
-    sweepLooseFile<Trainer::Trainer6ORAS>("Alpha Sapphire", "Alpha Sapphire",
-                                          SaveTree::forTitle(root, "Alpha Sapphire"));
+    sweepLooseFile<Trainer::Trainer6ORAS>("Alpha Sapphire", "Alpha Sapphire", SaveTree::forTitle(root, "Alpha Sapphire"));
     sweepLooseFile<Trainer::Trainer7SM>("Sun",           "Sun",        SaveTree::forTitle(root, "Sun"));
     sweepLooseFile<Trainer::Trainer7SM>("Moon",          "Moon",       SaveTree::forTitle(root, "Moon"));
     sweepLooseFile<Trainer::Trainer7USUM>("Ultra Sun",   "Ultra Sun",  SaveTree::ultraSun(root));
@@ -877,22 +838,14 @@ int main(int argc, char** argv) {
     if (g_eventMiss) std::printf(", %d DID NOT", g_eventMiss);
     if (g_eventSkipNoRows) std::printf(" (%d have no distributions at all)", g_eventSkipNoRows);
     if (g_eventSkip)
-        std::printf("\n             %d game(s) have distributions that cannot be posed: %s",
-                    g_eventSkip, g_eventSkipNames.c_str());
+        std::printf("\n             %d game(s) have distributions that cannot be posed: %s", g_eventSkip, g_eventSkipNames.c_str());
     std::printf("\nevo check:   %d game(s) rejected a Pokemon posed below the level it evolves at", g_evoOk);
     if (g_evoMiss) std::printf(", %d DID NOT", g_evoMiss);
     if (g_evoSkip) std::printf(" (%d had no level-gated evolution to pose)", g_evoSkip);
-    std::printf("\nevo check:   %d game(s) said the same of one whose evolution IS catchable elsewhere",
-                g_evoElsewhereOk);
+    std::printf("\nevo check:   %d game(s) said the same of one whose evolution IS catchable elsewhere", g_evoElsewhereOk);
     if (g_evoElsewhereMiss) std::printf(", %d BLAMED SOMETHING ELSE", g_evoElsewhereMiss);
     if (g_evoElsewhereSkip) std::printf(" (%d had no such pair to pose)", g_evoElsewhereSkip);
-    std::printf("\nseadra check: the reported case -- a Seadra met where only Horsea is caught -- is %s",
-                g_seadraMiss == 0 ? "explained as an evolution, both directions" : "WRONG");
-    std::printf("\n\nThe sweep reports; it does not pass or fail. Judgement is the point:\n"
-                "decide per shape whether the checker is right about these saves. The six\n"
-                "bite checks DO fail, because a checker that never fires is not a clean result.\n");
-    return (g_biteMiss == 0 && g_eventMiss == 0 && g_wildMiss == 0 && g_evoMiss == 0 &&
-            g_evoElsewhereMiss == 0 && g_seadraMiss == 0)
-               ? 0
-               : 1;
+    std::printf("\nseadra check: the reported case -- a Seadra met where only Horsea is caught -- is %s", g_seadraMiss == 0 ? "explained as an evolution, both directions" : "WRONG");
+    std::printf("\n\nThe sweep reports; it does not pass or fail. Judgement is the point:\ndecide per shape whether the checker is right about these saves. The six\nbite checks DO fail, because a checker that never fires is not a clean result.\n");
+    return (g_biteMiss == 0 && g_eventMiss == 0 && g_wildMiss == 0 && g_evoMiss == 0 && g_evoElsewhereMiss == 0 && g_seadraMiss == 0) ? 0 : 1;
 }

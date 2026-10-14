@@ -69,8 +69,7 @@ namespace UI
         /// was filtered by before the keyboard opened is restored, and `queryChanged` runs once more
         /// for it. Treating a cancel as an empty string would silently drop a filter the user had set
         /// and wanted to keep -- the same trap Keyboard.h warns about for the fields it edits.
-        bool promptForQuery(const std::string &listName, FilterTiming timing,
-                            const std::function<void()> &queryChanged = nullptr);
+        bool promptForQuery(const std::string &listName, FilterTiming timing, const std::function<void()> &queryChanged = nullptr);
     };
 
     /// Height of the row drawListSearchBox() draws, so a caller can lay its list out before

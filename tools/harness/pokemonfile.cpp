@@ -166,8 +166,7 @@ void checkFile(const std::string& path) {
     const char* refusal = knownRefusal(path);
 
     ++g_checks;
-    Trainer::PokemonFile::LoadResult loaded =
-        Trainer::PokemonFile::parse(std::span<const std::byte>(bytes.data(), bytes.size()), fileName);
+    Trainer::PokemonFile::LoadResult loaded = Trainer::PokemonFile::parse(std::span<const std::byte>(bytes.data(), bytes.size()), fileName);
     if (refusal) {
         if (loaded) fail(path, std::string("a file PKSE is listed as refusing opened (") + refusal + ")");
         return;
@@ -181,8 +180,7 @@ void checkFile(const std::string& path) {
     if (expectedSpecies) {
         ++g_checks;
         if (loaded.pokemon->speciesID() != expectedSpecies)
-            fail(path, "opened as species " + std::to_string(loaded.pokemon->speciesID()) + ", the file name says " +
-                           std::to_string(expectedSpecies));
+            fail(path, "opened as species " + std::to_string(loaded.pokemon->speciesID()) + ", the file name says " + std::to_string(expectedSpecies));
     }
 
     // A file PKHeX saved ENCRYPTED (.ekX) has nothing more to check here: PKSE writes the plain
@@ -195,8 +193,7 @@ void checkFile(const std::string& path) {
     const std::vector<std::byte> written = Trainer::PokemonFile::serialize(*loaded.pokemon, &error);
     ++g_checks;
     if (written.size() < bytes.size()) {
-        fail(path, "written back shorter than PKHeX's file (" + std::to_string(written.size()) + " < " +
-                       std::to_string(bytes.size()) + ") " + error);
+        fail(path, "written back shorter than PKHeX's file (" + std::to_string(written.size()) + " < " + std::to_string(bytes.size()) + ") " + error);
     } else {
         const ByteRange tail = partyTailFor(fileName.substr(fileName.rfind('.')), bytes.size());
         bool tailWasEmpty = tail.end > tail.begin;
@@ -224,16 +221,13 @@ void checkFile(const std::string& path) {
     if (extension != ".pk1" && extension != ".pk2" && bytes.size() >= 4) {
         std::string encryptedExtension = extension;
         encryptedExtension[1] = 'e';
-        const uint32_t key = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
-                             (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
-        std::byte* encrypted = Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(loaded.pokemon->getGameGroup()),
-                                                            std::span<const std::byte>(bytes.data(), bytes.size()), key);
+        const uint32_t key = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) | (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
+        std::byte* encrypted = Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(loaded.pokemon->getGameGroup()), std::span<const std::byte>(bytes.data(), bytes.size()), key);
         ++g_checks;
         if (!encrypted) {
             fail(path, "could not encrypt the record for the " + encryptedExtension + " check");
         } else {
-            Trainer::PokemonFile::LoadResult opened = Trainer::PokemonFile::parse(
-                std::span<const std::byte>(encrypted, bytes.size()), fileName.substr(0, fileName.rfind('.')) + encryptedExtension);
+            Trainer::PokemonFile::LoadResult opened = Trainer::PokemonFile::parse(std::span<const std::byte>(encrypted, bytes.size()), fileName.substr(0, fileName.rfind('.')) + encryptedExtension);
             delete[] encrypted;
             if (!opened)
                 fail(path, "encrypted as " + encryptedExtension + ", it did not open: " + opened.error);
@@ -244,8 +238,7 @@ void checkFile(const std::string& path) {
 
     const std::string wrongExtension = extension == ".pk3" ? ".pk9" : ".pk3";
     ++g_checks;
-    Trainer::PokemonFile::LoadResult renamed = Trainer::PokemonFile::parse(
-        std::span<const std::byte>(bytes.data(), bytes.size()), fileName.substr(0, fileName.rfind('.')) + wrongExtension);
+    Trainer::PokemonFile::LoadResult renamed = Trainer::PokemonFile::parse(std::span<const std::byte>(bytes.data(), bytes.size()), fileName.substr(0, fileName.rfind('.')) + wrongExtension);
     if (renamed) fail(path, "accepted when renamed to " + wrongExtension);
 }
 

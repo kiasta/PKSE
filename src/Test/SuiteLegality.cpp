@@ -49,8 +49,7 @@ namespace Test
                 if (issue.severity == Legality::Severity::Invalid)
                 {
                     ++invalid;
-                    context.warn(false, "legality analyzer reports INVALID on a stored Pokemon",
-                             whereLabel + " issue=\"" + issue.text + "\"");
+                    context.warn(false, "legality analyzer reports INVALID on a stored Pokemon", whereLabel + " issue=\"" + issue.text + "\"");
                 }
                 else if (issue.severity == Legality::Severity::Warning)
                 {
@@ -60,12 +59,8 @@ namespace Test
 
             // problemCount() must agree with what the issue list actually contains; the UI gates its
             // badge on that number rather than on the list.
-            context.check(legalityReport.problemCount() == invalid + warnings,
-                      "legality report's problem count disagrees with its own issue list",
-                      whereLabel + " problemCount=" + std::to_string(legalityReport.problemCount()) +
-                          " invalid=" + std::to_string(invalid) + " warnings=" + std::to_string(warnings));
-            context.check(legalityReport.ok() == (legalityReport.problemCount() == 0),
-                          "legality report's ok() disagrees with its count", whereLabel);
+            context.check(legalityReport.problemCount() == invalid + warnings, "legality report's problem count disagrees with its own issue list", whereLabel + " problemCount=" + std::to_string(legalityReport.problemCount()) + " invalid=" + std::to_string(invalid) + " warnings=" + std::to_string(warnings));
+            context.check(legalityReport.ok() == (legalityReport.problemCount() == 0), "legality report's ok() disagrees with its count", whereLabel);
 
             if (deep)
             {
@@ -74,11 +69,8 @@ namespace Test
                 Legality::Report again = Legality::analyze(pokemon, context.group);
                 bool same = again.issues.size() == legalityReport.issues.size();
                 for (size_t issueIndex = 0; same && issueIndex < again.issues.size(); ++issueIndex)
-                    same = again.issues[issueIndex].text == legalityReport.issues[issueIndex].text &&
-                           again.issues[issueIndex].severity == legalityReport.issues[issueIndex].severity;
-                context.check(same, "legality analyzer is not deterministic: two runs disagree",
-                          whereLabel + " first=" + std::to_string(legalityReport.issues.size()) +
-                              " second=" + std::to_string(again.issues.size()));
+                    same = again.issues[issueIndex].text == legalityReport.issues[issueIndex].text && again.issues[issueIndex].severity == legalityReport.issues[issueIndex].severity;
+                context.check(same, "legality analyzer is not deterministic: two runs disagree", whereLabel + " first=" + std::to_string(legalityReport.issues.size()) + " second=" + std::to_string(again.issues.size()));
             }
         }
     }
@@ -95,16 +87,11 @@ namespace Test
 
         /// One planted defect: `control` is a Pokemon without it, `defective` the same Pokemon with
         /// it. The checker must flag the second for exactly this and must not flag the first.
-        void expectFlagged(Context &context, const Pokemon::Pokemon &control, const Pokemon::Pokemon &defective,
-                           const std::string &textPrefix)
+        void expectFlagged(Context &context, const Pokemon::Pokemon &control, const Pokemon::Pokemon &defective, const std::string &textPrefix)
         {
-            const std::string where =
-                "planted defect \"" + textPrefix + "\" on a blank " + Enums::getGameVersionName(context.group) + " entity";
-            context.check(!reportsInvalid(Legality::analyze(control, context.group), textPrefix),
-                          "legality analyzer flags a planted defect on the control Pokemon that does not have it",
-                          where);
-            context.check(reportsInvalid(Legality::analyze(defective, context.group), textPrefix),
-                          "legality analyzer did not flag a planted defect", where);
+            const std::string where = "planted defect \"" + textPrefix + "\" on a blank " + Enums::getGameVersionName(context.group) + " entity";
+            context.check(!reportsInvalid(Legality::analyze(control, context.group), textPrefix), "legality analyzer flags a planted defect on the control Pokemon that does not have it", where);
+            context.check(reportsInvalid(Legality::analyze(defective, context.group), textPrefix), "legality analyzer did not flag a planted defect", where);
         }
 
         void plantedDefects(Context &context, Trainer::Trainer &tr)
@@ -128,8 +115,7 @@ namespace Test
             // The 510 EV cap is Gen 3 onward. Gens 1 and 2 keep uncapped Stat Experience, and Let's Go
             // stores no EVs at all, so there is nothing to plant there.
             const Enums::GameVersion group = context.group;
-            if (group != Enums::GameVersion::RBY && group != Enums::GameVersion::GSC &&
-                group != Enums::GameVersion::GG)
+            if (group != Enums::GameVersion::RBY && group != Enums::GameVersion::GSC && group != Enums::GameVersion::GG)
             {
                 auto overTrained = control->clone();
                 if (!overTrained)
@@ -165,10 +151,7 @@ namespace Test
             if (auto blank = tr->createBlankPokemon())
             {
                 Legality::Report legalityReport = Legality::analyze(*blank, context.group);
-                context.check(
-                    legalityReport.empty(), "legality analyzer returns findings for an EMPTY slot (species 0)",
-                    "issues=" + std::to_string(legalityReport.issues.size()) +
-                        (legalityReport.issues.empty() ? "" : " first=\"" + legalityReport.issues[0].text + "\""));
+                context.check(legalityReport.empty(), "legality analyzer returns findings for an EMPTY slot (species 0)", "issues=" + std::to_string(legalityReport.issues.size()) + (legalityReport.issues.empty() ? "" : " first=\"" + legalityReport.issues[0].text + "\""));
             }
 
             bool deep = true;
@@ -198,7 +181,6 @@ namespace Test
             ++analyzed;
         }
         if (analyzed > 0)
-            context.note("Pokemon put through the legality analyzer",
-                     "box=" + std::to_string(box + 1) + " count=" + std::to_string(analyzed));
+            context.note("Pokemon put through the legality analyzer", "box=" + std::to_string(box + 1) + " count=" + std::to_string(analyzed));
     }
 }

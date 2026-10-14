@@ -109,10 +109,8 @@ int main(int argc, char** argv) {
         for (uint8_t v : found->data) {
             if (v != 0) ++nonZero;
         }
-        const double pct = found->data.empty() ? 0.0
-                         : (100.0 * static_cast<double>(nonZero) / static_cast<double>(found->data.size()));
-        std::printf("  PRESENT  %08X  size %6zu  nonzero %6zu (%5.1f%%)  %s\n",
-                    p.key, found->data.size(), nonZero, pct, p.what);
+        const double pct = found->data.empty() ? 0.0 : (100.0 * static_cast<double>(nonZero) / static_cast<double>(found->data.size()));
+        std::printf("  PRESENT  %08X  size %6zu  nonzero %6zu (%5.1f%%)  %s\n", p.key, found->data.size(), nonZero, pct, p.what);
     }
 
     //
@@ -156,13 +154,10 @@ int main(int argc, char** argv) {
                 std::vector<std::byte> enc(pp.entity);
                 std::memcpy(enc.data(), p, pp.entity);
                 std::byte* dec = pp.decrypt(std::span<const std::byte>(enc.data(), pp.entity));
-                const uint16_t species = static_cast<uint16_t>(
-                    static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
+                const uint16_t species = static_cast<uint16_t>(static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
                 delete[] dec;
 
-                std::printf("  slot %zu: raw nonzero %4zu / %zu   -> decrypts to species %u%s\n",
-                            i, nz, pp.entity, species,
-                            nz == 0 ? "   <-- RAW ZEROS" : "");
+                std::printf("  slot %zu: raw nonzero %4zu / %zu   -> decrypts to species %u%s\n", i, nz, pp.entity, species, nz == 0 ? "   <-- RAW ZEROS" : "");
             }
         }
     }
@@ -173,15 +168,12 @@ int main(int argc, char** argv) {
     // skip exactly the slots that need repairing.
     {
         std::vector<std::byte> zero(0x158, std::byte{0});
-        std::byte* dec = Encryption::decryptArray8SWSH(
-            std::span<const std::byte>(zero.data(), 0x158));
-        const uint16_t sp = static_cast<uint16_t>(
-            static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
+        std::byte* dec = Encryption::decryptArray8SWSH(std::span<const std::byte>(zero.data(), 0x158));
+        const uint16_t sp = static_cast<uint16_t>(static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
         size_t nz = 0;
         for (size_t k = 0; k < 0x158; ++k) if (dec[k] != std::byte{0}) ++nz;
         delete[] dec;
-        std::printf("\nall-zero slot decrypts to: species %u  (%zu/344 decrypted bytes non-zero)\n",
-                    sp, nz);
+        std::printf("\nall-zero slot decrypts to: species %u  (%zu/344 decrypted bytes non-zero)\n", sp, nz);
     }
 
     // What each Trainer actually concludes, so the detection and the raw blocks are side by side.
@@ -189,8 +181,7 @@ int main(int argc, char** argv) {
     {
         std::vector<Save::Block> copy = blocks;
         Trainer::Trainer8SWSH t(std::move(copy));
-        std::printf("  as Sword/Shield   -> revision %d (%s)\n",
-                    t.saveRevision, t.saveRevisionString.c_str());
+        std::printf("  as Sword/Shield   -> revision %d (%s)\n", t.saveRevision, t.saveRevisionString.c_str());
     }
 
     // --repair-test: simulate a save already corrupted by the old memset(0) party writer, then
@@ -222,15 +213,12 @@ int main(int argc, char** argv) {
             for (size_t k = 0; k < slotOffset; ++k) if (p[k] != 0) ++nz;
             std::vector<std::byte> enc(slotOffset);
             std::memcpy(enc.data(), p, slotOffset);
-            std::byte* dec = Encryption::decryptArray8SWSH(
-                std::span<const std::byte>(enc.data(), slotOffset));
-            const uint16_t sp = static_cast<uint16_t>(
-                static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
+            std::byte* dec = Encryption::decryptArray8SWSH(std::span<const std::byte>(enc.data(), slotOffset));
+            const uint16_t sp = static_cast<uint16_t>(static_cast<uint8_t>(dec[0x08]) | (static_cast<uint8_t>(dec[0x09]) << 8));
             delete[] dec;
             const bool bad = (i >= 2 && nz == 0);
             if (bad) allHealed = false;
-            std::printf("  slot %zu: raw nonzero %4zu / %zu  species %u%s\n",
-                        i, nz, slotOffset, sp, bad ? "   <-- STILL ZEROS" : "");
+            std::printf("  slot %zu: raw nonzero %4zu / %zu  species %u%s\n", i, nz, slotOffset, sp, bad ? "   <-- STILL ZEROS" : "");
         }
 
         // Idempotence: saving the repaired save again must change nothing.
@@ -240,8 +228,7 @@ int main(int argc, char** argv) {
         for (const auto& b : t2.getBlocks()) { if (b.key == 0x2985FE5D) { twice = &b; break; } }
         const bool stable = twice && fixed && twice->data == fixed->data;
 
-        std::printf("  repaired: %s     second save identical: %s\n",
-                    allHealed ? "YES" : "NO", stable ? "YES" : "NO");
+        std::printf("  repaired: %s     second save identical: %s\n", allHealed ? "YES" : "NO", stable ? "YES" : "NO");
         return (allHealed && stable) ? 0 : 1;
     }
     return 0;

@@ -156,8 +156,7 @@ namespace Pokemon
             while (accumulator < 255u && accumulator * accumulator < statExp)
                 ++accumulator;
             const uint32_t effort = accumulator >> 2;
-            return static_cast<uint16_t>(
-                ((2u * (static_cast<uint32_t>(base) + determinantValue) + effort) * level / 100u) + 5u);
+            return static_cast<uint16_t>(((2u * (static_cast<uint32_t>(base) + determinantValue) + effort) * level / 100u) + 5u);
         };
 
         const uint16_t hitPoints = static_cast<uint16_t>(oneStat(p.hp, ivHP(), evWide(0), levelValue) + 5 + levelValue);

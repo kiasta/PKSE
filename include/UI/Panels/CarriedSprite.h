@@ -23,8 +23,7 @@ namespace UI
          * in place and only marks its slot -- but from the player's side both should read the same:
          * the slot it came from looks empty and the Pokemon travels with the cursor.
          */
-        inline void drawLiftedMon(PKSEFramebuffer &framebuffer, const ::Pokemon::Pokemon *pk, int centerX, int centerY,
-                                  int discR)
+        inline void drawLiftedMon(PKSEFramebuffer &framebuffer, const ::Pokemon::Pokemon *pk, int centerX, int centerY, int discR)
         {
             if (!pk || pk->speciesID() == 0)
                 return;
@@ -39,8 +38,7 @@ namespace UI
             const bool shiny = pk->isShiny(pk->id32(), std::string(pk->species()));
             Sprite *sprite = SpriteManager::getIconSprite(pk->speciesID(), pk->form(), shiny);
             if (sprite && sprite->data)
-                framebuffer.drawImageScaled(centerX - size / 2, centerY - lift - size / 2, sprite->width,
-                                            sprite->height, size, size, sprite->data, sprite->channels);
+                framebuffer.drawImageScaled(centerX - size / 2, centerY - lift - size / 2, sprite->width, sprite->height, size, size, sprite->data, sprite->channels);
             if (shiny)
                 framebuffer.drawShinyMark(centerX + discR - 15, centerY - lift - discR + 1, 15, Colors::ShinyStar);
         }

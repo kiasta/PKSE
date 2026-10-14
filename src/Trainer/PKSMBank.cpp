@@ -126,8 +126,7 @@ namespace Trainer
          * is 63/73, in each case a 10-byte gap that is the international nickname's tail. Two
          * copies of reasoning this delicate would eventually disagree.
          */
-        size_t probePokeListLength(const uint8_t *payload, size_t payloadSize,
-                                   size_t japaneseLength, size_t internationalLength)
+        size_t probePokeListLength(const uint8_t *payload, size_t payloadSize, size_t japaneseLength, size_t internationalLength)
         {
             if (payloadSize < internationalLength)
                 return 0;
@@ -178,15 +177,13 @@ namespace Trainer
             {
                 if (!::Pokemon::isGen1ListSize(length))
                     return nullptr;
-                return std::make_unique<::Pokemon::Pokemon1RBY>(
-                    std::span<const std::byte>(reinterpret_cast<const std::byte *>(payload), length));
+                return std::make_unique<::Pokemon::Pokemon1RBY>(std::span<const std::byte>(reinterpret_cast<const std::byte *>(payload), length));
             }
             if (static_cast<PKSMGen>(bankTag) == PKSMGen::Gen2)
             {
                 if (!::Pokemon::isGen2ListSize(length))
                     return nullptr;
-                return std::make_unique<::Pokemon::Pokemon2GSC>(
-                    std::span<const std::byte>(reinterpret_cast<const std::byte *>(payload), length));
+                return std::make_unique<::Pokemon::Pokemon2GSC>(std::span<const std::byte>(reinterpret_cast<const std::byte *>(payload), length));
             }
 
             std::vector<std::byte> decryptedRecord;
@@ -233,8 +230,7 @@ namespace Trainer
             {
                 const uint16_t species = rd16(payload + 0x08);
                 const uint32_t expv = rd32(payload + 0x10);
-                decryptedRecord[0x148] = static_cast<std::byte>(
-                    ::Pokemon::getLevelFromExp(expv, ::Pokemon::getGrowthRate(species)));
+                decryptedRecord[0x148] = static_cast<std::byte>(::Pokemon::getLevelFromExp(expv, ::Pokemon::getGrowthRate(species)));
             }
 
             const uint32_t encryptionConstant = rd32(payload); // encryption constant / PID, the crypto seed
@@ -403,11 +399,9 @@ namespace Trainer
         {
             // Identify by CONTENT, not extension. The original pre-2019 bank had no header at all --
             // just back-to-back Gen 6 box records -- so name it rather than calling the file garbage.
-            if (size >= LEGACY_BIN_RECORD && size % LEGACY_BIN_RECORD == 0 &&
-                (size / LEGACY_BIN_RECORD) % SLOTS_PER_BOX == 0)
+            if (size >= LEGACY_BIN_RECORD && size % LEGACY_BIN_RECORD == 0 && (size / LEGACY_BIN_RECORD) % SLOTS_PER_BOX == 0)
             {
-                importReport.error = "This is a pre-2019 PKSM bank.bin. It holds Gen 6 records only, "
-                            "which PKSE has no format for.";
+                importReport.error = "This is a pre-2019 PKSM bank.bin. It holds Gen 6 records only, which PKSE has no format for.";
             }
             else
             {
@@ -440,8 +434,7 @@ namespace Trainer
             boxes = (size - V1_HEADER) / (V12_ENTRY * SLOTS_PER_BOX);
             break;
         default:
-            importReport.error = "Unsupported PKSM bank version " + std::to_string(version) +
-                        " -- it was written by a newer PKSM than this build knows about.";
+            importReport.error = "Unsupported PKSM bank version " + std::to_string(version) + " -- it was written by a newer PKSM than this build knows about.";
             return false;
         }
         importReport.containerVersion = version;
@@ -560,20 +553,13 @@ namespace Trainer
             ++importReport.importable;
         }
 
-        logInfoToFile("PKSM bank scanned",
-                      ("v" + std::to_string(version) + " boxes=" + std::to_string(importReport.sourceBoxes) +
-                       " occupied=" + std::to_string(importReport.occupied) +
-                       " importable=" + std::to_string(importReport.importable) +
-                       " unsupported=" + std::to_string(importReport.unsupported) +
-                       " damaged=" + std::to_string(importReport.damaged))
-                          .c_str());
+        logInfoToFile("PKSM bank scanned", ("v" + std::to_string(version) + " boxes=" + std::to_string(importReport.sourceBoxes) + " occupied=" + std::to_string(importReport.occupied) + " importable=" + std::to_string(importReport.importable) + " unsupported=" + std::to_string(importReport.unsupported) + " damaged=" + std::to_string(importReport.damaged)).c_str());
         return true;
     }
 
     size_t PKSMBankImport::commit(Bank &bank)
     {
-        importReport.placed = importReport.overflow = importReport.boxesUsed = importReport.namesCarried =
-            importReport.scattered = 0;
+        importReport.placed = importReport.overflow = importReport.boxesUsed = importReport.namesCarried = importReport.scattered = 0;
         if (staged.empty())
             return 0;
 
@@ -660,13 +646,7 @@ namespace Trainer
         }
 
         staged.clear(); // consumed -- a second commit() must not place anything twice
-        logInfoToFile("PKSM bank import committed",
-                      ("placed=" + std::to_string(importReport.placed) +
-                       " boxes=" + std::to_string(importReport.boxesUsed) +
-                       " scattered=" + std::to_string(importReport.scattered) +
-                       " overflow=" + std::to_string(importReport.overflow) +
-                       " names=" + std::to_string(importReport.namesCarried))
-                          .c_str());
+        logInfoToFile("PKSM bank import committed", ("placed=" + std::to_string(importReport.placed) + " boxes=" + std::to_string(importReport.boxesUsed) + " scattered=" + std::to_string(importReport.scattered) + " overflow=" + std::to_string(importReport.overflow) + " names=" + std::to_string(importReport.namesCarried)).c_str());
         return importReport.placed;
     }
 
@@ -684,8 +664,7 @@ namespace Trainer
         size_t readIndex = 0;
         auto skipWs = [&]()
         {
-            while (readIndex < byteCount && (jsonBytes[readIndex] == ' ' || jsonBytes[readIndex] == '\t' ||
-                                             jsonBytes[readIndex] == '\r' || jsonBytes[readIndex] == '\n'))
+            while (readIndex < byteCount && (jsonBytes[readIndex] == ' ' || jsonBytes[readIndex] == '\t' || jsonBytes[readIndex] == '\r' || jsonBytes[readIndex] == '\n'))
                 ++readIndex;
         };
 
@@ -772,8 +751,7 @@ namespace Trainer
                     uint32_t codePoint = 0;
                     if (!hex4(codePoint))
                         break;
-                    if (codePoint >= 0xD800 && codePoint <= 0xDBFF && readIndex + 6 <= byteCount &&
-                        jsonBytes[readIndex] == '\\' && jsonBytes[readIndex + 1] == 'u')
+                    if (codePoint >= 0xD800 && codePoint <= 0xDBFF && readIndex + 6 <= byteCount && jsonBytes[readIndex] == '\\' && jsonBytes[readIndex + 1] == 'u')
                     {
                         readIndex += 2;
                         uint32_t lowSurrogate = 0;

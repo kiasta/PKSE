@@ -332,8 +332,7 @@ namespace Trainer
         {
             if (!Enums::isGen3Group(group) || record.size() != SIZE_PARTY3_FRLG)
                 return record;
-            const bool tailIsPadding = std::all_of(record.begin() + SIZE_STORED3_FRLG, record.end(),
-                                                   [](std::byte value) { return value == std::byte{0}; });
+            const bool tailIsPadding = std::all_of(record.begin() + SIZE_STORED3_FRLG, record.end(), [](std::byte value) { return value == std::byte{0}; });
             return tailIsPadding ? record.first(SIZE_STORED3_FRLG) : record;
         }
 
@@ -387,8 +386,7 @@ namespace Trainer
             }
         }
 
-        std::byte *encryptFor(GameVersion group, std::span<const std::byte> decryptedRecord,
-                              uint32_t encryptionConstant)
+        std::byte *encryptFor(GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant)
         {
             switch (group)
             {
@@ -521,8 +519,7 @@ namespace Trainer
 
                 // Mirror the pokemon's native bytes: encrypt with its own group + EC, copy up to its
                 // record size (box mons are shorter than party; the tail stays zero-padded).
-                const uint32_t encryptionConstant =
-                    readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                const uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
                 std::span<const std::byte> dec(pokemon->getData().data(), pokemon->getDataSize());
                 std::byte *encryptedRecord = encryptFor(gameVersion, dec, encryptionConstant);
                 if (encryptedRecord)
@@ -600,15 +597,13 @@ namespace Trainer
             if (std::rename(path.c_str(), aside.c_str()) == 0)
             {
                 logErrorToFile("Bank: unreadable file preserved as bank.dat.unreadable", why);
-                loadProblem = "The bank file could not be read. It was kept as bank.dat.unreadable and the bank "
-                              "opened empty.";
+                loadProblem = "The bank file could not be read. It was kept as bank.dat.unreadable and the bank opened empty.";
             }
             else
             {
                 logErrorToFile("Bank: unreadable file could NOT be preserved", why);
                 fileUntouchable = true;
-                loadProblem = "The bank file could not be read, so the bank opened empty and will not be saved "
-                              "over it.";
+                loadProblem = "The bank file could not be read, so the bank opened empty and will not be saved over it.";
             }
             delete[] file;
             savedImage = serialize();
@@ -666,8 +661,7 @@ namespace Trainer
         {
             // The bank was written by a build with MORE boxes. Everything past ours cannot be loaded,
             // and saving would drop it, so say so loudly rather than quietly truncating someone's bank.
-            logErrorToFile("Bank: file has more boxes than this build supports; extra boxes will be lost if saved",
-                           std::to_string(fileBoxes).c_str());
+            logErrorToFile("Bank: file has more boxes than this build supports; extra boxes will be lost if saved", std::to_string(fileBoxes).c_str());
         }
         const size_t fileTotal = static_cast<size_t>(fileBoxes) * BANK_SLOTS_PER_BOX;
         const size_t total = BANK_BOX_COUNT * BANK_SLOTS_PER_BOX;
@@ -689,8 +683,7 @@ namespace Trainer
                 continue;
             } // unknown tag = damage
 
-            std::span<const std::byte> rec(reinterpret_cast<const std::byte *>(file + recOff + 4),
-                                           recordSizeForTagImpl(bankTag));
+            std::span<const std::byte> rec(reinterpret_cast<const std::byte *>(file + recOff + 4), recordSizeForTagImpl(bankTag));
             auto pokemon = makePokemonImpl(gameVersion, depositedSpan(gameVersion, rec));
 
             // Bytes off the SD card are NOT trusted. A slot that decodes to nonsense must be
@@ -736,11 +729,9 @@ namespace Trainer
         // Optional open-box section (see CURRENT_BOX_MARKER). Absent in files written before it
         // existed, and absent from a truncated names section too -- both keep box 0, which is where
         // the bank opened before any of this.
-        if (fileSize >= sectionOffset + 6 &&
-            std::memcmp(file + sectionOffset, CURRENT_BOX_MARKER, 4) == 0)
+        if (fileSize >= sectionOffset + 6 && std::memcmp(file + sectionOffset, CURRENT_BOX_MARKER, 4) == 0)
         {
-            const uint16_t storedBox =
-                static_cast<uint16_t>(file[sectionOffset + 4] | (file[sectionOffset + 5] << 8));
+            const uint16_t storedBox = static_cast<uint16_t>(file[sectionOffset + 4] | (file[sectionOffset + 5] << 8));
             // BANK_BOX_COUNT is a ratchet, so a file written by a build with more boxes than this
             // one can name a box that no longer exists.
             currentBox = (storedBox < BANK_BOX_COUNT) ? storedBox : 0;
@@ -749,8 +740,7 @@ namespace Trainer
         delete[] file;
         savedImage = serialize(); // baseline snapshot of the just-loaded state
         if (loadRejects > 0)
-            logErrorToFile("Bank: dropped damaged slot records on load",
-                           std::to_string(loadRejects).c_str());
+            logErrorToFile("Bank: dropped damaged slot records on load", std::to_string(loadRejects).c_str());
         logInfoToFile("Bank: loaded unified bank", path.c_str());
     }
 
@@ -850,8 +840,7 @@ namespace Trainer
 
                 const auto &source = boxes[box][slot];
                 const uint32_t bankTag = readUInt32LittleEndian(image.data() + recOff);
-                const bool occupied = source && source->speciesID() != 0 &&
-                                      bankTagForEntity(*source) != BTAG_EMPTY;
+                const bool occupied = source && source->speciesID() != 0 && bankTagForEntity(*source) != BTAG_EMPTY;
                 if (!occupied)
                 {
                     // wrote a record for a slot we consider empty
@@ -878,11 +867,7 @@ namespace Trainer
                 }
 
                 // Decoded exactly as load() decodes it, padding and all.
-                auto roundTripped = makePokemonImpl(
-                    gameVersion,
-                    depositedSpan(gameVersion, std::span<const std::byte>(
-                                                   reinterpret_cast<const std::byte *>(image.data() + recOff + 4),
-                                                   recordSizeForTagImpl(bankTag))));
+                auto roundTripped = makePokemonImpl(gameVersion, depositedSpan(gameVersion, std::span<const std::byte>(reinterpret_cast<const std::byte *>(image.data() + recOff + 4), recordSizeForTagImpl(bankTag))));
                 if (!roundTripped)
                 {
                     ++failures;
@@ -892,14 +877,11 @@ namespace Trainer
                 // Compare exactly the span serialize() wrote -- a box pokemon is shorter than the party
                 // record it sits in, and the zero tail beyond it is padding, not data. Comparing
                 // past that would fail on padding rather than on any real difference.
-                const size_t byteCount =
-                    std::min({source->getDataSize(), roundTripped->getDataSize(), recordSizeForTagImpl(bankTag)});
+                const size_t byteCount = std::min({source->getDataSize(), roundTripped->getDataSize(), recordSizeForTagImpl(bankTag)});
                 if (std::memcmp(source->getData().data(), roundTripped->getData().data(), byteCount) != 0)
                 {
                     ++failures;
-                    const std::string where = "box " + std::to_string(box + 1) +
-                                              " slot " + std::to_string(slot + 1) +
-                                              " (" + std::string(source->species()) + ")";
+                    const std::string where = "box " + std::to_string(box + 1) + " slot " + std::to_string(slot + 1) + " (" + std::string(source->species()) + ")";
                     logErrorToFile("Bank: slot failed encrypt/decrypt round trip", where.c_str());
                 }
             }
@@ -926,8 +908,7 @@ namespace Trainer
         const std::string path = filePath();
         if (fileUntouchable)
         {
-            logErrorToFile("Bank: refusing to write over a bank file that could not be read or set aside",
-                           path.c_str());
+            logErrorToFile("Bank: refusing to write over a bank file that could not be read or set aside", path.c_str());
             return false;
         }
 
@@ -977,8 +958,7 @@ namespace Trainer
         return makePokemonImpl(group, record);
     }
 
-    std::byte *Bank::encryptRecord(GameVersion group, std::span<const std::byte> decryptedRecord,
-                                   uint32_t encryptionConstant)
+    std::byte *Bank::encryptRecord(GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant)
     {
         return encryptFor(group, decryptedRecord, encryptionConstant);
     }

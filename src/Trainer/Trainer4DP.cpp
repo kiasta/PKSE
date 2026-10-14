@@ -34,12 +34,10 @@ namespace Trainer
 
         int compareFooters(const uint8_t *bytes, size_t firstFooterOffset, size_t secondFooterOffset) noexcept
         {
-            const int major = compareCounters(readUInt32LittleEndian(bytes + firstFooterOffset),
-                                              readUInt32LittleEndian(bytes + secondFooterOffset));
+            const int major = compareCounters(readUInt32LittleEndian(bytes + firstFooterOffset), readUInt32LittleEndian(bytes + secondFooterOffset));
             if (major != PARTITION_SAME)
                 return major;
-            const int minor = compareCounters(readUInt32LittleEndian(bytes + firstFooterOffset + 4),
-                                              readUInt32LittleEndian(bytes + secondFooterOffset + 4));
+            const int minor = compareCounters(readUInt32LittleEndian(bytes + firstFooterOffset + 4), readUInt32LittleEndian(bytes + secondFooterOffset + 4));
             return minor == PARTITION_SECOND ? PARTITION_SECOND : PARTITION_FIRST; // Same -> First
         }
     }
@@ -59,8 +57,7 @@ namespace Trainer
         return sdkVersionWord == GEN4_MAGIC_INTL || sdkVersionWord == GEN4_MAGIC_KOR;
     }
 
-    Trainer4DP::Trainer4DP(std::vector<uint8_t> raw, std::string path)
-        : saveData(std::move(raw)), savePath(std::move(path))
+    Trainer4DP::Trainer4DP(std::vector<uint8_t> raw, std::string path) : saveData(std::move(raw)), savePath(std::move(path))
     {
         init();
     }
@@ -138,8 +135,7 @@ namespace Trainer
         std::memcpy(full.data(), dec, byteCount);
         delete[] dec;
         std::byte *encryptedRecord = Encryption::encryptArray4DP(full);
-        auto pokemon = std::make_unique<::Pokemon::Pokemon4DP>(
-            std::span<const std::byte>(encryptedRecord, Encryption::SIZE_PARTY4_DP));
+        auto pokemon = std::make_unique<::Pokemon::Pokemon4DP>(std::span<const std::byte>(encryptedRecord, Encryption::SIZE_PARTY4_DP));
         delete[] encryptedRecord;
         // Fills level + the five battle stats from EXP, IVs and EVs. A species-0 slot has no
         // personal data and is left alone, which is what keeps an empty slot byte-exact.
@@ -233,8 +229,7 @@ namespace Trainer
             }
             // An empty stored name gets a display default, like every other game. Only names the
             // user actually changes are written back (boxNameDirty), so this never persists.
-            boxNames[boxIndex] =
-                boxNameUtf16.empty() ? ("Box " + std::to_string(boxIndex + 1)) : utf16ToUtf8(boxNameUtf16);
+            boxNames[boxIndex] = boxNameUtf16.empty() ? ("Box " + std::to_string(boxIndex + 1)) : utf16ToUtf8(boxNameUtf16);
         }
     }
 
@@ -256,8 +251,7 @@ namespace Trainer
                 const uint16_t itemId = readUInt16LittleEndian(g + entryOffset);
                 if (itemId == 0)
                     continue;
-                items[pouchIndex].push_back(
-                    InventoryItem{itemId, readUInt16LittleEndian(g + entryOffset + 2), false, false});
+                items[pouchIndex].push_back(InventoryItem{itemId, readUInt16LittleEndian(g + entryOffset + 2), false, false});
                 itemSlot[pouchIndex].push_back(ItemOrigin{static_cast<uint16_t>(pouchSlotIndex), itemId});
             }
         }
@@ -267,8 +261,7 @@ namespace Trainer
     {
         uint8_t *g = generalBlock();
         size_t written = 0;
-        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-             ++partySlotIndex)
+        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
@@ -281,8 +274,7 @@ namespace Trainer
             const auto srcData = party[partySlotIndex]->getData();
             std::memcpy(rec.data(), srcData.data(), std::min(rec.size(), srcData.size()));
             std::byte *encryptedRecord = Encryption::encryptArray4DP(rec);
-            std::memcpy(g + ofsParty() + written * Encryption::SIZE_PARTY4_DP, encryptedRecord,
-                        Encryption::SIZE_PARTY4_DP);
+            std::memcpy(g + ofsParty() + written * Encryption::SIZE_PARTY4_DP, encryptedRecord, Encryption::SIZE_PARTY4_DP);
             delete[] encryptedRecord;
             ++written;
         }
@@ -347,8 +339,7 @@ namespace Trainer
             if (!isBoxNameDirty(boxIndex))
                 continue;
             // 40 bytes (20 units) per box, of which the game uses at most 8 characters.
-            writeGen4Field(sourceBytes + ofsBoxNames() + boxIndex * GEN4_BOX_NAME_LEN, GEN4_BOX_NAME_LEN / 2,
-                           utf8ToUtf16(boxNames[boxIndex]), getMaxBoxNameLength());
+            writeGen4Field(sourceBytes + ofsBoxNames() + boxIndex * GEN4_BOX_NAME_LEN, GEN4_BOX_NAME_LEN / 2, utf8ToUtf16(boxNames[boxIndex]), getMaxBoxNameLength());
         }
     }
 
@@ -358,11 +349,8 @@ namespace Trainer
     {
         uint8_t *g = generalBlock() + ofsBagBase();
         const PouchLayout4DP *pouchLayout = POUCHES4_DP;
-        for (int pouchIndex = 0; pouchIndex < POUCH_COUNT4_DP && pouchIndex < static_cast<int>(items.size());
-             ++pouchIndex)
-            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots, items[pouchIndex],
-                                 pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex]
-                                                                         : std::vector<ItemOrigin>{});
+        for (int pouchIndex = 0; pouchIndex < POUCH_COUNT4_DP && pouchIndex < static_cast<int>(items.size()); ++pouchIndex)
+            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots, items[pouchIndex], pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex] : std::vector<ItemOrigin>{});
     }
 
     bool Trainer4DP::canStoreBoxName(const std::string &name) const

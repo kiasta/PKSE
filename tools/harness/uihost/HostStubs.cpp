@@ -47,9 +47,7 @@ namespace Utils {
     int keyboardPromptsSuppressed() { return gSuppressed; }
     void resetKeyboardSuppressionCount() { gSuppressed = 0; }
 
-    KeyboardResult promptText(const std::string&, const std::string&,
-                              const std::string& initial, int maxChars,
-                              const std::function<void(const std::string&)>& textChanged) {
+    KeyboardResult promptText(const std::string&, const std::string&, const std::string& initial, int maxChars, const std::function<void(const std::string&)>& textChanged) {
         if (g_suppressKeyboard) { ++gSuppressed; return KeyboardResult{}; }
         ++gRaised;
         KeyboardResult r;
@@ -73,8 +71,7 @@ namespace Utils {
 
     /// The console's keyboard, reached from the on-screen keyboard's hand-off key. Scripted from the
     /// same queue: on console it is simply another prompt that blocks until answered.
-    KeyboardResult promptSystemText(const std::string& header, const std::string& guide,
-                                    const std::string& initial, int maxChars) {
+    KeyboardResult promptSystemText(const std::string& header, const std::string& guide, const std::string& initial, int maxChars) {
         return promptText(header, guide, initial, maxChars, nullptr);
     }
 
@@ -213,8 +210,7 @@ namespace Save {
     /// donor logic it feeds is already covered against real saves by the entity suite. Null is what
     /// the real one returns for a file it cannot open, so the UI already handles it -- the picker
     /// reports "Not a save PKSE opens" and changes nothing, which is the branch worth having here.
-    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t>, const std::string&, std::string*,
-                                                       std::string*) {
+    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t>, const std::string&, std::string*, std::string*) {
         return nullptr;
     }
 }

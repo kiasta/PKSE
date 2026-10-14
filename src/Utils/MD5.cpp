@@ -53,10 +53,7 @@ namespace Utils
             uint32_t M[16];
             for (int index = 0; index < 16; index++)
             {
-                M[index] = static_cast<uint32_t>(block[index * 4]) |
-                           (static_cast<uint32_t>(block[index * 4 + 1]) << 8) |
-                           (static_cast<uint32_t>(block[index * 4 + 2]) << 16) |
-                           (static_cast<uint32_t>(block[index * 4 + 3]) << 24);
+                M[index] = static_cast<uint32_t>(block[index * 4]) | (static_cast<uint32_t>(block[index * 4 + 1]) << 8) | (static_cast<uint32_t>(block[index * 4 + 2]) << 16) | (static_cast<uint32_t>(block[index * 4 + 3]) << 24);
             }
 
             uint32_t A = state[0];

@@ -66,8 +66,7 @@ def emit_tables(lines, base_name, per_language_entries, element_formatter=None):
     for lang in LANGUAGES:
         lines.append("        %s_%s,\n" % (base_name, IDENTIFIER_SUFFIX[lang]))
     lines.append("    };\n")
-    lines.append("    static_assert(sizeof(%s_BY_LANGUAGE) / sizeof(%s_BY_LANGUAGE[0]) == LANGUAGE_COUNT,\n"
-                 % (base_name, base_name))
-    lines.append('                  "%s_BY_LANGUAGE must carry one table per language");\n' % base_name)
+    lines.append('    static_assert(sizeof(%s_BY_LANGUAGE) / sizeof(%s_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "%s_BY_LANGUAGE must carry one table per language");\n'
+                 % (base_name, base_name, base_name))
     lines.append("\n")
     return entryCount

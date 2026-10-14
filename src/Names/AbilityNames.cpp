@@ -2839,8 +2839,7 @@ namespace Names
         ABILITY_NAMES_ZH_HANS,
         ABILITY_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(ABILITY_NAMES_BY_LANGUAGE) / sizeof(ABILITY_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ABILITY_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(ABILITY_NAMES_BY_LANGUAGE) / sizeof(ABILITY_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ABILITY_NAMES_BY_LANGUAGE must carry one table per language");
 
     const char *getAbilityName(uint16_t id)
     {

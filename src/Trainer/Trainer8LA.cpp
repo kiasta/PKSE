@@ -98,8 +98,7 @@ namespace Trainer
          * Each slot is exactly SIZE_PARTY8_LA (0x178) bytes of Pokemon data,
          * packed with no inter-slot gap.
          */
-        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()),
-                                                   block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t slot = 0; slot < MAX_PARTY_SLOTS; ++slot)
         {
@@ -111,8 +110,7 @@ namespace Trainer
             std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY8_LA);
 
             bool isEmptySlot = true;
-            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_LA && slotSpanIndex < slotSpan.size();
-                 ++slotSpanIndex)
+            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY8_LA && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
             {
                 if (slotSpan[slotSpanIndex] != std::byte{0})
                 {
@@ -201,9 +199,7 @@ namespace Trainer
          *
          * Total size: 32 boxes * 30 slots * SIZE_STORED8_LA bytes
          */
-        const std::span<const std::byte> blockSpan(
-            reinterpret_cast<const std::byte *>(block.data.data()),
-            block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t boxIndex = 0; boxIndex < BOX_COUNT8_LA; ++boxIndex)
         {
@@ -219,8 +215,7 @@ namespace Trainer
                 std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_STORED8_LA);
 
                 bool isEmptySlot = true;
-                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_STORED8_LA && slotSpanIndex < slotSpan.size();
-                     ++slotSpanIndex)
+                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_STORED8_LA && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
                 {
                     if (slotSpan[slotSpanIndex] != std::byte{0})
                     {
@@ -248,9 +243,7 @@ namespace Trainer
             size_t offset = boxIndex * BOX_NAME_LENGTH8_LA;
             if (offset + BOX_NAME_LENGTH8_LA <= block.data.size())
             {
-                std::u16string boxNameU16 = getString(
-                    block.data.data() + offset,
-                    BOX_NAME_LENGTH8_LA);
+                std::u16string boxNameU16 = getString(block.data.data() + offset, BOX_NAME_LENGTH8_LA);
                 std::string boxName = utf16ToUtf8(boxNameU16);
 
                 if (boxName.empty())
@@ -303,16 +296,13 @@ namespace Trainer
                 std::vector<uint8_t> blankSlot;
                 {
                     std::vector<std::byte> zero(SIZE_PARTY8_LA, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray8LA(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
-                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord),
-                                     reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY8_LA);
+                    std::byte *encryptedRecord = encryptArray8LA(std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
+                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY8_LA);
                     blankSlot.resize(partySlotStride, 0); // 0x178 (no gap for LA)
                     delete[] encryptedRecord;
                 }
 
-                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-                     ++partySlotIndex)
+                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
                 {
                     // Calculate offset (packed for LA: stride == SIZE_PARTY8_LA)
                     const size_t offset = partySlotIndex * partySlotStride;
@@ -320,12 +310,9 @@ namespace Trainer
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
                         const ::Pokemon::Pokemon *pokemon = party[partySlotIndex].get();
-                        uint32_t encryptionConstant = readUInt32LittleEndian(
-                            reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                        uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                        std::span<const std::byte> decryptedSpan(
-                            pokemon->getData().data(),
-                            pokemon->getDataSize());
+                        std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                         std::byte *encryptedData = encryptArray8LA(decryptedSpan, encryptionConstant);
 
@@ -395,8 +382,7 @@ namespace Trainer
                 const size_t offset = boxIndex * BOX_NAME_LENGTH8_LA;
                 if (offset + BOX_NAME_LENGTH8_LA > block.data.size())
                     break;
-                setString(block.data.data() + offset, BOX_NAME_LENGTH8_LA,
-                          utf8ToUtf16(boxNames[boxIndex]), BOX_NAME_LENGTH8_LA / 2 - 1);
+                setString(block.data.data() + offset, BOX_NAME_LENGTH8_LA, utf8ToUtf16(boxNames[boxIndex]), BOX_NAME_LENGTH8_LA / 2 - 1);
             }
             break;
         }
@@ -440,8 +426,7 @@ namespace Trainer
                             const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * boxSlotStride;
                             if (byteOffset + boxSlotStride <= block.data.size())
                             {
-                                blankSlot.assign(block.data.begin() + byteOffset,
-                                                 block.data.begin() + byteOffset + boxSlotStride);
+                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + boxSlotStride);
                                 break;
                             }
                         }
@@ -452,10 +437,8 @@ namespace Trainer
                     // Synthesize: encrypt an all-zero PA8 (party size) with EC 0, then take the
                     // first SIZE_STORED8_LA (0x168) bytes — a stored-size blank that decrypts to species 0.
                     std::vector<std::byte> zero(SIZE_PARTY8_LA, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray8LA(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
-                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord),
-                                     reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_STORED8_LA);
+                    std::byte *encryptedRecord = encryptArray8LA(std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
+                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_STORED8_LA);
                     blankSlot.resize(boxSlotStride, 0); // exactly 0x168 for LA's packed layout
                     delete[] encryptedRecord;
                 }
@@ -474,12 +457,9 @@ namespace Trainer
                         {
                             const auto &pokemon = boxes[boxIndex][slot];
 
-                            uint32_t encryptionConstant = readUInt32LittleEndian(
-                                reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                            uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                            std::span<const std::byte> decryptedSpan(
-                                pokemon->getData().data(),
-                                pokemon->getDataSize());
+                            std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                             std::byte *encryptedData = encryptArray8LA(decryptedSpan, encryptionConstant);
 
@@ -510,10 +490,8 @@ namespace Trainer
         // span (matches the party read). The ctor decrypts it straight back to zeros -> a clean
         // species-0, checksum-valid entity. Raw zeros would decrypt to garbage (BAD EGG).
         std::vector<std::byte> zero(SIZE_PARTY8_LA, std::byte{0});
-        std::byte *encryptedRecord = encryptArray8LA(
-            std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
-        auto clone = std::make_unique<Pokemon8LA>(
-            std::span<const std::byte>(encryptedRecord, SIZE_PARTY8_LA));
+        std::byte *encryptedRecord = encryptArray8LA(std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
+        auto clone = std::make_unique<Pokemon8LA>(std::span<const std::byte>(encryptedRecord, SIZE_PARTY8_LA));
         delete[] encryptedRecord;
         return clone;
     }
@@ -549,8 +527,7 @@ namespace Trainer
 
         inline uint32_t rdU32(const std::vector<uint8_t> &d, size_t offset)
         {
-            return static_cast<uint32_t>(d[offset]) | (static_cast<uint32_t>(d[offset + 1]) << 8) |
-                   (static_cast<uint32_t>(d[offset + 2]) << 16) | (static_cast<uint32_t>(d[offset + 3]) << 24);
+            return static_cast<uint32_t>(d[offset]) | (static_cast<uint32_t>(d[offset + 1]) << 8) | (static_cast<uint32_t>(d[offset + 2]) << 16) | (static_cast<uint32_t>(d[offset + 3]) << 24);
         }
         inline void wrU32(std::vector<uint8_t> &d, size_t offset, uint32_t value)
         {
@@ -594,9 +571,7 @@ namespace Trainer
         if (!dex || dex->size() < PLA_BLOCK_SIZE)
         {
             if (dex)
-                logErrorToFile(
-                    "Pokedex: PLA Zukan block is short; skipped",
-                    ("size=" + std::to_string(dex->size()) + " expected=" + std::to_string(PLA_BLOCK_SIZE)).c_str());
+                logErrorToFile("Pokedex: PLA Zukan block is short; skipped", ("size=" + std::to_string(dex->size()) + " expected=" + std::to_string(PLA_BLOCK_SIZE)).c_str());
             return;
         }
         size_t skippedNoEntry = 0;
@@ -625,8 +600,7 @@ namespace Trainer
             const size_t research = PLA_RESEARCH_BASE + static_cast<size_t>(species) * PLA_RESEARCH_SIZE;
             const size_t stats = PLA_STATS_BASE + static_cast<size_t>(statIdx) * PLA_STATS_SIZE;
 
-            const bool alpha = (pokemon->getGameGroup() == Enums::GameVersion::PLA) &&
-                               static_cast<const Pokemon8LA *>(pokemon)->isAlpha();
+            const bool alpha = (pokemon->getGameGroup() == Enums::GameVersion::PLA) && static_cast<const Pokemon8LA *>(pokemon)->isAlpha();
             const bool shiny = pokemon->isShiny(pokemon->id32(), pokemon->species());
             const uint8_t gender = pokemon->gender(); // 0 male, 1 female, 2 genderless
             // Variant shift: shiny +4, alpha +2, female +1. Genderless does NOT shift (PKHeX masks
@@ -640,12 +614,8 @@ namespace Trainer
             // non-alpha slots (shift 0,1,4,5). PKHeX SetPokeObtained.
             if (!alpha)
             {
-                const float heightValue = (pokemon->getGameGroup() == Enums::GameVersion::PLA)
-                                    ? static_cast<const Pokemon8LA *>(pokemon)->heightAbsolute()
-                                    : 0.0f;
-                const float weightValue = (pokemon->getGameGroup() == Enums::GameVersion::PLA)
-                                    ? static_cast<const Pokemon8LA *>(pokemon)->weightAbsolute()
-                                    : 0.0f;
+                const float heightValue = (pokemon->getGameGroup() == Enums::GameVersion::PLA) ? static_cast<const Pokemon8LA *>(pokemon)->heightAbsolute() : 0.0f;
+                const float weightValue = (pokemon->getGameGroup() == Enums::GameVersion::PLA) ? static_cast<const Pokemon8LA *>(pokemon)->weightAbsolute() : 0.0f;
                 if (heightValue > 0.0f && weightValue > 0.0f)
                 {
                     const bool hadNonAlpha = ((*dex)[stats + 0x05] & 0x33) != 0;
@@ -683,8 +653,7 @@ namespace Trainer
             // player has REPORTED to Laventon, which has not happened; the game grants it when they do.
             wrU32(*dex, research + 0x00, rdU32(*dex, research + 0x00) | 0x01); // has-ever-been-updated
             const uint32_t obtained = rdU16(*dex, research + 0x0A) + 1u;
-            wrU16(*dex, research + 0x0A,
-                  static_cast<uint16_t>(obtained > PLA_MAX_RESEARCH_POINTS ? PLA_MAX_RESEARCH_POINTS : obtained));
+            wrU16(*dex, research + 0x0A, static_cast<uint16_t>(obtained > PLA_MAX_RESEARCH_POINTS ? PLA_MAX_RESEARCH_POINTS : obtained));
 
             // Selected variant -- what the dex page shows for this species. Only for a species that had
             // none, so an entry the player already had keeps what it was showing.
@@ -715,8 +684,7 @@ namespace Trainer
         // jump here would mean the lookup table is wrong, and silence is how that hides.
         if (skippedNoEntry != 0)
         {
-            logInfoToFile("Pokedex: species+form with no PLA statistics entry",
-                          (std::to_string(skippedNoEntry) + " skipped").c_str());
+            logInfoToFile("Pokedex: species+form with no PLA statistics entry", (std::to_string(skippedNoEntry) + " skipped").c_str());
         }
     }
 

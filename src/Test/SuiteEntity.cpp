@@ -135,10 +135,7 @@ namespace Test
             if (context.trainer != nullptr)
             {
                 const Trainer::TradeDonor donor = Trainer::buildTradeDonor(*context.trainer, pokemon);
-                const bool isOwnTrainer =
-                    Utils::utf8ToUtf16(context.trainer->trainerName) == pokemon.otName() &&
-                    context.trainer->ID32 == pokemon.id32() &&
-                    context.trainer->trainerGender == pokemon.otGender();
+                const bool isOwnTrainer = Utils::utf8ToUtf16(context.trainer->trainerName) == pokemon.otName() && context.trainer->ID32 == pokemon.id32() && context.trainer->trainerGender == pokemon.otGender();
                 Trainer::TradeDonorRefusal expected = Trainer::TradeDonorRefusal::None;
                 if (!pokemon.hasHandler())
                     expected = Trainer::TradeDonorRefusal::NoHandler;
@@ -151,57 +148,40 @@ namespace Test
                 // it is accepted wherever it lands rather than predicted.
                 if (donor.refusal != Trainer::TradeDonorRefusal::NameUnstorable)
                 {
-                    context.check(donor.refusal == expected,
-                              "buildTradeDonor gave the wrong answer for this save's own trainer",
-                              whereLabel + " refusal=" + std::to_string(static_cast<int>(donor.refusal)) +
-                                  " expected=" + std::to_string(static_cast<int>(expected)));
+                    context.check(donor.refusal == expected, "buildTradeDonor gave the wrong answer for this save's own trainer", whereLabel + " refusal=" + std::to_string(static_cast<int>(donor.refusal)) + " expected=" + std::to_string(static_cast<int>(expected)));
                 }
                 if (donor.isAccepted())
                 {
-                    context.check(donor.partner.trainerName == Utils::utf8ToUtf16(context.trainer->trainerName),
-                              "an accepted trade donor did not carry the save trainer's name", whereLabel);
-                    context.check(!donor.partner.trainerName.empty(),
-                              "an accepted trade donor has no name at all", whereLabel);
+                    context.check(donor.partner.trainerName == Utils::utf8ToUtf16(context.trainer->trainerName), "an accepted trade donor did not carry the save trainer's name", whereLabel);
+                    context.check(!donor.partner.trainerName.empty(), "an accepted trade donor has no name at all", whereLabel);
                 }
             }
 
-            if (!context.check(pokemon.isStructurallyValid(),
-                           "stored Pokemon fails its own structural validity check "
-                           "(checksum, or the format's stand-in where there is none)",
-                           whereLabel))
+            if (!context.check(pokemon.isStructurallyValid(), "stored Pokemon fails its own structural validity check (checksum, or the format's stand-in where there is none)", whereLabel))
                 return; // everything below reads fields out of a record we already know is wrong
 
             const uint16_t species = pokemon.speciesID();
-            if (!context.check(species <= Pokemon::PERSONAL_MAX_SPECIES,
-                           "species id is beyond the personal table", whereLabel))
+            if (!context.check(species <= Pokemon::PERSONAL_MAX_SPECIES, "species id is beyond the personal table", whereLabel))
                 return;
 
             const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(species, 0);
-            context.check(pokemon.formID() < pi.formCount || pi.formCount == 0,
-                      "form index is beyond the species' form count",
-                      whereLabel + " formCount=" + std::to_string(pi.formCount));
+            context.check(pokemon.formID() < pi.formCount || pi.formCount == 0, "form index is beyond the species' form count", whereLabel + " formCount=" + std::to_string(pi.formCount));
 
             auto copy = pokemon.clone();
             if (context.check(copy != nullptr, "clone() returned nothing", whereLabel))
             {
                 size_t diff = 0;
-                context.check(sameBytes(pokemon, *copy, diff), "clone is not byte-identical to its original",
-                          whereLabel + " " + hex("offset", diff, 4));
+                context.check(sameBytes(pokemon, *copy, diff), "clone is not byte-identical to its original", whereLabel + " " + hex("offset", diff, 4));
             }
 
-            context.check(pokemon.level() >= 1 && pokemon.level() <= 100, "level out of range",
-                      whereLabel + " level=" + std::to_string(pokemon.level()));
+            context.check(pokemon.level() >= 1 && pokemon.level() <= 100, "level out of range", whereLabel + " level=" + std::to_string(pokemon.level()));
 
             for (int index = 0; index < 6; ++index)
             {
-                context.check(ivOf(pokemon, index) <= pokemon.maxIV(), "IV above this format's maximum",
-                          whereLabel + " stat=" + STAT_NAMES[index] + " iv=" + std::to_string(ivOf(pokemon, index)) +
-                              " max=" + std::to_string(pokemon.maxIV()));
+                context.check(ivOf(pokemon, index) <= pokemon.maxIV(), "IV above this format's maximum", whereLabel + " stat=" + STAT_NAMES[index] + " iv=" + std::to_string(ivOf(pokemon, index)) + " max=" + std::to_string(pokemon.maxIV()));
                 // evWide()/maxEV(), never evXXX(): Gen 1's Stat Experience is 16 bits per stat and
                 // the 8-bit accessors SATURATE, so a trained pokemon reads as a flat 255 through them.
-                context.check(pokemon.evWide(index) <= pokemon.maxEV(), "EV above this format's maximum",
-                          whereLabel + " stat=" + STAT_NAMES[index] + " ev=" + std::to_string(pokemon.evWide(index)) +
-                              " max=" + std::to_string(pokemon.maxEV()));
+                context.check(pokemon.evWide(index) <= pokemon.maxEV(), "EV above this format's maximum", whereLabel + " stat=" + STAT_NAMES[index] + " ev=" + std::to_string(pokemon.evWide(index)) + " max=" + std::to_string(pokemon.maxEV()));
             }
 
             // The 510 total is a modern-format rule. Gen 1 has no combined cap at all (its cap is
@@ -211,8 +191,7 @@ namespace Test
                 int total = 0;
                 for (int index = 0; index < 6; ++index)
                     total += pokemon.evWide(index);
-                context.warn(total <= 510, "EV total exceeds the games' 510 limit",
-                         whereLabel + " total=" + std::to_string(total));
+                context.warn(total <= 510, "EV total exceeds the games' 510 limit", whereLabel + " total=" + std::to_string(total));
             }
 
             int moveCount = 0;
@@ -222,14 +201,9 @@ namespace Test
                 if (moveId == 0)
                     continue;
                 ++moveCount;
-                if (!context.check(moveId <= Pokemon::LEARN_MAX_MOVE_ID, "move id is beyond the move table",
-                                   whereLabel + " slot=" + std::to_string(moveIndex + 1) +
-                                       " move=" + std::to_string(moveId)))
+                if (!context.check(moveId <= Pokemon::LEARN_MAX_MOVE_ID, "move id is beyond the move table", whereLabel + " slot=" + std::to_string(moveIndex + 1) + " move=" + std::to_string(moveId)))
                     continue;
-                context.check(Names::isMovePresent(moveId, context.group),
-                              "Pokemon holds a move that does not exist in this game",
-                              whereLabel + " slot=" + std::to_string(moveIndex + 1) + " move=\"" +
-                                  Names::getMoveName(moveId) + "\"");
+                context.check(Names::isMovePresent(moveId, context.group), "Pokemon holds a move that does not exist in this game", whereLabel + " slot=" + std::to_string(moveIndex + 1) + " move=\"" + Names::getMoveName(moveId) + "\"");
                 // WARN, not check: this judges a STORED VALUE against the game's limit, exactly as
                 // the EV-total, ability-slot, level-vs-EXP and battle-stat checks below it do, and
                 // every one of those is a warning. A move id out of range or absent from the game
@@ -243,19 +217,14 @@ namespace Test
                 // legality findings: 16 of 565 boxed Pokemon is a save, all 565 would be a bad table.
                 const uint8_t maxPP = Names::getMoveMaxPP(moveId, pokemon.movePPUps(moveIndex), context.group);
                 if (maxPP > 0)
-                    context.warn(pokemon.movePP(moveIndex) <= maxPP, "move PP above the move's maximum",
-                              whereLabel + " move=\"" + Names::getMoveName(moveId) + "\" pp=" +
-                                  std::to_string(pokemon.movePP(moveIndex)) + " max=" + std::to_string(maxPP) +
-                                  " ppUps=" + std::to_string(pokemon.movePPUps(moveIndex)));
+                    context.warn(pokemon.movePP(moveIndex) <= maxPP, "move PP above the move's maximum", whereLabel + " move=\"" + Names::getMoveName(moveId) + "\" pp=" + std::to_string(pokemon.movePP(moveIndex)) + " max=" + std::to_string(maxPP) + " ppUps=" + std::to_string(pokemon.movePPUps(moveIndex)));
             }
             context.warn(moveCount > 0, "Pokemon has no moves at all", whereLabel);
 
             // canStoreNickname is the "can PKSE write back what it just read" question. A false here
             // means the reader's alphabet is wider than the writer's, which is silent data loss the
             // moment anything re-saves the name.
-            context.check(pokemon.canStoreNickname(pokemon.nickname()),
-                      "PKSE can read this nickname but not write it back (charset gap)",
-                      whereLabel + " nick=\"" + Utils::utf16ToUtf8(pokemon.nickname()) + "\"");
+            context.check(pokemon.canStoreNickname(pokemon.nickname()), "PKSE can read this nickname but not write it back (charset gap)", whereLabel + " nick=\"" + Utils::utf16ToUtf8(pokemon.nickname()) + "\"");
 
             // Two different questions, and only one of them is a defect.
             //
@@ -276,9 +245,7 @@ namespace Test
                 if (renamed->canStoreNickname(probe))
                 {
                     renamed->setNickname(probe);
-                    context.check(renamed->nickname() == probe, "setNickname did not store a new name",
-                                  whereLabel + " wrote=\"" + Utils::utf16ToUtf8(probe) + "\" read=\"" +
-                                      Utils::utf16ToUtf8(renamed->nickname()) + "\"");
+                    context.check(renamed->nickname() == probe, "setNickname did not store a new name", whereLabel + " wrote=\"" + Utils::utf16ToUtf8(probe) + "\" read=\"" + Utils::utf16ToUtf8(renamed->nickname()) + "\"");
                 }
                 renamed->setNickname(original);
                 const bool nameIntact = (renamed->nickname() == original);
@@ -286,27 +253,20 @@ namespace Test
                 if (!sameBytes(pokemon, *renamed, diff))
                 {
                     const size_t byteCount = countDiffs(pokemon, *renamed, lastDiff);
-                    const std::string detail = whereLabel + " bytes=" + std::to_string(byteCount) +
-                                               " " + hex("first", diff, 4) + " " + hex("last", lastDiff, 4) +
-                                               " nick=\"" + Utils::utf16ToUtf8(original) + "\"";
+                    const std::string detail = whereLabel + " bytes=" + std::to_string(byteCount) + " " + hex("first", diff, 4) + " " + hex("last", lastDiff, 4) + " nick=\"" + Utils::utf16ToUtf8(original) + "\"";
                     if (nameIntact)
                         context.note("re-writing a nickname normalises bytes the game left after it", detail);
                     else
                         context.warn(false, "re-writing a Pokemon's own nickname changes its bytes", detail);
                 }
-                context.check(nameIntact,
-                          "nickname does not survive a set/get round trip",
-                          whereLabel + " wrote=\"" + Utils::utf16ToUtf8(original) +
-                              "\" read=\"" + Utils::utf16ToUtf8(renamed->nickname()) + "\"");
+                context.check(nameIntact, "nickname does not survive a set/get round trip", whereLabel + " wrote=\"" + Utils::utf16ToUtf8(original) + "\" read=\"" + Utils::utf16ToUtf8(renamed->nickname()) + "\"");
             }
 
             if (pokemon.hasHeldItem() && pokemon.heldItem() != 0)
             {
                 // "???" is getItemNameFor's out-of-range answer.
                 const char *heldItemName = Names::getItemNameFor(context.group, pokemon.heldItem());
-                context.check(heldItemName != nullptr && heldItemName[0] != '\0' && std::string(heldItemName) != "???",
-                          "held item has no name in this generation's item table",
-                          whereLabel + " item=" + std::to_string(pokemon.heldItem()));
+                context.check(heldItemName != nullptr && heldItemName[0] != '\0' && std::string(heldItemName) != "???", "held item has no name in this generation's item table", whereLabel + " item=" + std::to_string(pokemon.heldItem()));
             }
 
             if (pokemon.hasAbility() && pokemon.ability() != 0)
@@ -316,15 +276,11 @@ namespace Test
                 // resolving a Gen 7 Piplup against Scarlet/Violet reported a legitimate starter as
                 // holding an illegal ability. The pokemon's OWN group, not the save's -- a bank slot
                 // holds a foreign Pokemon.
-                const Pokemon::AbilitySlots slots =
-                    Pokemon::getAbilitySlots(species, pokemon.formID(), pokemon.getGameGroup());
+                const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(species, pokemon.formID(), pokemon.getGameGroup());
                 std::string slotList;
                 for (int slotIndex = 0; slotIndex < slots.count; ++slotIndex)
                     slotList += (slotIndex ? "/" : "") + std::to_string(slots.slot[slotIndex]);
-                context.warn(Pokemon::isAbilityLegal(pokemon),
-                         "ability is not one of the species' ability slots",
-                         whereLabel + " ability=" + std::to_string(pokemon.ability()) +
-                             " slots=" + slotList);
+                context.warn(Pokemon::isAbilityLegal(pokemon), "ability is not one of the species' ability slots", whereLabel + " ability=" + std::to_string(pokemon.ability()) + " slots=" + slotList);
             }
 
             // Only meaningful where the format stores BOTH. A format that derives level from EXP
@@ -332,9 +288,7 @@ namespace Test
             if (pokemon.exp() > 0)
             {
                 const uint8_t derived = Pokemon::getLevelFromExp(pokemon.exp(), Pokemon::getGrowthRate(species));
-                context.warn(derived == pokemon.level(), "stored level disagrees with stored EXP",
-                         whereLabel + " level=" + std::to_string(pokemon.level()) +
-                             " expLevel=" + std::to_string(derived) + " exp=" + std::to_string(pokemon.exp()));
+                context.warn(derived == pokemon.level(), "stored level disagrees with stored EXP", whereLabel + " level=" + std::to_string(pokemon.level()) + " expLevel=" + std::to_string(derived) + " exp=" + std::to_string(pokemon.exp()));
             }
 
             if (isParty)
@@ -355,11 +309,9 @@ namespace Test
                         if (stored[index] == after[index])
                             continue;
                         same = false;
-                        deltas += std::string(deltas.empty() ? "" : " ") + STAT_NAMES[index] + "=" +
-                                  std::to_string(stored[index]) + "->" + std::to_string(after[index]);
+                        deltas += std::string(deltas.empty() ? "" : " ") + STAT_NAMES[index] + "=" + std::to_string(stored[index]) + "->" + std::to_string(after[index]);
                     }
-                    context.warn(same, "party Pokemon's stored battle stats do not match a recalculation",
-                             whereLabel + " " + deltas);
+                    context.warn(same, "party Pokemon's stored battle stats do not match a recalculation", whereLabel + " " + deltas);
                 }
             }
         }
@@ -407,8 +359,7 @@ namespace Test
         if (chunk == PartyChunk)
         {
             const size_t maxParty = tr->getPartySize();
-            context.check(tr->party.size() <= maxParty, "party holds more Pokemon than the game allows",
-                      "party=" + std::to_string(tr->party.size()) + " max=" + std::to_string(maxParty));
+            context.check(tr->party.size() <= maxParty, "party holds more Pokemon than the game allows", "party=" + std::to_string(tr->party.size()) + " max=" + std::to_string(maxParty));
             int filled = 0;
             for (size_t partySlotIndex = 0; partySlotIndex < tr->party.size(); ++partySlotIndex)
             {
@@ -436,8 +387,7 @@ namespace Test
             // written back, so a Pokemon sitting there is a Pokemon that quietly disappears.
             if (slotIndex >= slots)
             {
-                context.fail("Pokemon sits in a slot beyond this game's box size",
-                         slot((int)box, (int)slotIndex) + " boxSize=" + std::to_string(slots));
+                context.fail("Pokemon sits in a slot beyond this game's box size", slot((int)box, (int)slotIndex) + " boxSize=" + std::to_string(slots));
                 continue;
             }
             ++filled;
@@ -445,7 +395,6 @@ namespace Test
             maybeSample(context, *tr->boxes[box][slotIndex], taken);
         }
         if (filled > 0)
-            context.note("box Pokemon checked",
-                     "box=" + std::to_string(box + 1) + " count=" + std::to_string(filled));
+            context.note("box Pokemon checked", "box=" + std::to_string(box + 1) + " count=" + std::to_string(filled));
     }
 }

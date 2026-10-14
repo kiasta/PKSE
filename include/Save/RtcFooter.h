@@ -34,8 +34,7 @@ namespace Save
         const size_t footerSize = fileSize & 0x3F;
         if (footerSize == 0)
             return 0;
-        const bool plausible = (footerSize == 0x07) || ((footerSize % 2) == 0 && footerSize >= MIN_RTC_FOOTER_SIZE &&
-                                                        footerSize <= MAX_RTC_FOOTER_SIZE);
+        const bool plausible = (footerSize == 0x07) || ((footerSize % 2) == 0 && footerSize >= MIN_RTC_FOOTER_SIZE && footerSize <= MAX_RTC_FOOTER_SIZE);
         if (!plausible)
             return 0;
         const size_t withoutFooter = fileSize - footerSize;

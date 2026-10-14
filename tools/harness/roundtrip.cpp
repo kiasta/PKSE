@@ -89,9 +89,7 @@ int g_known = 0;
  * Categorising these matters. A harness that reports failures it will never fix trains everyone to
  * ignore it, and then it catches nothing.
  */
-bool compareBytes(const std::string& label,
-                  const std::vector<uint8_t>& before, const std::vector<uint8_t>& after,
-                  const char* known = nullptr) {
+bool compareBytes(const std::string& label, const std::vector<uint8_t>& before, const std::vector<uint8_t>& after, const char* known = nullptr) {
     if (before.size() != after.size()) {
         std::printf("  FAIL  %-22s size changed: %zu -> %zu\n", label.c_str(), before.size(), after.size());
         // Still compare the common prefix. Whether the part we DID write matches decides what kind
@@ -103,8 +101,7 @@ bool compareBytes(const std::string& label,
             if (before[i] != after[i]) { firstDiff = i; break; }
         }
         if (firstDiff == common)
-            std::printf("        common prefix of %zu bytes is IDENTICAL - the parse stopped early,\n"
-                        "        it did not corrupt what it wrote\n", common);
+            std::printf("        common prefix of %zu bytes is IDENTICAL - the parse stopped early,\n        it did not corrupt what it wrote\n", common);
         else
             std::printf("        prefix diverges at 0x%zX - the parse itself is wrong\n", firstDiff);
         ++g_fail;
@@ -175,8 +172,7 @@ void roundTripFRLG(const std::string& path) {
         Trainer::Trainer3FRLG trainer(before, "FireRed_e.sav");
         runUpdates(trainer, s.which);
         trainer.finalizeChecksums();
-        compareBytes(std::string("FireRed/LeafGreen [") + s.name + "]", before,
-                     trainer.getSaveData(), s.known);
+        compareBytes(std::string("FireRed/LeafGreen [") + s.name + "]", before, trainer.getSaveData(), s.known);
     }
     // serialize() is what the app's write path calls: every writer above PLUS the Pokedex, the
     // current box and the trainer block. The per-writer steps cannot see those three.
@@ -204,8 +200,7 @@ void roundTripRSE(const char* title, const std::string& path, const std::string&
 
     const size_t rawSize = before.size();
     if (Save::stripRtcFooter(before))
-        std::printf("        %s: trimmed a %zu-byte RTC footer (%zu -> %zu)\n",
-                    title, rawSize - before.size(), rawSize, before.size());
+        std::printf("        %s: trimmed a %zu-byte RTC footer (%zu -> %zu)\n", title, rawSize - before.size(), rawSize, before.size());
 
     {
         Trainer::Trainer3RSE probe(before, "probe.sav");
@@ -214,9 +209,7 @@ void roundTripRSE(const char* title, const std::string& path, const std::string&
             ++g_fail;
             return;
         }
-        std::printf("        %s: layout %s, OT \"%s\", %zu party, key 0x%08X\n", title,
-                    probe.layout() == Trainer::Gen3HoennLayout::Emerald ? "Emerald" : "Ruby/Sapphire",
-                    probe.trainerName.c_str(), probe.party.size(), probe.securityKey());
+        std::printf("        %s: layout %s, OT \"%s\", %zu party, key 0x%08X\n", title, probe.layout() == Trainer::Gen3HoennLayout::Emerald ? "Emerald" : "Ruby/Sapphire", probe.trainerName.c_str(), probe.party.size(), probe.securityKey());
         // The layout is what decides the bag offsets and whether money is keyed, so a save that
         // resolved to the wrong one would still round-trip (nothing was edited) while showing the
         // user a bag full of nonsense. Check it against the folder, which is the one thing that knows.
@@ -287,15 +280,13 @@ void interruptedSaveUsesOlderSlot(const char* title, const std::string& path) {
     const TrainerT expected(olderSlotOnly, "probe.sav");
     const TrainerT trainer(interrupted, "probe.sav");
     const bool detected = TrainerT::detect(interrupted);
-    const bool sameSave = trainer.isValid() && expected.isValid() && trainer.trainerName == expected.trainerName &&
-                          trainer.money == expected.money && trainer.party.size() == expected.party.size();
+    const bool sameSave = trainer.isValid() && expected.isValid() && trainer.trainerName == expected.trainerName && trainer.money == expected.money && trainer.party.size() == expected.party.size();
     if (detected && sameSave) {
         std::printf("  PASS  %-22s opens from the older slot (OT \"%s\")\n", label.c_str(), trainer.trainerName.c_str());
         ++g_pass;
         return;
     }
-    std::printf("  FAIL  %-22s detect=%d valid=%d, OT \"%s\" where the older slot holds \"%s\"\n", label.c_str(),
-                detected, trainer.isValid(), trainer.trainerName.c_str(), expected.trainerName.c_str());
+    std::printf("  FAIL  %-22s detect=%d valid=%d, OT \"%s\" where the older slot holds \"%s\"\n", label.c_str(), detected, trainer.isValid(), trainer.trainerName.c_str(), expected.trainerName.c_str());
     ++g_fail;
 }
 
@@ -327,9 +318,7 @@ void roundTripSCBlock(const char* label, const std::string& path) {
     Encryption::cryptStaticXorpadBytes(payload, payload.size());
     size_t consumed = 0;
     const std::vector<Save::Block> probe = Save::parseAllBlocks(payload.data(), payload.size(), &consumed);
-    std::printf("        %zu blocks, parsed %zu / %zu payload bytes (%.2f%%)\n",
-                probe.size(), consumed, payload.size(),
-                payload.empty() ? 0.0 : 100.0 * static_cast<double>(consumed) / static_cast<double>(payload.size()));
+    std::printf("        %zu blocks, parsed %zu / %zu payload bytes (%.2f%%)\n", probe.size(), consumed, payload.size(), payload.empty() ? 0.0 : 100.0 * static_cast<double>(consumed) / static_cast<double>(payload.size()));
 
     // If it stopped short, name the block that stopped it. "Parsing failed" is not actionable;
     // "type code 0x0B on key 0x________" points straight at getTypeSize().
@@ -337,8 +326,7 @@ void roundTripSCBlock(const char* label, const std::string& path) {
         const uint32_t key = Utils::readUInt32LittleEndian(payload.data() + consumed);
         Utils::SCXorShift32 xk(key);
         const uint8_t type = payload[consumed + 4] ^ xk.Next();
-        std::printf("        STOPPED at 0x%zX on key 0x%08X, type code 0x%02X (%u) -- %zu bytes dropped\n",
-                    consumed, key, type, type, payload.size() - consumed);
+        std::printf("        STOPPED at 0x%zX on key 0x%08X, type code 0x%02X (%u) -- %zu bytes dropped\n", consumed, key, type, type, payload.size() - consumed);
     }
 
     std::vector<Save::Block> blocks = Encryption::decrypt(before.data(), before.size());
@@ -369,8 +357,7 @@ void roundTripSCBlock(const char* label, const std::string& path) {
         std::vector<Save::Block> fresh = Encryption::decrypt(before.data(), before.size());
         TrainerT trainer(std::move(fresh));
         runUpdates(trainer, s.which);
-        compareBytes(std::string(label) + " [" + s.name + "]", before,
-                     Encryption::encrypt(trainer.getBlocks()), s.known);
+        compareBytes(std::string(label) + " [" + s.name + "]", before, Encryption::encrypt(trainer.getBlocks()), s.known);
     }
 }
 
@@ -398,8 +385,7 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
     }
     size_t pouchLayoutSize = 0;
     for (size_t pouchIndex = 0; pouchIndex < trainer.items.size(); ++pouchIndex) {
-        const Trainer::PouchInfo8SWSH& info =
-            Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
+        const Trainer::PouchInfo8SWSH& info = Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
         pouchLayoutSize = std::max(pouchLayoutSize, static_cast<size_t>(info.offset + info.maxCount * 4));
     }
     if (trainer.items.empty() || expectedItemBlock.size() < pouchLayoutSize) {
@@ -412,8 +398,7 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
     size_t parkedEntryCount = 0;
     size_t appendedItemCount = 0;
     for (size_t pouchIndex = 0; pouchIndex < trainer.items.size(); ++pouchIndex) {
-        const Trainer::PouchInfo8SWSH& info =
-            Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
+        const Trainer::PouchInfo8SWSH& info = Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
         std::vector<Trainer::InventoryItem>& pouch = trainer.items[pouchIndex];
         uint8_t* pouchBytes = expectedItemBlock.data() + info.offset;
         const size_t slotCount = static_cast<size_t>(info.maxCount);
@@ -434,8 +419,7 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
             Trainer::InventoryItem& lastItem = pouch.back();
             lastItem.count = static_cast<uint16_t>(lastItem.count == 5 ? 6 : 5);
             uint8_t* lastItemBytes = pouchBytes + lastOccupiedSlot * 4;
-            Trainer::InventoryItem8SWSH editedEntry =
-                Trainer::InventoryItem8SWSH::fromValue(Utils::readUInt32LittleEndian(lastItemBytes));
+            Trainer::InventoryItem8SWSH editedEntry = Trainer::InventoryItem8SWSH::fromValue(Utils::readUInt32LittleEndian(lastItemBytes));
             editedEntry.count = lastItem.count;
             Utils::writeUInt32LittleEndian(lastItemBytes, editedEntry.toValue());
             ++editedEntryCount;
@@ -446,8 +430,7 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
 
         if (firstEmptySlot < slotCount) {
             uint16_t newItemId = 1;
-            while (std::any_of(pouch.begin(), pouch.end(),
-                               [newItemId](const Trainer::InventoryItem& item) { return item.itemId == newItemId; })) {
+            while (std::any_of(pouch.begin(), pouch.end(), [newItemId](const Trainer::InventoryItem& item) { return item.itemId == newItemId; })) {
                 ++newItemId;
             }
             pouch.push_back(Trainer::InventoryItem{newItemId, 1, true, false});
@@ -461,8 +444,7 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
         }
     }
 
-    std::printf("        %s: edited %zu pouch tails (%zu parked after an empty slot), appended %zu items\n",
-                label, editedEntryCount, parkedEntryCount, appendedItemCount);
+    std::printf("        %s: edited %zu pouch tails (%zu parked after an empty slot), appended %zu items\n", label, editedEntryCount, parkedEntryCount, appendedItemCount);
     if (parkedEntryCount == 0) {
         std::printf("        no pouch on this save has a gap, so packing and positional writing agree here\n");
     }
@@ -503,16 +485,14 @@ void itemRemovalEmptiesOneSlotSWSH(const char* label, const std::string& path) {
 
     size_t removedItemCount = 0;
     for (size_t pouchIndex = 0; pouchIndex < trainer.items.size(); ++pouchIndex) {
-        const Trainer::PouchInfo8SWSH& info =
-            Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
+        const Trainer::PouchInfo8SWSH& info = Trainer::getPouchInfo8SWSH(static_cast<Trainer::PouchType8SWSH>(pouchIndex));
         std::vector<Trainer::InventoryItem>& pouch = trainer.items[pouchIndex];
         if (pouch.empty()) {
             continue;
         }
         uint8_t* pouchBytes = expectedItemBlock.data() + info.offset;
         for (size_t slotIndex = 0; slotIndex < static_cast<size_t>(info.maxCount); ++slotIndex) {
-            if (Trainer::InventoryItem8SWSH::fromValue(
-                    Utils::readUInt32LittleEndian(pouchBytes + slotIndex * 4)).itemId == 0) {
+            if (Trainer::InventoryItem8SWSH::fromValue(Utils::readUInt32LittleEndian(pouchBytes + slotIndex * 4)).itemId == 0) {
                 continue;
             }
             Utils::writeUInt32LittleEndian(pouchBytes + slotIndex * 4, 0);  // the first entry, now gone
@@ -535,18 +515,13 @@ void itemRemovalEmptiesOneSlotSWSH(const char* label, const std::string& path) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::printf("usage: roundtrip <save-root>\n"
-                    "  Expects, relative to <save-root>:\n"
-                    "  One folder per TITLE, any filename inside:\n"
-                    "    FireRed/            Let's Go Pikachu/\n"
-                    "    Sword/  Shield/  Violet/  Legends Z-A/  Legends Arceus/\n");
+        std::printf("usage: roundtrip <save-root>\n  Expects, relative to <save-root>:\n  One folder per TITLE, any filename inside:\n    FireRed/            Let's Go Pikachu/\n    Sword/  Shield/  Violet/  Legends Z-A/  Legends Arceus/\n");
         return 2;
     }
     const std::string root = argv[1];
     g_saveRoot = root;
 
-    std::printf("PKSE save round-trip harness\n"
-                "read -> parse -> serialize back -> compare. A no-op edit must reproduce the file exactly.\n\n");
+    std::printf("PKSE save round-trip harness\nread -> parse -> serialize back -> compare. A no-op edit must reproduce the file exactly.\n\n");
 
     // Found by TITLE FOLDER -- <root>/Shield/, <root>/Violet/ -- with any filename inside.
     // See SaveTree.h for why the folder is the authority and not the file name.
@@ -571,7 +546,6 @@ int main(int argc, char** argv) {
 
     std::printf("\n%d passed, %d known divergence(s), %d FAILED\n", g_pass, g_known, g_fail);
     if (g_known)
-        std::printf("Known divergences are intended behaviour. Watch their byte counts: a change\n"
-                    "there means something moved that nobody decided to move.\n");
+        std::printf("Known divergences are intended behaviour. Watch their byte counts: a change\nthere means something moved that nobody decided to move.\n");
     return g_fail == 0 ? 0 : 1;
 }

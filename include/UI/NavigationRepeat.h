@@ -18,8 +18,7 @@ namespace UI
         static constexpr int INITIAL_DELAY_FRAMES = 18;
         static constexpr int REPEAT_INTERVAL_FRAMES = 4;
 
-        u64 apply(u64 pressed, u64 held,
-                            u64 repeatableMask)
+        u64 apply(u64 pressed, u64 held, u64 repeatableMask)
         {
             const u64 repeatableHeld = held & repeatableMask;
             if (repeatableHeld == 0 || repeatableHeld != heldDirections)
@@ -30,8 +29,7 @@ namespace UI
             }
 
             ++heldFrames;
-            if (heldFrames >= INITIAL_DELAY_FRAMES &&
-                (heldFrames - INITIAL_DELAY_FRAMES) % REPEAT_INTERVAL_FRAMES == 0)
+            if (heldFrames >= INITIAL_DELAY_FRAMES && (heldFrames - INITIAL_DELAY_FRAMES) % REPEAT_INTERVAL_FRAMES == 0)
             {
                 return pressed | repeatableHeld;
             }
@@ -69,25 +67,19 @@ namespace UI
         static constexpr int RELEASE_THRESHOLD = 9000;
         static constexpr int AXIS_SWITCH_MARGIN = 4000;
 
-        AnalogNavigationSample sample(int x, int y,
-                                      u64 up, u64 down,
-                                      u64 left, u64 right)
+        AnalogNavigationSample sample(int x, int y, u64 up, u64 down, u64 left, u64 right)
         {
             const u64 previous = heldDirection;
             const Candidate candidate = dominantCandidate(x, y, up, down, left, right);
 
             if (heldDirection != 0)
             {
-                const int currentStrength =
-                    directionStrength(heldDirection, x, y, up, down, left, right);
+                const int currentStrength = directionStrength(heldDirection, x, y, up, down, left, right);
                 if (currentStrength < RELEASE_THRESHOLD)
                 {
-                    heldDirection =
-                        candidate.strength >= PRESS_THRESHOLD ? candidate.direction : 0;
+                    heldDirection = candidate.strength >= PRESS_THRESHOLD ? candidate.direction : 0;
                 }
-                else if (candidate.direction != 0 && candidate.direction != heldDirection &&
-                         candidate.strength >= PRESS_THRESHOLD &&
-                         candidate.strength >= currentStrength + AXIS_SWITCH_MARGIN)
+                else if (candidate.direction != 0 && candidate.direction != heldDirection && candidate.strength >= PRESS_THRESHOLD && candidate.strength >= currentStrength + AXIS_SWITCH_MARGIN)
                 {
                     heldDirection = candidate.direction;
                 }
@@ -111,9 +103,7 @@ namespace UI
 
         static int magnitude(int value) { return value < 0 ? -value : value; }
 
-        static Candidate dominantCandidate(int x, int y,
-                                           u64 up, u64 down,
-                                           u64 left, u64 right)
+        static Candidate dominantCandidate(int x, int y, u64 up, u64 down, u64 left, u64 right)
         {
             const int horizontal = magnitude(x);
             const int vertical = magnitude(y);
@@ -124,9 +114,7 @@ namespace UI
             return {};
         }
 
-        static int directionStrength(u64 direction, int x, int y,
-                                     u64 up, u64 down,
-                                     u64 left, u64 right)
+        static int directionStrength(u64 direction, int x, int y, u64 up, u64 down, u64 left, u64 right)
         {
             if (direction == left)
                 return -x;
@@ -149,17 +137,11 @@ namespace UI
     class ControllerNavigation
     {
     public:
-        u64 apply(u64 digitalPressed, u64 digitalHeld,
-                            int stickX, int stickY,
-                            u64 up, u64 down,
-                            u64 left, u64 right,
-                            u64 extraRepeatableMask = 0)
+        u64 apply(u64 digitalPressed, u64 digitalHeld, int stickX, int stickY, u64 up, u64 down, u64 left, u64 right, u64 extraRepeatableMask = 0)
         {
-            const AnalogNavigationSample analog =
-                analogNavigation.sample(stickX, stickY, up, down, left, right);
+            const AnalogNavigationSample analog = analogNavigation.sample(stickX, stickY, up, down, left, right);
             const u64 mask = up | down | left | right | extraRepeatableMask;
-            return navigationRepeat.apply(digitalPressed | analog.down,
-                                          digitalHeld | analog.held, mask);
+            return navigationRepeat.apply(digitalPressed | analog.down, digitalHeld | analog.held, mask);
         }
 
         void reset()

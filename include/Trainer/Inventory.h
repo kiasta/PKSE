@@ -49,8 +49,7 @@ namespace Trainer
      * pouch holds the same id more than once, the nth entry takes the nth recorded slot, which
      * reproduces an untouched pouch exactly as position matching did.
      */
-    inline std::vector<ItemPlacement> placePouchPositional(size_t slots, const std::vector<InventoryItem> &items,
-                                                           const std::vector<ItemOrigin> &origin)
+    inline std::vector<ItemPlacement> placePouchPositional(size_t slots, const std::vector<InventoryItem> &items, const std::vector<ItemOrigin> &origin)
     {
         std::vector<bool> taken(slots, false);
         std::vector<bool> originTaken(origin.size(), false);
@@ -97,8 +96,7 @@ namespace Trainer
      * would silently reorder a bag nobody edited, and stopping at the first hole on read would
      * lose everything past it.
      */
-    inline void writePouchPositional(uint8_t *pouch, size_t slots, const std::vector<InventoryItem> &items,
-                                     const std::vector<ItemOrigin> &origin)
+    inline void writePouchPositional(uint8_t *pouch, size_t slots, const std::vector<InventoryItem> &items, const std::vector<ItemOrigin> &origin)
     {
         const std::vector<ItemPlacement> placement = placePouchPositional(slots, items, origin);
 

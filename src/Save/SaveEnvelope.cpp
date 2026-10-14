@@ -101,9 +101,7 @@ namespace Save
 
         bool startsWith(const std::vector<uint8_t> &fileBytes, std::string_view prefix, size_t prefixOffset = 0)
         {
-            return fileBytes.size() >= prefixOffset + prefix.size() &&
-                   std::equal(prefix.begin(), prefix.end(),
-                              fileBytes.begin() + static_cast<std::ptrdiff_t>(prefixOffset));
+            return fileBytes.size() >= prefixOffset + prefix.size() && std::equal(prefix.begin(), prefix.end(), fileBytes.begin() + static_cast<std::ptrdiff_t>(prefixOffset));
         }
 
         bool endsWith(const std::vector<uint8_t> &fileBytes, std::string_view suffix)
@@ -127,8 +125,7 @@ namespace Save
         template <size_t SizeCount>
         bool isSaveSizePlus(size_t fileSize, size_t footerSize, const size_t (&saveSizes)[SizeCount])
         {
-            return std::any_of(std::begin(saveSizes), std::end(saveSizes),
-                               [&](size_t saveSize) { return fileSize == saveSize + footerSize; });
+            return std::any_of(std::begin(saveSizes), std::end(saveSizes), [&](size_t saveSize) { return fileSize == saveSize + footerSize; });
         }
 
         /// 0 unless the file is a whole Switch Online header followed by a whole Game Boy save.
@@ -136,9 +133,7 @@ namespace Save
         {
             const auto isHeaderThenSave = [&](size_t headerSize)
             {
-                return headerSize >= SWITCH_ONLINE_MIN_HEADER_SIZE && headerSize <= SWITCH_ONLINE_MAX_HEADER_SIZE &&
-                       std::any_of(std::begin(GAME_BOY_SAVE_SIZES), std::end(GAME_BOY_SAVE_SIZES),
-                                   [&](size_t saveSize) { return fileBytes.size() == headerSize + saveSize; });
+                return headerSize >= SWITCH_ONLINE_MIN_HEADER_SIZE && headerSize <= SWITCH_ONLINE_MAX_HEADER_SIZE && std::any_of(std::begin(GAME_BOY_SAVE_SIZES), std::end(GAME_BOY_SAVE_SIZES), [&](size_t saveSize) { return fileBytes.size() == headerSize + saveSize; });
             };
             if (fileBytes.size() < SWITCH_ONLINE_MIN_HEADER_SIZE || !startsWith(fileBytes, SWITCH_ONLINE_MAGIC))
                 return 0;
@@ -169,8 +164,7 @@ namespace Save
         /// no$gba's run-length code, read as DeSmuME's no_gba_unpackSAV reads it: 00 ends the code, 01-7F
         /// copies that many bytes, 81-FF repeats the next byte (control - 0x80) times, and 80 repeats the
         /// next byte by the u16 after it. `codeEnd` is the offset just past the 00.
-        bool decodeNocashRunLength(const std::vector<uint8_t> &fileBytes, size_t codeStart, size_t unpackedLength,
-                                   std::vector<uint8_t> &decodedBytes, size_t &codeEnd)
+        bool decodeNocashRunLength(const std::vector<uint8_t> &fileBytes, size_t codeStart, size_t unpackedLength, std::vector<uint8_t> &decodedBytes, size_t &codeEnd)
         {
             decodedBytes.clear();
             decodedBytes.reserve(unpackedLength);
@@ -234,8 +228,7 @@ namespace Save
             while (readOffset < storedLength)
             {
                 size_t repeatCount = 1;
-                while (readOffset + repeatCount < storedLength && repeatCount < RUN_LENGTH_LONGEST_REPEAT &&
-                       heldBytes[readOffset + repeatCount] == heldBytes[readOffset])
+                while (readOffset + repeatCount < storedLength && repeatCount < RUN_LENGTH_LONGEST_REPEAT && heldBytes[readOffset + repeatCount] == heldBytes[readOffset])
                     ++repeatCount;
                 if (repeatCount < RUN_LENGTH_SHORTEST_REPEAT)
                 {
@@ -266,13 +259,11 @@ namespace Save
         /// no$gba's battery file, when its "SRAM" entry holds the save as it is or run-length coded. An LZ
         /// entry is not split -- there is no LZ decoder here, and describeUnreadableSaveContainer says what
         /// to do instead.
-        bool splitNocashGbaContainer(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope,
-                                     std::vector<uint8_t> &saveImage)
+        bool splitNocashGbaContainer(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope, std::vector<uint8_t> &saveImage)
         {
             constexpr size_t entryStart = NOCASH_GBA_HEADER_SIZE;
             constexpr size_t dataStart = entryStart + NOCASH_ENTRY_HEADER_SIZE;
-            if (fileBytes.size() < dataStart || !startsWith(fileBytes, NOCASH_GBA_MAGIC) ||
-                !startsWith(fileBytes, NOCASH_SAVE_ENTRY_ID, entryStart))
+            if (fileBytes.size() < dataStart || !startsWith(fileBytes, NOCASH_GBA_MAGIC) || !startsWith(fileBytes, NOCASH_SAVE_ENTRY_ID, entryStart))
                 return false;
 
             NocashSaveEntry saveEntry;
@@ -285,8 +276,7 @@ namespace Save
                 if (entryLength > fileBytes.size() - dataStart || entryLength > NOCASH_LARGEST_SAVE)
                     return false;
                 entryEnd = dataStart + entryLength;
-                storedSave.assign(fileBytes.begin() + dataStart,
-                                  fileBytes.begin() + static_cast<std::ptrdiff_t>(entryEnd));
+                storedSave.assign(fileBytes.begin() + dataStart, fileBytes.begin() + static_cast<std::ptrdiff_t>(entryEnd));
             }
             else if (saveEntry.compressionMethod == NOCASH_RUN_LENGTH)
             {
@@ -294,8 +284,7 @@ namespace Save
                 if (fileBytes.size() < codeStart)
                     return false;
                 const size_t unpackedLength = readUInt32At(fileBytes, dataStart);
-                if (unpackedLength > NOCASH_LARGEST_SAVE ||
-                    !decodeNocashRunLength(fileBytes, codeStart, unpackedLength, storedSave, entryEnd))
+                if (unpackedLength > NOCASH_LARGEST_SAVE || !decodeNocashRunLength(fileBytes, codeStart, unpackedLength, storedSave, entryEnd))
                     return false;
                 // The code ends itself, so the length field only has to agree with it -- in either of the two
                 // ways it is read.
@@ -315,8 +304,7 @@ namespace Save
                 return false;
 
             saveEntry.storedSaveLength = storedSave.size();
-            const size_t *fillSize = std::find_if(std::begin(NOCASH_SAVE_SIZES), std::end(NOCASH_SAVE_SIZES),
-                                                  [&](size_t saveSize) { return saveSize >= storedSave.size(); });
+            const size_t *fillSize = std::find_if(std::begin(NOCASH_SAVE_SIZES), std::end(NOCASH_SAVE_SIZES), [&](size_t saveSize) { return saveSize >= storedSave.size(); });
             if (fillSize != std::end(NOCASH_SAVE_SIZES))
                 storedSave.resize(*fillSize, 0xFF);
 
@@ -334,8 +322,7 @@ namespace Save
             const NocashSaveEntry &saveEntry = envelope.nocashSaveEntry;
             // The entry holds as much as no$gba stored, unless the save now reaches past that.
             size_t storedLength = std::min(saveEntry.storedSaveLength, heldBytes.size());
-            if (std::any_of(heldBytes.begin() + static_cast<std::ptrdiff_t>(storedLength), heldBytes.end(),
-                            [](uint8_t heldByte) { return heldByte != 0xFF; }))
+            if (std::any_of(heldBytes.begin() + static_cast<std::ptrdiff_t>(storedLength), heldBytes.end(), [](uint8_t heldByte) { return heldByte != 0xFF; }))
                 storedLength = heldBytes.size();
 
             std::vector<uint8_t> fileBytes = envelope.headerBytes;
@@ -352,8 +339,7 @@ namespace Save
             else
             {
                 appendUInt32LittleEndian(fileBytes, static_cast<uint32_t>(storedLength));
-                fileBytes.insert(fileBytes.end(), heldBytes.begin(),
-                                 heldBytes.begin() + static_cast<std::ptrdiff_t>(storedLength));
+                fileBytes.insert(fileBytes.end(), heldBytes.begin(), heldBytes.begin() + static_cast<std::ptrdiff_t>(storedLength));
             }
             fileBytes.insert(fileBytes.end(), envelope.footerBytes.begin(), envelope.footerBytes.end());
             return fileBytes;
@@ -372,13 +358,11 @@ namespace Save
             if (paddingStart == paddingEnd)
                 return true;
             const uint8_t fillByte = *paddingStart;
-            return (fillByte == 0x00 || fillByte == 0xFF) &&
-                   std::all_of(paddingStart, paddingEnd, [&](uint8_t paddingByte) { return paddingByte == fillByte; });
+            return (fillByte == 0x00 || fillByte == 0xFF) && std::all_of(paddingStart, paddingEnd, [&](uint8_t paddingByte) { return paddingByte == fillByte; });
         }
     }
 
-    bool splitSaveEnvelope(SaveEnvelopeKind kind, const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope,
-                           std::vector<uint8_t> &saveImage)
+    bool splitSaveEnvelope(SaveEnvelopeKind kind, const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope, std::vector<uint8_t> &saveImage)
     {
         size_t headerSize = 0;
         size_t footerSize = 0;
@@ -426,8 +410,7 @@ namespace Save
             footerSize = MISTER_CLOCK_SECTOR_SIZE;
             break;
         case SaveEnvelopeKind::MeteorSizeFooter:
-            if (fileBytes.size() != GBA_SAVE_SIZE + METEOR_SIZE_FOOTER_SIZE ||
-                readUInt32At(fileBytes, GBA_SAVE_SIZE) != GBA_SAVE_SIZE)
+            if (fileBytes.size() != GBA_SAVE_SIZE + METEOR_SIZE_FOOTER_SIZE || readUInt32At(fileBytes, GBA_SAVE_SIZE) != GBA_SAVE_SIZE)
                 return false;
             footerSize = METEOR_SIZE_FOOTER_SIZE;
             break;
@@ -445,8 +428,7 @@ namespace Save
             break;
         }
         case SaveEnvelopeKind::ActionReplayMaxDriveHeader:
-            if (fileBytes.size() != NINTENDO_DS_SAVE_SIZE + ACTION_REPLAY_MAX_DRIVE_HEADER_SIZE ||
-                !startsWith(fileBytes, ACTION_REPLAY_MAX_DRIVE_MAGIC))
+            if (fileBytes.size() != NINTENDO_DS_SAVE_SIZE + ACTION_REPLAY_MAX_DRIVE_HEADER_SIZE || !startsWith(fileBytes, ACTION_REPLAY_MAX_DRIVE_MAGIC))
                 return false;
             headerSize = ACTION_REPLAY_MAX_DRIVE_HEADER_SIZE;
             break;
@@ -459,8 +441,7 @@ namespace Save
         envelope.paddingBytes.clear();
         envelope.footerBytes.assign(fileBytes.end() - static_cast<std::ptrdiff_t>(footerSize), fileBytes.end());
         envelope.nocashSaveEntry = NocashSaveEntry{};
-        saveImage.assign(fileBytes.begin() + static_cast<std::ptrdiff_t>(headerSize),
-                         fileBytes.end() - static_cast<std::ptrdiff_t>(footerSize));
+        saveImage.assign(fileBytes.begin() + static_cast<std::ptrdiff_t>(headerSize), fileBytes.end() - static_cast<std::ptrdiff_t>(footerSize));
         return true;
     }
 
@@ -483,8 +464,7 @@ namespace Save
         return fileBytes;
     }
 
-    bool findSaveEnvelope(const std::vector<uint8_t> &fileBytes, bool (*isSaveImage)(const std::vector<uint8_t> &),
-                          SaveEnvelope &envelope, std::vector<uint8_t> &saveImage)
+    bool findSaveEnvelope(const std::vector<uint8_t> &fileBytes, bool (*isSaveImage)(const std::vector<uint8_t> &), SaveEnvelope &envelope, std::vector<uint8_t> &saveImage)
     {
         // Padding is the last thing tried: taking it off first would let a uniform tail that is really a
         // clock footer full of zeros be named padding -- harmless, since both are kept, but wrong in the log.
@@ -492,8 +472,7 @@ namespace Save
         {
             for (size_t kindIndex = 0; kindIndex <= std::size(SAVE_ENVELOPE_KINDS); ++kindIndex)
             {
-                const SaveEnvelopeKind kind =
-                    kindIndex == 0 ? SaveEnvelopeKind::None : SAVE_ENVELOPE_KINDS[kindIndex - 1];
+                const SaveEnvelopeKind kind = kindIndex == 0 ? SaveEnvelopeKind::None : SAVE_ENVELOPE_KINDS[kindIndex - 1];
                 SaveEnvelope candidateEnvelope;
                 std::vector<uint8_t> heldBytes;
                 if (!splitSaveEnvelope(kind, fileBytes, candidateEnvelope, heldBytes))
@@ -510,12 +489,10 @@ namespace Save
                 {
                     if (!isPaddingAfter(heldBytes, saveSize))
                         continue;
-                    std::vector<uint8_t> candidateImage(heldBytes.begin(),
-                                                        heldBytes.begin() + static_cast<std::ptrdiff_t>(saveSize));
+                    std::vector<uint8_t> candidateImage(heldBytes.begin(), heldBytes.begin() + static_cast<std::ptrdiff_t>(saveSize));
                     if (!isSaveImage(candidateImage))
                         continue;
-                    candidateEnvelope.paddingBytes.assign(heldBytes.begin() + static_cast<std::ptrdiff_t>(saveSize),
-                                                          heldBytes.end());
+                    candidateEnvelope.paddingBytes.assign(heldBytes.begin() + static_cast<std::ptrdiff_t>(saveSize), heldBytes.end());
                     envelope = std::move(candidateEnvelope);
                     saveImage = std::move(candidateImage);
                     return true;
@@ -565,16 +542,10 @@ namespace Save
     const char *describeUnreadableSaveContainer(const std::vector<uint8_t> &fileBytes) noexcept
     {
         if (startsWith(fileBytes, RETROARCH_RZIP_MAGIC))
-            return "was compressed by RetroArch. Turn off Settings > Saving > SaveRAM Compression, then save in the "
-                   "game again";
-        if (startsWith(fileBytes, NOCASH_GBA_MAGIC) &&
-            startsWith(fileBytes, NOCASH_SAVE_ENTRY_ID, NOCASH_GBA_HEADER_SIZE) &&
-            fileBytes.size() >= NOCASH_GBA_HEADER_SIZE + NOCASH_ENTRY_HEADER_SIZE &&
-            readUInt32At(fileBytes, NOCASH_GBA_HEADER_SIZE + 4) == NOCASH_LZ)
-            return "was compressed by no$gba. Set its SAV/SNA File Format option to Uncompressed, then save in the "
-                   "game again";
-        if (fileBytes.size() >= 4 && std::find(std::begin(GOOMBA_STATE_IDS), std::end(GOOMBA_STATE_IDS),
-                                               readUInt32At(fileBytes, 0)) != std::end(GOOMBA_STATE_IDS))
+            return "was compressed by RetroArch. Turn off Settings > Saving > SaveRAM Compression, then save in the game again";
+        if (startsWith(fileBytes, NOCASH_GBA_MAGIC) && startsWith(fileBytes, NOCASH_SAVE_ENTRY_ID, NOCASH_GBA_HEADER_SIZE) && fileBytes.size() >= NOCASH_GBA_HEADER_SIZE + NOCASH_ENTRY_HEADER_SIZE && readUInt32At(fileBytes, NOCASH_GBA_HEADER_SIZE + 4) == NOCASH_LZ)
+            return "was compressed by no$gba. Set its SAV/SNA File Format option to Uncompressed, then save in the game again";
+        if (fileBytes.size() >= 4 && std::find(std::begin(GOOMBA_STATE_IDS), std::end(GOOMBA_STATE_IDS), readUInt32At(fileBytes, 0)) != std::end(GOOMBA_STATE_IDS))
             return "is a Goomba Color save, which keeps the game's save compressed. PKSE cannot read those yet";
         if (startsWith(fileBytes, RETRON_5_MAGIC))
             return "is a Retron 5 save, which keeps the game's save compressed. PKSE cannot read those yet";

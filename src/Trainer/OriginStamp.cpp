@@ -38,9 +38,7 @@ namespace Trainer
         if (!entity.hasOriginGame())
         {
             const Enums::GameVersion group = entity.getGameGroup();
-            return (group == Enums::GameVersion::RBY || group == Enums::GameVersion::GSC)
-                       ? OriginMark::GameBoy
-                       : OriginMark::None;
+            return (group == Enums::GameVersion::RBY || group == Enums::GameVersion::GSC) ? OriginMark::GameBoy : OriginMark::None;
         }
 
         // PKHeX OriginMarkUtil.GetOriginMark, and THE ORDER IS LOAD-BEARING. A Virtual Console, GO

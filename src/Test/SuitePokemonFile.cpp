@@ -151,29 +151,24 @@ namespace Test
             // The extension.
             const std::string extension = Trainer::PokemonFile::extensionFor(pokemon);
             const std::string expectedExtension = pkhexExtensionFor(group);
-            context.check(extension == expectedExtension, "an exported Pokemon file has the wrong extension",
-                          where + " got=\"" + extension + "\" expected=\"" + expectedExtension + "\"");
+            context.check(extension == expectedExtension, "an exported Pokemon file has the wrong extension", where + " got=\"" + extension + "\" expected=\"" + expectedExtension + "\"");
 
             // Export, and the file is exactly what serialize() produced.
             std::string error;
             const std::vector<std::byte> serialized = Trainer::PokemonFile::serialize(pokemon, &error);
-            if (!context.check(!serialized.empty(), "a Pokemon could not be serialized for export",
-                               where + " error=\"" + error + "\""))
+            if (!context.check(!serialized.empty(), "a Pokemon could not be serialized for export", where + " error=\"" + error + "\""))
                 return;
             const std::string path = context.workDir + "/pokemonfile-test" + expectedExtension;
-            if (!context.check(Trainer::PokemonFile::write(pokemon, path, &error), "exporting a Pokemon file failed",
-                               where + " error=\"" + error + "\""))
+            if (!context.check(Trainer::PokemonFile::write(pokemon, path, &error), "exporting a Pokemon file failed", where + " error=\"" + error + "\""))
                 return;
             context.check(readBytes(path) == serialized, "the exported file is not what serialize() produced", where);
 
             // Read back as the same Pokemon.
             Trainer::PokemonFile::LoadResult loaded = Trainer::PokemonFile::load(path);
-            if (context.check(static_cast<bool>(loaded), "an exported Pokemon file did not open again",
-                              where + " error=\"" + loaded.error + "\""))
+            if (context.check(static_cast<bool>(loaded), "an exported Pokemon file did not open again", where + " error=\"" + loaded.error + "\""))
             {
                 const std::string difference = identityDifference(pokemon, *loaded.pokemon);
-                context.check(difference.empty(), "an exported Pokemon file opened as a different Pokemon",
-                              where + " field=" + difference);
+                context.check(difference.empty(), "an exported Pokemon file opened as a different Pokemon", where + " field=" + difference);
                 context.check(loaded.pokemon->isStructurallyValid(), "an exported Pokemon file opened invalid", where);
             }
 
@@ -185,8 +180,7 @@ namespace Test
             if (writeBytes(renamedPath, serialized))
             {
                 Trainer::PokemonFile::LoadResult renamed = Trainer::PokemonFile::load(renamedPath);
-                context.check(!renamed, "a Pokemon file renamed to another format's extension was accepted",
-                              where + " as=\"" + wrongExtension + "\"");
+                context.check(!renamed, "a Pokemon file renamed to another format's extension was accepted", where + " as=\"" + wrongExtension + "\"");
                 remove(renamedPath.c_str());
             }
 
@@ -196,27 +190,21 @@ namespace Test
             {
                 std::string encryptedExtension = expectedExtension; // .pk3 -> .ek3, .pb7 -> .eb7, .pa9 -> .ea9
                 encryptedExtension[1] = 'e';
-                const uint32_t encryptionKey = static_cast<uint32_t>(serialized[0]) | (static_cast<uint32_t>(serialized[1]) << 8) |
-                                               (static_cast<uint32_t>(serialized[2]) << 16) |
-                                               (static_cast<uint32_t>(serialized[3]) << 24);
-                std::byte *encrypted =
-                    Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(group), serialized, encryptionKey);
+                const uint32_t encryptionKey = static_cast<uint32_t>(serialized[0]) | (static_cast<uint32_t>(serialized[1]) << 8) | (static_cast<uint32_t>(serialized[2]) << 16) | (static_cast<uint32_t>(serialized[3]) << 24);
+                std::byte *encrypted = Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(group), serialized, encryptionKey);
                 if (context.check(encrypted != nullptr, "a Pokemon could not be encrypted for the .ekX test", where))
                 {
                     const std::vector<std::byte> encryptedBytes(encrypted, encrypted + serialized.size());
                     delete[] encrypted;
-                    context.check(encryptedBytes != serialized, "the encrypted form of a Pokemon file equals its plain form",
-                                  where);
+                    context.check(encryptedBytes != serialized, "the encrypted form of a Pokemon file equals its plain form", where);
                     const std::string encryptedPath = context.workDir + "/pokemonfile-encrypted" + encryptedExtension;
                     if (writeBytes(encryptedPath, encryptedBytes))
                     {
                         Trainer::PokemonFile::LoadResult opened = Trainer::PokemonFile::load(encryptedPath);
-                        if (context.check(static_cast<bool>(opened), "an encrypted Pokemon file did not open",
-                                          where + " as=\"" + encryptedExtension + "\" error=\"" + opened.error + "\""))
+                        if (context.check(static_cast<bool>(opened), "an encrypted Pokemon file did not open", where + " as=\"" + encryptedExtension + "\" error=\"" + opened.error + "\""))
                         {
                             const std::string difference = identityDifference(pokemon, *opened.pokemon);
-                            context.check(difference.empty(), "an encrypted Pokemon file opened as a different Pokemon",
-                                          where + " as=\"" + encryptedExtension + "\" field=" + difference);
+                            context.check(difference.empty(), "an encrypted Pokemon file opened as a different Pokemon", where + " as=\"" + encryptedExtension + "\" field=" + difference);
                         }
                         remove(encryptedPath.c_str());
                     }
@@ -241,11 +229,9 @@ namespace Test
         void checkImport(Context &context, const Pokemon::Pokemon &pokemon)
         {
             const std::string where = monLabel(pokemon);
-            const std::string path =
-                context.workDir + "/pokemonfile-import" + std::string(pkhexExtensionFor(pokemon.getGameGroup()));
+            const std::string path = context.workDir + "/pokemonfile-import" + std::string(pkhexExtensionFor(pokemon.getGameGroup()));
             std::string error;
-            if (!context.check(Trainer::PokemonFile::write(pokemon, path, &error),
-                               "exporting a Pokemon file for the import test failed", where + " error=\"" + error + "\""))
+            if (!context.check(Trainer::PokemonFile::write(pokemon, path, &error), "exporting a Pokemon file for the import test failed", where + " error=\"" + error + "\""))
                 return;
 
             // A scratch bank, never the user's; cleared afterwards exactly as the bank suite does.
@@ -260,17 +246,14 @@ namespace Test
                 {
                     size_t box = 99, slotIndex = 99;
                     const bool imported = Trainer::PokemonFile::importIntoBank(bank, path, &box, &slotIndex, &error);
-                    if (context.check(imported, "importing a Pokemon file into an empty bank failed",
-                                      where + " error=\"" + error + "\""))
+                    if (context.check(imported, "importing a Pokemon file into an empty bank failed", where + " error=\"" + error + "\""))
                     {
-                        context.check(box == 0 && slotIndex == 0, "an import into an empty bank did not land in box 1, slot 1",
-                                      where + " " + slot((int)box, (int)slotIndex));
+                        context.check(box == 0 && slotIndex == 0, "an import into an empty bank did not land in box 1, slot 1", where + " " + slot((int)box, (int)slotIndex));
                         const Pokemon::Pokemon *placed = bank.boxes[0][0].get();
                         if (context.check(placed != nullptr, "an import reported a slot it did not fill", where))
                         {
                             const std::string difference = identityDifference(pokemon, *placed);
-                            context.check(difference.empty(), "an imported Pokemon is not the Pokemon in the file",
-                                          where + " field=" + difference);
+                            context.check(difference.empty(), "an imported Pokemon is not the Pokemon in the file", where + " field=" + difference);
                         }
                     }
                 }

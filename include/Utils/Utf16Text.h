@@ -53,8 +53,7 @@ namespace Utils {
         for (size_t index = 0; index < units; ++index) {
             const uint16_t value = readUInt16LittleEndian(bytes + index * 2);
             if (value == 0 || value == 0xFFFF) break;
-            out.push_back(halfWidthGender ? normalizeGenderSymbol(static_cast<char16_t>(value))
-                                          : static_cast<char16_t>(value));
+            out.push_back(halfWidthGender ? normalizeGenderSymbol(static_cast<char16_t>(value)) : static_cast<char16_t>(value));
         }
         return out;
     }
@@ -64,8 +63,7 @@ namespace Utils {
     /// `fill` is what the games leave in the slack, and it is NOT always the terminator: Gen 5
     /// clears the field to zero and then writes ONE 0xFFFF, so the tail is zeros. Passing the
     /// terminator as the fill would stamp 0xFFFF over all of it.
-    inline void writeUtf16Field(uint8_t* bytes, size_t units, const std::u16string& text,
-                                uint16_t terminator, bool halfWidthGender, uint16_t fill = 0) {
+    inline void writeUtf16Field(uint8_t* bytes, size_t units, const std::u16string& text, uint16_t terminator, bool halfWidthGender, uint16_t fill = 0) {
         size_t unitIndex = 0;
         for (; unitIndex < units && unitIndex < text.size(); ++unitIndex) {
             char16_t character = text[unitIndex];

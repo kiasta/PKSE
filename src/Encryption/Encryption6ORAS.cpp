@@ -11,19 +11,16 @@ namespace Encryption
     std::byte *decryptArray6ORAS(std::span<const std::byte> encryptedData)
     {
         const size_t byteCount = encryptedData.size();
-        const uint32_t encryptionConstant = readUInt32LittleEndian(
-            reinterpret_cast<const uint8_t *>(encryptedData.data()));
+        const uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
         const uint32_t shuffleIndex = (encryptionConstant >> 13) & 31;
 
         std::byte *scratch = new std::byte[byteCount];
         std::memcpy(scratch, encryptedData.data(), byteCount);
         // One seed for both halves -- the Gen 6+ rule, unlike Gen 4/5.
-        cryptPokemon(std::span<std::byte>(scratch, byteCount), encryptionConstant,
-                     SIZE_BLOCK6_ORAS, BLOCK_COUNT6_ORAS);
+        cryptPokemon(std::span<std::byte>(scratch, byteCount), encryptionConstant, SIZE_BLOCK6_ORAS, BLOCK_COUNT6_ORAS);
 
         std::byte *out = new std::byte[byteCount];
-        shuffleBlocks(std::span<const std::byte>(scratch, byteCount), std::span<std::byte>(out, byteCount),
-                      shuffleIndex, SIZE_BLOCK6_ORAS, /*invert=*/false);
+        shuffleBlocks(std::span<const std::byte>(scratch, byteCount), std::span<std::byte>(out, byteCount), shuffleIndex, SIZE_BLOCK6_ORAS, /*invert=*/false);
         delete[] scratch;
         return out;
     }
@@ -34,20 +31,14 @@ namespace Encryption
         const uint32_t shuffleIndex = (encryptionConstant >> 13) & 31;
 
         std::byte *out = new std::byte[byteCount];
-        shuffleBlocks(decryptedData, std::span<std::byte>(out, byteCount), shuffleIndex,
-                      SIZE_BLOCK6_ORAS, /*invert=*/true);
-        cryptPokemon(std::span<std::byte>(out, byteCount), encryptionConstant,
-                     SIZE_BLOCK6_ORAS, BLOCK_COUNT6_ORAS);
+        shuffleBlocks(decryptedData, std::span<std::byte>(out, byteCount), shuffleIndex, SIZE_BLOCK6_ORAS, /*invert=*/true);
+        cryptPokemon(std::span<std::byte>(out, byteCount), encryptionConstant, SIZE_BLOCK6_ORAS, BLOCK_COUNT6_ORAS);
         return out;
     }
 
     std::byte *encryptArray6ORAS(std::span<const std::byte> decryptedData)
     {
-        return encryptArray6ORAS(decryptedData,
-                                 static_cast<uint32_t>(decryptedData[0]) |
-                                     (static_cast<uint32_t>(decryptedData[1]) << 8) |
-                                     (static_cast<uint32_t>(decryptedData[2]) << 16) |
-                                     (static_cast<uint32_t>(decryptedData[3]) << 24));
+        return encryptArray6ORAS(decryptedData, static_cast<uint32_t>(decryptedData[0]) | (static_cast<uint32_t>(decryptedData[1]) << 8) | (static_cast<uint32_t>(decryptedData[2]) << 16) | (static_cast<uint32_t>(decryptedData[3]) << 24));
     }
 
     std::span<const std::byte> blankRecord6ORAS(size_t size)

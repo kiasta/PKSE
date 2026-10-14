@@ -118,8 +118,7 @@ namespace Pokemon
     static_assert(gen3InternalToNational(276) == 0, "Gen3 species: 276 is an unused slot");
     static_assert(gen3InternalToNational(277) == 252, "Gen3 species: 277 is Treecko");
     static_assert(gen3InternalToNational(412) == 0, "Gen3 species: past the last real internal id");
-    static_assert(gen3NationalToInternal(0) == 0 && gen3InternalToNational(0) == 0,
-                  "Gen3 species: empty slot stays empty");
+    static_assert(gen3NationalToInternal(0) == 0 && gen3InternalToNational(0) == 0, "Gen3 species: empty slot stays empty");
 }
 
 #endif

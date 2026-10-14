@@ -37,8 +37,7 @@ namespace Encryption
     std::byte *decryptArray8SWSH(std::span<const std::byte> encryptedData)
     {
 
-        const uint32_t encryptionConstantValue =
-            readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
+        const uint32_t encryptionConstantValue = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
 
         const uint32_t shuffleIndex = (encryptionConstantValue >> 13) & 31;
 

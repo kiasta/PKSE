@@ -34,8 +34,7 @@ namespace Pokemon
          * rather than as an error.
          */
         constexpr uint8_t TRADE_MEMORY_FEELINGS[] = {0, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 18};
-        constexpr int TRADE_MEMORY_FEELING_COUNT =
-            static_cast<int>(sizeof(TRADE_MEMORY_FEELINGS) / sizeof(TRADE_MEMORY_FEELINGS[0]));
+        constexpr int TRADE_MEMORY_FEELING_COUNT = static_cast<int>(sizeof(TRADE_MEMORY_FEELINGS) / sizeof(TRADE_MEMORY_FEELINGS[0]));
 
         /**
          * Which of the three trade behaviours a record follows.
@@ -94,8 +93,7 @@ namespace Pokemon
             pokemon.setHTMemory(TRADE_MEMORY_ID);
             pokemon.setHTMemoryVariable(TRADE_MEMORY_VARIABLE_POKECENTER);
             pokemon.setHTMemoryIntensity(TRADE_MEMORY_INTENSITY);
-            const uint32_t feelingChoice =
-                pokemon.encryptionConstant() % static_cast<uint32_t>(TRADE_MEMORY_FEELING_COUNT);
+            const uint32_t feelingChoice = pokemon.encryptionConstant() % static_cast<uint32_t>(TRADE_MEMORY_FEELING_COUNT);
             pokemon.setHTMemoryFeeling(TRADE_MEMORY_FEELINGS[feelingChoice]);
         }
 
@@ -178,8 +176,7 @@ namespace Pokemon
         }
         else
         {
-            const PersonalRecord &personal =
-                getPersonalRecord(gameGroup, pokemon.speciesID(), pokemon.form());
+            const PersonalRecord &personal = getPersonalRecord(gameGroup, pokemon.speciesID(), pokemon.form());
             pokemon.setHTFriendship(personal.baseFriendship);
         }
 

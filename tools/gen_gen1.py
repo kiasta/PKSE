@@ -346,8 +346,8 @@ def emit():
     for i, nm in enumerate(item_names):
         p.append("        %-26s // %3d\n" % (cstr(nm) + ",", i))
     p.append("    };\n")
-    p.append("    static_assert(sizeof(ITEM_NAMES) / sizeof(ITEM_NAMES[0]) == %d,\n"
-             "                  \"Gen 1 item name table must cover every id 0..%d\");\n\n" %
+    p.append("    static_assert(sizeof(ITEM_NAMES) / sizeof(ITEM_NAMES[0]) == %d, "
+             "\"Gen 1 item name table must cover every id 0..%d\");\n\n" %
              (MAX_ITEM_1 + 1, MAX_ITEM_1))
 
     bitmap = [0] * ((MAX_ITEM_1 + 8) // 8)

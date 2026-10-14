@@ -502,7 +502,9 @@ Rules:
 ## 7. Formatting
 
 - **4 spaces**, never tabs. Anywhere.
-- Max line length **120 columns**.
+- **No hard wrapping of code. There is no line-length limit.** A statement, declaration, expression, argument list, condition or string concatenation is written on one line however long it gets; the editor soft-wraps for display, and a break typed into code to fit a column count is a defect. This applies to the C++ that `tools/gen_*.py` emits too: a generator writes each statement and declaration on one line, and is fixed and re-run if it does not.
+  - A line break in code is allowed only where it is structure, not width: between statements and declarations, around Allman braces and control-flow bodies, and inside a raw string or a preprocessor block.
+  - **Comments, and array and object initializers (`{ … }` lists), are exempt.** Either may be hard-wrapped.
 - Allman braces: the opening brace goes on its own line, for functions, classes, namespaces and control flow.
 - Braces are **required** on every `if` / `for` / `while` body, including single statements. The only permitted exception is an early-return guard on one line: `if (!pokemon) return 0;`.
 - One statement per line. One declaration per line.
@@ -680,6 +682,7 @@ Names state their SUBJECT, not a unit:  panelWidth / slotHeight / boxCount / slo
 NO abbreviations. NO single letters except i/j/k (loop), x/y (draw), r/g/b/a (Color).
 NO k-prefixed constants. NO pragma once. NO using namespace in headers.
 NO throw/try/dynamic_cast/.at(). NO tabs. NO magic numbers. NO drive-by renames.
+NO hard wrapping of code: one statement, one line. No column limit. (Comments and { } initializers may wrap.)
 
 Library / platform symbols are OUT OF SCOPE — verbatim (§3.7).
 PKHeX is a LOGIC source, not a naming source — rename everything it gives you (§3.7).

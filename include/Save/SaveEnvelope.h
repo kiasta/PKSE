@@ -81,8 +81,7 @@ namespace Save
     /// Splits `fileBytes` into the envelope `kind` writes and what it holds -- the save, or the save and
     /// its padding. False when the file is not shaped that way, which says nothing about whether the
     /// inside is a save.
-    bool splitSaveEnvelope(SaveEnvelopeKind kind, const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope,
-                           std::vector<uint8_t> &saveImage);
+    bool splitSaveEnvelope(SaveEnvelopeKind kind, const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope, std::vector<uint8_t> &saveImage);
 
     /// The file again, around `saveImage` and the envelope's padding. A Switch Online header carries a
     /// SHA-1 of the save the service checks, so it is taken again over the new save rather than copied;
@@ -93,8 +92,7 @@ namespace Save
     /// what it holds; the first save `isSaveImage` accepts wins. Never the other way round: an envelope is
     /// tried only on a file that is not a save, so it can neither shorten a good save nor reorder the
     /// probe chain.
-    bool findSaveEnvelope(const std::vector<uint8_t> &fileBytes, bool (*isSaveImage)(const std::vector<uint8_t> &),
-                          SaveEnvelope &envelope, std::vector<uint8_t> &saveImage);
+    bool findSaveEnvelope(const std::vector<uint8_t> &fileBytes, bool (*isSaveImage)(const std::vector<uint8_t> &), SaveEnvelope &envelope, std::vector<uint8_t> &saveImage);
 
     /// True when the file is the save and nothing else, so there is nothing to put back.
     bool isBareSave(const SaveEnvelope &envelope) noexcept;

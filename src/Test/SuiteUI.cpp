@@ -88,9 +88,7 @@ namespace Test
         void prepOccupied(TrainerView &screen, Trainer::Trainer &tr)
         {
             const int slots = (int)tr.getSlotsPerBox();
-            const int start = (screen.selectedBoxIndex >= 0 && screen.selectedBoxIndex < (int)tr.boxes.size())
-                                  ? screen.selectedBoxIndex
-                                  : 0;
+            const int start = (screen.selectedBoxIndex >= 0 && screen.selectedBoxIndex < (int)tr.boxes.size()) ? screen.selectedBoxIndex : 0;
             for (int boxIndex = 0; boxIndex < (int)tr.boxes.size(); ++boxIndex)
             {
                 const int box = (start + boxIndex) % (int)tr.boxes.size();
@@ -120,10 +118,8 @@ namespace Test
 
         void ckHome(Context &context, TrainerView &text, int want, ViewModeEnum mode, const char *name)
         {
-            context.check(text.homeMenuIndex == want, "the HOME cursor is not on the expected entry",
-                      std::string("want=") + name + " index=" + std::to_string(text.homeMenuIndex));
-            context.check(text.selectedMode == mode, "the focused HOME entry selected the wrong view",
-                      std::string("want=") + name);
+            context.check(text.homeMenuIndex == want, "the HOME cursor is not on the expected entry", std::string("want=") + name + " index=" + std::to_string(text.homeMenuIndex));
+            context.check(text.selectedMode == mode, "the focused HOME entry selected the wrong view", std::string("want=") + name);
         }
         void ckHome0(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
@@ -161,15 +157,13 @@ namespace Test
         }
         void ckCursorMoved(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
-            context.check(screen.selectedItemIndex != 0, "Right did not move the box cursor",
-                    "slot=" + std::to_string(screen.selectedItemIndex));
+            context.check(screen.selectedItemIndex != 0, "Right did not move the box cursor", "slot=" + std::to_string(screen.selectedItemIndex));
         }
         void ckDetailsOpen(Context &context, TrainerView &screen, Trainer::Trainer &tr)
         {
             if (!boxHasAnyone(screen, tr))
             {
-                context.skip("the open box is empty, so the details modal could not be opened",
-                       "box=" + std::to_string(screen.selectedBoxIndex + 1));
+                context.skip("the open box is empty, so the details modal could not be opened", "box=" + std::to_string(screen.selectedBoxIndex + 1));
                 return;
             }
             context.check(screen.details.active, "A on an occupied slot did not open the details modal");
@@ -182,9 +176,7 @@ namespace Test
             // empty box -- ckDetailsOpen already noted it
             if (!screen.details.active) return;
             const auto &leftColumnOrder = screen.details.leftOrder;
-            context.check(std::find(leftColumnOrder.begin(), leftColumnOrder.end(), 32) != leftColumnOrder.end(),
-                    "the details page has no editable Species row",
-                    "rows=" + std::to_string(leftColumnOrder.size()));
+            context.check(std::find(leftColumnOrder.begin(), leftColumnOrder.end(), 32) != leftColumnOrder.end(), "the details page has no editable Species row", "rows=" + std::to_string(leftColumnOrder.size()));
         }
         void prepSpeciesRow(TrainerView &screen, Trainer::Trainer &)
         {
@@ -198,8 +190,7 @@ namespace Test
             context.check(screen.pickerActive, "A on the Species row did not open a picker");
             if (!screen.pickerActive)
                 return;
-            context.check(screen.pickerKind == UI::Dialogs::PickerKind::Species,
-                    "A on the Species row opened the wrong picker");
+            context.check(screen.pickerKind == UI::Dialogs::PickerKind::Species, "A on the Species row opened the wrong picker");
             // The list is dex-filtered per game, so an empty one means every species was rejected
             // -- which would leave the user unable to pick anything at all.
             context.check(!screen.pickerOrder.empty(), "the species picker offered nothing");
@@ -231,8 +222,7 @@ namespace Test
             {
                 gSpeciesBefore = p->speciesID();
                 const auto recordBytes = p->getData();
-                gRecordBefore.assign(reinterpret_cast<const uint8_t *>(recordBytes.data()),
-                                     reinterpret_cast<const uint8_t *>(recordBytes.data()) + recordBytes.size());
+                gRecordBefore.assign(reinterpret_cast<const uint8_t *>(recordBytes.data()), reinterpret_cast<const uint8_t *>(recordBytes.data()) + recordBytes.size());
             }
         }
         /// Applying a species must leave a COHERENT Pokemon, not just a different id. Four fields
@@ -246,41 +236,27 @@ namespace Test
             if (!context.check(p != nullptr, "the details target vanished during a species edit"))
                 return;
 
-            context.check(p->speciesID() != gSpeciesBefore,
-                    "picking a different species did not change the Pokemon",
-                    "species=" + std::to_string(p->speciesID()));
-            context.check(p->isStructurallyValid(),
-                    "the species edit left the Pokemon with a bad checksum",
-                    "species=" + std::to_string(p->speciesID()));
+            context.check(p->speciesID() != gSpeciesBefore, "picking a different species did not change the Pokemon", "species=" + std::to_string(p->speciesID()));
+            context.check(p->isStructurallyValid(), "the species edit left the Pokemon with a bad checksum", "species=" + std::to_string(p->speciesID()));
 
             const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(p->speciesID(), 0);
-            context.check(p->form() < pi.formCount || pi.formCount == 0,
-                    "the species edit left a form the new species does not have",
-                    "species=" + std::to_string(p->speciesID()) +
-                        " form=" + std::to_string(p->form()) +
-                        " formCount=" + std::to_string(pi.formCount));
-            context.check(p->level() >= 1 && p->level() <= 100,
-                    "the species edit produced an out-of-range level",
-                    "level=" + std::to_string(p->level()));
+            context.check(p->form() < pi.formCount || pi.formCount == 0, "the species edit left a form the new species does not have", "species=" + std::to_string(p->speciesID()) + " form=" + std::to_string(p->form()) + " formCount=" + std::to_string(pi.formCount));
+            context.check(p->level() >= 1 && p->level() <= 100, "the species edit produced an out-of-range level", "level=" + std::to_string(p->level()));
             if (p->hasAbility())
             {
-                const Pokemon::AbilitySlots slots =
-                    Pokemon::getAbilitySlots(p->speciesID(), p->form(), p->getGameGroup());
+                const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(p->speciesID(), p->form(), p->getGameGroup());
                 bool passed = false;
                 for (int slotIndex = 0; slotIndex < slots.count; ++slotIndex)
                     if (slots.slot[slotIndex] == p->ability())
                         passed = true;
-                context.check(passed, "the species edit left an ability the new species cannot have",
-                        "species=" + std::to_string(p->speciesID()) +
-                            " ability=" + std::to_string(p->ability()));
+                context.check(passed, "the species edit left an ability the new species cannot have", "species=" + std::to_string(p->speciesID()) + " ability=" + std::to_string(p->ability()));
             }
         }
         void ckDiscardPrompt(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
             if (gSpeciesBefore == 0)
                 return;
-            context.check(screen.details.discardConfirmActive,
-                    "closing the details page after an edit did not ask about the unsaved change");
+            context.check(screen.details.discardConfirmActive, "closing the details page after an edit did not ask about the unsaved change");
         }
         /// Discarding must put the ORIGINAL Pokemon back -- a rollback that leaves the edit in
         /// place is worse than no prompt at all, because the user was told it was undone.
@@ -290,29 +266,20 @@ namespace Test
                 return;
             context.check(!screen.details.active, "discarding did not close the details page");
             const int box = screen.selectedBoxIndex, slot = screen.selectedItemIndex;
-            if (box < 0 || box >= (int)tr.boxes.size() ||
-                slot < 0 || slot >= (int)Trainer::BOX_SLOTS)
+            if (box < 0 || box >= (int)tr.boxes.size() || slot < 0 || slot >= (int)Trainer::BOX_SLOTS)
                 return;
             const Pokemon::Pokemon *p = tr.boxes[box][slot].get();
             if (!context.check(p != nullptr, "the edited Pokemon vanished when the edit was discarded"))
                 return;
-            context.check(p->speciesID() == gSpeciesBefore,
-                    "discarding a species change did not roll the Pokemon back",
-                    "want=" + std::to_string(gSpeciesBefore) +
-                        " got=" + std::to_string(p->speciesID()));
+            context.check(p->speciesID() == gSpeciesBefore, "discarding a species change did not roll the Pokemon back", "want=" + std::to_string(gSpeciesBefore) + " got=" + std::to_string(p->speciesID()));
             // The whole record, not just the species: form, ability, stats and the checksum are all
             // derived from the species, and a rollback that restored only the id would leave them.
             const auto recordBytes = p->getData();
-            const bool sameBytes =
-                recordBytes.size() == gRecordBefore.size() &&
-                std::equal(gRecordBefore.begin(), gRecordBefore.end(), reinterpret_cast<const uint8_t *>(recordBytes.data()));
+            const bool sameBytes = recordBytes.size() == gRecordBefore.size() && std::equal(gRecordBefore.begin(), gRecordBefore.end(), reinterpret_cast<const uint8_t *>(recordBytes.data()));
             context.check(sameBytes, "discarding a species change did not restore the Pokemon byte for byte");
             // The edit was the only change since the page opened, and it has been undone, so the
             // editor must be exactly as dirty as it was before it.
-            context.check(screen.hasUnsavedChanges == gUnsavedBeforeEdit,
-                    "discarding the only edit left the editor marked as having unsaved changes",
-                    std::string("unsavedBefore=") + (gUnsavedBeforeEdit ? "1" : "0") +
-                        " unsavedAfter=" + (screen.hasUnsavedChanges ? "1" : "0"));
+            context.check(screen.hasUnsavedChanges == gUnsavedBeforeEdit, "discarding the only edit left the editor marked as having unsaved changes", std::string("unsavedBefore=") + (gUnsavedBeforeEdit ? "1" : "0") + " unsavedAfter=" + (screen.hasUnsavedChanges ? "1" : "0"));
         }
         void ckDetailsClosed(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
@@ -324,8 +291,7 @@ namespace Test
         }
         void ckCursorModeIsMenu(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
-            context.check(screen.cursorMode == TrainerView::CursorMode::Menu,
-                    "Y did not cycle the storage cursor mode back to Menu");
+            context.check(screen.cursorMode == TrainerView::CursorMode::Menu, "Y did not cycle the storage cursor mode back to Menu");
         }
         /// The item cursor can only move in a pouch with more than one item in it.
         void ckItemCursorMoved(Context &context, TrainerView &screen, Trainer::Trainer &tr)
@@ -337,17 +303,14 @@ namespace Test
                     listed += item.itemId != 0;
             if (listed < 2)
             {
-                context.skip("the open pouch holds fewer than two items, so the item cursor could not move",
-                             "pouch=" + std::to_string(pouch) + " items=" + std::to_string(listed));
+                context.skip("the open pouch holds fewer than two items, so the item cursor could not move", "pouch=" + std::to_string(pouch) + " items=" + std::to_string(listed));
                 return;
             }
-            context.check(screen.selectedItemIndex != gSnap.slot, "Up/Down did not move the item cursor",
-                    "pouch=" + std::to_string(pouch) + " slot=" + std::to_string(screen.selectedItemIndex));
+            context.check(screen.selectedItemIndex != gSnap.slot, "Up/Down did not move the item cursor", "pouch=" + std::to_string(pouch) + " slot=" + std::to_string(screen.selectedItemIndex));
         }
         void ckCursorModeCycled(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
-            context.check(screen.cursorMode != TrainerView::CursorMode::Menu,
-                    "Y did not cycle the storage cursor mode");
+            context.check(screen.cursorMode != TrainerView::CursorMode::Menu, "Y did not cycle the storage cursor mode");
         }
         // ADDING AN ITEM. Minus in the items view offers the legal ids the pouch does not hold; A adds
         // the highlighted one with a count of 1. The bag is put back afterwards (restoreBag) so the
@@ -390,16 +353,11 @@ namespace Test
         {
             if (!gAddExpected)
             {
-                context.skip("the open pouch has nothing to add (every legal item held, or full)",
-                             "pouch=" + std::to_string(gAddPouch));
+                context.skip("the open pouch has nothing to add (every legal item held, or full)", "pouch=" + std::to_string(gAddPouch));
                 return;
             }
-            const bool pouchPicker = screen.pickerKind == UI::Dialogs::PickerKind::PouchItem ||
-                                     screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG1 ||
-                                     screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG3;
-            if (context.check(screen.pickerActive && pouchPicker, "Minus in the items view did not open the add-item picker",
-                              "pouch=" + std::to_string(gAddPouch)) &&
-                context.check(!screen.pickerOrder.empty(), "the add-item picker offered nothing"))
+            const bool pouchPicker = screen.pickerKind == UI::Dialogs::PickerKind::PouchItem || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG1 || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG3;
+            if (context.check(screen.pickerActive && pouchPicker, "Minus in the items view did not open the add-item picker", "pouch=" + std::to_string(gAddPouch)) && context.check(!screen.pickerOrder.empty(), "the add-item picker offered nothing"))
                 gAddItemId = screen.pickerOrder[screen.pickerSel];
         }
         void ckItemAdded(Context &context, TrainerView &screen, Trainer::Trainer &tr)
@@ -411,9 +369,7 @@ namespace Test
                 for (const auto &item : tr.items[gAddPouch])
                     if (item.itemId == gAddItemId)
                         count = item.count;
-            context.check(count == 1, "A in the add-item picker did not add the item with a count of 1",
-                          "pouch=" + std::to_string(gAddPouch) + " item=" + std::to_string(gAddItemId) +
-                              " count=" + std::to_string(count));
+            context.check(count == 1, "A in the add-item picker did not add the item with a count of 1", "pouch=" + std::to_string(gAddPouch) + " item=" + std::to_string(gAddItemId) + " count=" + std::to_string(count));
             context.check(!screen.pickerActive, "the add-item picker stayed open after adding");
             context.check(screen.hasUnsavedChanges, "adding an item did not mark the editor as having unsaved changes");
         }
@@ -435,8 +391,7 @@ namespace Test
         void ckExit(Context &context, TrainerView &screen, Trainer::Trainer &)
         {
             if (screen.hasUnsavedChanges)
-                context.check(screen.saveConfirmActive && !screen.goBack,
-                        "B on the HOME menu with unsaved changes did not ask to save first");
+                context.check(screen.saveConfirmActive && !screen.goBack, "B on the HOME menu with unsaved changes did not ask to save first");
             else
                 context.check(screen.goBack, "B on the HOME menu did not leave the editor");
         }
@@ -674,12 +629,10 @@ namespace Test
             gPrevBankRoot.clear();
             gSkipNotedJourney = nullptr; // a fresh target gets to report its own coverage gaps
             gKeyboardPromptsSeen = Utils::keyboardPromptsSuppressed();
-            Trainer::Bank::setRootOverride(context.workDir.empty() ? std::string("sdmc:/PKSE/tests/work")
-                                                               : context.workDir);
+            Trainer::Bank::setRootOverride(context.workDir.empty() ? std::string("sdmc:/PKSE/tests/work") : context.workDir);
             gBankOverridden = true;
 
-            gScreen = std::make_unique<TrainerView>(tr, context.target, context.workDir, context.titleId,
-                                                    context.accountUid, false);
+            gScreen = std::make_unique<TrainerView>(tr, context.target, context.workDir, context.titleId, context.accountUid, false);
             if (!context.check(gScreen != nullptr, "the editor screen could not be built"))
                 return;
 
@@ -688,13 +641,11 @@ namespace Test
             gSnap = UISnapshot::take(*gScreen, tr);
             gHaveSnap = true;
 
-            const std::string banner = "[ui] " + context.target + " -- walking the editor (" +
-                                       std::to_string(JOURNEY_STEP_COUNT) + " steps)";
+            const std::string banner = "[ui] " + context.target + " -- walking the editor (" + std::to_string(JOURNEY_STEP_COUNT) + " steps)";
             if (context.rep)
                 context.rep->addTrace(banner);
             Utils::logTest(banner);
-            context.check(!gScreen->detailViewActive,
-                      "the editor opened inside a view instead of on the HOME menu");
+            context.check(!gScreen->detailViewActive, "the editor opened inside a view instead of on the HOME menu");
             return;
         }
 
@@ -736,9 +687,7 @@ namespace Test
             if (gSkipNotedJourney != st.journey)
             {
                 gSkipNotedJourney = st.journey;
-                context.skip(st.skippedBecause ? st.skippedBecause
-                                               : "this save has no Pokemon to open, so the details page was not walked",
-                         std::string("journey=") + st.journey);
+                context.skip(st.skippedBecause ? st.skippedBecause : "this save has no Pokemon to open, so the details page was not walked", std::string("journey=") + st.journey);
             }
             j.idle(); // keep pumping the screen; press nothing
             return;
@@ -754,9 +703,7 @@ namespace Test
         if (st.post)
             st.post(context, s, tr);
         if (st.mustChange)
-            context.check(j.lastChangedField(st.mustChange), "a UI action did not do what it is for",
-                          std::string("journey=") + st.journey + " action=\"" + st.what + "\" expected=" +
-                              st.mustChange + " changed=" + j.lastChanged());
+            context.check(j.lastChangedField(st.mustChange), "a UI action did not do what it is for", std::string("journey=") + st.journey + " action=\"" + st.what + "\" expected=" + st.mustChange + " changed=" + j.lastChanged());
 
         // A journey that reached a keyboard did something it did not intend. The run cannot hang on
         // one -- Runner::start refuses the applet outright -- but a refusal is still a step landing
@@ -767,8 +714,7 @@ namespace Test
             if (suppressed != gKeyboardPromptsSeen)
             {
                 gKeyboardPromptsSeen = suppressed;
-                context.check(false, "a UI action tried to open the keyboard, which would block an automated run",
-                          std::string("journey=") + st.journey + " action=\"" + st.what + "\"");
+                context.check(false, "a UI action tried to open the keyboard, which would block an automated run", std::string("journey=") + st.journey + " action=\"" + st.what + "\"");
             }
         }
 

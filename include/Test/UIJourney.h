@@ -111,8 +111,7 @@ namespace Test
     class Journey
     {
     public:
-        Journey(Context &context, UI::UIScreen &screen, const UI::TrainerViewScreen *tvs,
-                const Trainer::Trainer *trainer, std::string name);
+        Journey(Context &context, UI::UIScreen &screen, const UI::TrainerViewScreen *tvs, const Trainer::Trainer *trainer, std::string name);
 
         /// One user action: press `button`, run a frame, then verify nothing outside `allow` moved.
         /// `what` is the human description that lands in the trace and in any finding.

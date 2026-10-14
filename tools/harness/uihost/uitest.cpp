@@ -96,8 +96,7 @@ namespace {
     int navBarCount(const UIHost::Frame& frame, int screenWidth, int screenHeight) {
         int count = 0;
         for (const UIHost::Draw* shape : frame.ops("filledRoundedRect")) {
-            if (shape->drawX == 0 && shape->drawWidth == screenWidth &&
-                shape->drawY == screenHeight - UI::NAV_BAR_HEIGHT)
+            if (shape->drawX == 0 && shape->drawWidth == screenWidth && shape->drawY == screenHeight - UI::NAV_BAR_HEIGHT)
                 ++count;
         }
         return count;
@@ -107,8 +106,7 @@ namespace {
     void expectOneNavBar(Driver& d, const char* where) {
         const UIHost::Frame& frame = d.frameData();
         const int bars = navBarCount(frame, 1280, 720);
-        d.expect(bars == 1, "the frame drew more than one nav bar; controls are listed twice",
-                 std::string(where) + " bars=" + std::to_string(bars));
+        d.expect(bars == 1, "the frame drew more than one nav bar; controls are listed twice", std::string(where) + " bars=" + std::to_string(bars));
     }
 
     void gotoHome(Driver& d, TrainerViewScreen& s, int index) {
@@ -119,8 +117,7 @@ namespace {
             d.press(Btn::Down, 3);                 // 0 -> 1 -> 2 -> icon row (lands on 3)
             d.press(Btn::Right, index - 3);
         }
-        d.expect(s.homeMenuIndex == index, "the HOME menu cursor did not reach the requested entry",
-                 "wanted=" + std::to_string(index) + " got=" + std::to_string(s.homeMenuIndex));
+        d.expect(s.homeMenuIndex == index, "the HOME menu cursor did not reach the requested entry", "wanted=" + std::to_string(index) + " got=" + std::to_string(s.homeMenuIndex));
     }
 
     const char* modeName(TrainerViewScreen::ViewMode m) {
@@ -153,20 +150,15 @@ namespace {
             Driver d(context, s, std::string("enter-") + modeName(expect[i]));
             d.step(std::string("walk to HOME entry ") + std::to_string(i));
             gotoHome(d, s, i);
-            d.expect(s.selectedMode == expect[i], "focusing a HOME entry selected the wrong view",
-                     std::string("entry=") + std::to_string(i) + " want=" + modeName(expect[i]) +
-                     " got=" + modeName(s.selectedMode));
+            d.expect(s.selectedMode == expect[i], "focusing a HOME entry selected the wrong view", std::string("entry=") + std::to_string(i) + " want=" + modeName(expect[i]) + " got=" + modeName(s.selectedMode));
 
             d.step(std::string("open ") + modeName(expect[i])).press(Btn::A).frame();
-            if (!d.expect(s.detailViewActive, "pressing A on a HOME entry did not open its view",
-                          std::string("view=") + modeName(expect[i])))
+            if (!d.expect(s.detailViewActive, "pressing A on a HOME entry did not open its view", std::string("view=") + modeName(expect[i])))
                 continue;
 
             d.step(std::string("leave ") + modeName(expect[i])).press(Btn::B).frame(2);
-            d.expect(!s.detailViewActive, "a view could be entered but not left with B",
-                     std::string("view=") + modeName(expect[i]));
-            d.expect(!s.goBack, "leaving a view exited the whole editor instead of returning to HOME",
-                     std::string("view=") + modeName(expect[i]));
+            d.expect(!s.detailViewActive, "a view could be entered but not left with B", std::string("view=") + modeName(expect[i]));
+            d.expect(!s.goBack, "leaving a view exited the whole editor instead of returning to HOME", std::string("view=") + modeName(expect[i]));
         }
     }
 
@@ -190,9 +182,7 @@ namespace {
         for (const auto& b : s.touchButtons)
             if (b.buttonId >= 0 && b.buttonId < slots) cells.push_back(b);
 
-        if (!d.expect(static_cast<int>(cells.size()) == slots,
-                      "the box grid did not lay out one cell per slot",
-                      "slots=" + std::to_string(slots) + " cells=" + std::to_string(cells.size())))
+        if (!d.expect(static_cast<int>(cells.size()) == slots, "the box grid did not lay out one cell per slot", "slots=" + std::to_string(slots) + " cells=" + std::to_string(cells.size())))
             return;
 
         std::set<int> xs, ys, ws, hs;
@@ -203,17 +193,11 @@ namespace {
             hs.insert(c.hitHeight);
         }
 
-        d.expect(static_cast<int>(xs.size()) == wantCols, "the box grid has the wrong column count",
-                 "slots=" + std::to_string(slots) + " want=" + std::to_string(wantCols) +
-                 " got=" + std::to_string(xs.size()));
-        d.expect(ys.size() == static_cast<size_t>(UI::BOX_GRID_ROWS),
-                 "the box grid is not five rows",
-                 "rows=" + std::to_string(ys.size()));
+        d.expect(static_cast<int>(xs.size()) == wantCols, "the box grid has the wrong column count", "slots=" + std::to_string(slots) + " want=" + std::to_string(wantCols) + " got=" + std::to_string(xs.size()));
+        d.expect(ys.size() == static_cast<size_t>(UI::BOX_GRID_ROWS), "the box grid is not five rows", "rows=" + std::to_string(ys.size()));
         // One pitch for every cell. A stretched narrow grid produces cells wider than the bank's,
         // which is what makes the cursor change size as it crosses panes in the storage view.
-        d.expect(ws.size() == 1 && hs.size() == 1,
-                 "box grid cells are not a uniform size (a narrow grid was stretched, not centred)",
-                 "distinctW=" + std::to_string(ws.size()) + " distinctH=" + std::to_string(hs.size()));
+        d.expect(ws.size() == 1 && hs.size() == 1, "box grid cells are not a uniform size (a narrow grid was stretched, not centred)", "distinctW=" + std::to_string(ws.size()) + " distinctH=" + std::to_string(hs.size()));
     }
 
     /// A sprite is only drawn where a Pokemon actually is.
@@ -255,10 +239,7 @@ namespace {
                 }
         }
 
-        d.expect(inCells <= occupied,
-                 "the box grid drew more Pokemon than the box holds (empty slots were rendered)",
-                 "box=" + std::to_string(box + 1) + " occupied=" + std::to_string(occupied) +
-                 " spritesInCells=" + std::to_string(inCells));
+        d.expect(inCells <= occupied, "the box grid drew more Pokemon than the box holds (empty slots were rendered)", "box=" + std::to_string(box + 1) + " occupied=" + std::to_string(occupied) + " spritesInCells=" + std::to_string(inCells));
     }
 
     /// THE SUMMARY PANEL CARRIES THE LEGALITY VERDICT, bottom-left, and it must not land on top of
@@ -282,17 +263,14 @@ namespace {
                 if (!Test::isEmptySlot(tr.boxes[box][slot].get())) { occupied = slot; break; }
         }
         if (occupied < 0) {
-            context.note("this save's first box is empty, so the summary verdict was not exercised",
-                     "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("this save's first box is empty, so the summary verdict was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             return;
         }
         s.selectedItemIndex = occupied;
         d.step("the summary panel names the verdict").frame();
 
         const UIHost::Draw* verdict = d.frameData().first("Legality:");
-        if (!d.expect(verdict != nullptr,
-                      "the summary panel drew no legality verdict for an occupied slot",
-                      "box=" + std::to_string(box + 1) + " slot=" + std::to_string(occupied + 1)))
+        if (!d.expect(verdict != nullptr, "the summary panel drew no legality verdict for an occupied slot", "box=" + std::to_string(box + 1) + " slot=" + std::to_string(occupied + 1)))
             return;
 
         const UIHost::Draw* hint = d.frameData().first("A / tap: Edit");
@@ -300,16 +278,9 @@ namespace {
             return;
 
         // Bottom-LEFT: left of the centred hint, on the same row, and clear of it.
-        d.expect(verdict->drawX < hint->drawX,
-                 "the legality verdict is not in the summary panel's bottom-left corner",
-                 "verdictX=" + std::to_string(verdict->drawX) + " hintX=" + std::to_string(hint->drawX));
-        d.expect(verdict->right() < hint->drawX,
-                 "the legality verdict overlaps the edit hint it shares the bottom row with",
-                 "verdict=\"" + verdict->text + "\" right=" + std::to_string(verdict->right()) +
-                 " hintX=" + std::to_string(hint->drawX));
-        d.expect(verdict->drawY == hint->drawY,
-                 "the legality verdict is not on the summary panel's bottom row",
-                 "verdictY=" + std::to_string(verdict->drawY) + " hintY=" + std::to_string(hint->drawY));
+        d.expect(verdict->drawX < hint->drawX, "the legality verdict is not in the summary panel's bottom-left corner", "verdictX=" + std::to_string(verdict->drawX) + " hintX=" + std::to_string(hint->drawX));
+        d.expect(verdict->right() < hint->drawX, "the legality verdict overlaps the edit hint it shares the bottom row with", "verdict=\"" + verdict->text + "\" right=" + std::to_string(verdict->right()) + " hintX=" + std::to_string(hint->drawX));
+        d.expect(verdict->drawY == hint->drawY, "the legality verdict is not on the summary panel's bottom row", "verdictY=" + std::to_string(verdict->drawY) + " hintY=" + std::to_string(hint->drawY));
     }
 
     /// UI::wrapTextToWidth, asked directly. The overlay check below can only bite on whatever its
@@ -330,8 +301,7 @@ namespace {
             size_t byteIndex = 0;
             while (byteIndex < line.size()) {
                 const unsigned char lead = static_cast<unsigned char>(line[byteIndex]);
-                const size_t sequenceLength = lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3
-                                            : (lead >> 3) == 0x1E ? 4 : 0;
+                const size_t sequenceLength = lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : (lead >> 3) == 0x1E ? 4 : 0;
                 if (sequenceLength == 0 || byteIndex + sequenceLength > line.size()) return false;
                 for (size_t continuation = 1; continuation < sequenceLength; ++continuation)
                     if ((static_cast<unsigned char>(line[byteIndex + continuation]) & 0xC0) != 0x80) return false;
@@ -346,8 +316,7 @@ namespace {
 
         struct WrapCase { const char* label; std::string text; };
         const WrapCase cases[] = {
-            {"sentence",
-             "Nothing in FireRed produces Seadra at level 15: it would have to evolve from Horsea at level 32"},
+            {"sentence", "Nothing in FireRed produces Seadra at level 15: it would have to evolve from Horsea at level 32"},
             {"unbreakable word", "Location " + std::string(120, 'W') + " is not a place"},
             {"no spaces, multi-byte", "\xE3\x83\x94\xE3\x82\xAB\xE3\x83\x81\xE3\x83\xA5\xE3\x82\xA6"
                                       "\xE3\x81\xAF\xE3\x83\x88\xE3\x82\xAD\xE3\x83\xAF\xE3\x81\xAE"
@@ -356,31 +325,23 @@ namespace {
         };
         for (const WrapCase& wrapCase : cases) {
             const std::string where = std::string("case=") + wrapCase.label;
-            const std::vector<std::string> lines =
-                UI::wrapTextToWidth(framebuffer, wrapCase.text, maxLineWidth, UI::TextStyle::Caption);
-            context.check(lines.size() > 1, "text far wider than the line came back on one line",
-                          where + " lines=" + std::to_string(lines.size()));
+            const std::vector<std::string> lines = UI::wrapTextToWidth(framebuffer, wrapCase.text, maxLineWidth, UI::TextStyle::Caption);
+            context.check(lines.size() > 1, "text far wider than the line came back on one line", where + " lines=" + std::to_string(lines.size()));
             std::string rejoined;
             for (const std::string& line : lines) {
                 context.check(!line.empty(), "wrapping produced an empty line", where);
-                context.check(measuredWidth(line) <= maxLineWidth,
-                              "a wrapped line is wider than the width it was wrapped to",
-                              where + " width=" + std::to_string(measuredWidth(line)) + " line=\"" + line + "\"");
+                context.check(measuredWidth(line) <= maxLineWidth, "a wrapped line is wider than the width it was wrapped to", where + " width=" + std::to_string(measuredWidth(line)) + " line=\"" + line + "\"");
                 context.check(isWholeUtf8(line), "wrapping cut a multi-byte character in half", where);
-                context.check(line.front() != ' ' && line.back() != ' ',
-                              "a wrapped line starts or ends on the space it was broken at",
-                              where + " line=\"" + line + "\"");
+                context.check(line.front() != ' ' && line.back() != ' ', "a wrapped line starts or ends on the space it was broken at", where + " line=\"" + line + "\"");
                 rejoined += line;
             }
             // NOTHING LOST, NOTHING REORDERED -- spaces aside, the lines are the input.
-            context.check(withoutSpaces(rejoined) == withoutSpaces(wrapCase.text),
-                          "wrapping lost or reordered part of the text", where);
+            context.check(withoutSpaces(rejoined) == withoutSpaces(wrapCase.text), "wrapping lost or reordered part of the text", where);
         }
 
         // A WORD IS ONLY EVER BROKEN WHEN IT CANNOT FIT WHOLE. The sentence has no word anywhere near
         // the line's width, so every one of its words must survive intact on some line.
-        const std::vector<std::string> sentenceLines =
-            UI::wrapTextToWidth(framebuffer, cases[0].text, maxLineWidth, UI::TextStyle::Caption);
+        const std::vector<std::string> sentenceLines = UI::wrapTextToWidth(framebuffer, cases[0].text, maxLineWidth, UI::TextStyle::Caption);
         std::vector<std::string> wrappedWords;
         for (const std::string& line : sentenceLines) {
             size_t wordStart = 0;
@@ -398,14 +359,11 @@ namespace {
             inputWords.push_back(cases[0].text.substr(wordStart, wordEnd - wordStart));
             wordStart = wordEnd + 1;
         }
-        context.check(wrappedWords == inputWords, "wrapping broke a word that fitted on a line of its own",
-                      "words in=" + std::to_string(inputWords.size()) + " out=" + std::to_string(wrappedWords.size()));
+        context.check(wrappedWords == inputWords, "wrapping broke a word that fitted on a line of its own", "words in=" + std::to_string(inputWords.size()) + " out=" + std::to_string(wrappedWords.size()));
 
         // Text that fits comes back exactly as it went in, as one line.
-        const std::vector<std::string> shortLines =
-            UI::wrapTextToWidth(framebuffer, "Matches a wild encounter", maxLineWidth, UI::TextStyle::Caption);
-        context.check(shortLines.size() == 1 && shortLines[0] == "Matches a wild encounter",
-                      "text that fits the line was changed", "lines=" + std::to_string(shortLines.size()));
+        const std::vector<std::string> shortLines = UI::wrapTextToWidth(framebuffer, "Matches a wild encounter", maxLineWidth, UI::TextStyle::Caption);
+        context.check(shortLines.size() == 1 && shortLines[0] == "Matches a wild encounter", "text that fits the line was changed", "lines=" + std::to_string(shortLines.size()));
     }
 
     /// THE LEGALITY OVERLAY KEEPS ITS TEXT INSIDE ITS CARD. Drawing each message as one line runs
@@ -442,9 +400,7 @@ namespace {
             const UIHost::Draw* card = nullptr;
             for (int drawIndex = headingIndex - 1; drawIndex >= 0 && !card; --drawIndex) {
                 const UIHost::Draw& candidate = draws[drawIndex];
-                if (std::strcmp(candidate.op, "filledRoundedRect") == 0 &&
-                    heading.drawX >= candidate.drawX && heading.drawX < candidate.right() &&
-                    heading.drawY >= candidate.drawY && heading.drawY < candidate.bottom())
+                if (std::strcmp(candidate.op, "filledRoundedRect") == 0 && heading.drawX >= candidate.drawX && heading.drawX < candidate.right() && heading.drawY >= candidate.drawY && heading.drawY < candidate.bottom())
                     card = &candidate;
             }
             if (!d.expect(card != nullptr, "could not find the legality overlay's card", where)) return -1;
@@ -455,15 +411,10 @@ namespace {
             for (size_t drawIndex = static_cast<size_t>(headingIndex) + 1; drawIndex < draws.size(); ++drawIndex) {
                 const UIHost::Draw& line = draws[drawIndex];
                 if (line.kind != UIHost::Kind::Text || !line.visible) continue;
-                if (line.drawX < card->drawX || line.drawX >= card->right() ||
-                    line.drawY < card->drawY || line.drawY >= card->bottom())
+                if (line.drawX < card->drawX || line.drawX >= card->right() || line.drawY < card->drawY || line.drawY >= card->bottom())
                     continue;
-                d.expect(line.right() <= card->right(), "a legality line runs out of the card's right edge",
-                         where + " right=" + std::to_string(line.right()) +
-                             " cardRight=" + std::to_string(card->right()) + " line=\"" + line.text + "\"");
-                d.expect(line.bottom() <= card->bottom(), "a legality line runs out of the card's bottom edge",
-                         where + " bottom=" + std::to_string(line.bottom()) +
-                             " cardBottom=" + std::to_string(card->bottom()) + " line=\"" + line.text + "\"");
+                d.expect(line.right() <= card->right(), "a legality line runs out of the card's right edge", where + " right=" + std::to_string(line.right()) + " cardRight=" + std::to_string(card->right()) + " line=\"" + line.text + "\"");
+                d.expect(line.bottom() <= card->bottom(), "a legality line runs out of the card's bottom edge", where + " bottom=" + std::to_string(line.bottom()) + " cardBottom=" + std::to_string(card->bottom()) + " line=\"" + line.text + "\"");
                 if (line.text == "[note]" || line.text == "[warning]" || line.text == "[illegal]") {
                     ++tagCount;
                     if (messageX < 0 && drawIndex + 1 < draws.size()) messageX = draws[drawIndex + 1].drawX;
@@ -493,22 +444,18 @@ namespace {
             if (!d.expect(!s.details.active, "B did not close an unedited details page", where)) return;
         }
         if (openedCount == 0) {
-            context.note("this save's first box is empty, so the legality overlay was not exercised",
-                         "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("this save's first box is empty, so the legality overlay was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             return;
         }
         if (wrappedLineCount == 0)
-            context.note("no legality message in this save's first box was long enough to wrap",
-                         "title=\"" + Enums::getGameVersionName(context.version) +
-                             "\" opened=" + std::to_string(openedCount));
+            context.note("no legality message in this save's first box was long enough to wrap", "title=\"" + Enums::getGameVersionName(context.version) + "\" opened=" + std::to_string(openedCount));
 
         // THE POSED PASS. An origin from a LATER generation than the record is reported as
         // "Origin game X is from Generation N, which this Generation M record cannot have come from",
         // which is wider than the message column in every format. The version has to survive the
         // format's own field: Gen 3 keeps four bits, so Legends: Z-A does not fit there and
         // HeartGold (7) does.
-        const std::string where =
-            "box=" + std::to_string(box + 1) + " slot=" + std::to_string(firstOccupied + 1) + " posed";
+        const std::string where = "box=" + std::to_string(box + 1) + " slot=" + std::to_string(firstOccupied + 1) + " posed";
         s.selectedItemIndex = firstOccupied;
         d.step("open the details page on the Pokemon to pose").press(Btn::A).frame(2);
         if (!d.expect(s.details.active, "A on the Pokemon to pose did not open the details page", where)) return;
@@ -523,8 +470,7 @@ namespace {
         const uint8_t originalOrigin = posed->originGame();
         bool originPosed = false;
         for (Enums::GameVersion laterVersion : {Enums::GameVersion::ZA, Enums::GameVersion::HG}) {
-            if (!posed->hasOriginGame() ||
-                Enums::getVersionGeneration(static_cast<uint8_t>(laterVersion)) <= formatGeneration)
+            if (!posed->hasOriginGame() || Enums::getVersionGeneration(static_cast<uint8_t>(laterVersion)) <= formatGeneration)
                 continue;
             posed->setOriginGame(static_cast<uint8_t>(laterVersion));
             if (posed->originGame() == static_cast<uint8_t>(laterVersion)) { originPosed = true; break; }
@@ -538,14 +484,11 @@ namespace {
             const int posedContinuationLines = checkOverlayFrame(where);
             // "Origin game" opens the message, so it is on its first line whatever the wrap does --
             // a phrase from later in the sentence can be split across two lines and never match.
-            d.expect(d.frameData().has("Origin game"),
-                     "the posed impossible origin was not reported, so the long-message check proved nothing", where);
-            d.expect(posedContinuationLines > 0,
-                     "a message wider than the card was not wrapped onto a second line", where);
+            d.expect(d.frameData().has("Origin game"), "the posed impossible origin was not reported, so the long-message check proved nothing", where);
+            d.expect(posedContinuationLines > 0, "a message wider than the card was not wrapped onto a second line", where);
             s.details.legalityOverlay = false;
         } else {
-            context.note("no later generation can be stamped on this format, so the long-message pose was skipped",
-                         "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("no later generation can be stamped on this format, so the long-message pose was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
         }
         d.step("close the details page").press(Btn::B).frame(2);
         d.expect(!s.details.active, "B did not close the details page after the pose was undone", where);
@@ -561,8 +504,7 @@ namespace {
         d.step("open the Items view");
         gotoHome(d, s, 3);
         d.press(Btn::A).frame();
-        if (!d.expect(s.detailViewActive && s.selectedMode == TrainerViewScreen::ViewMode::Items,
-                      "could not open the Items view"))
+        if (!d.expect(s.detailViewActive && s.selectedMode == TrainerViewScreen::ViewMode::Items, "could not open the Items view"))
             return;
 
         // THE BAR NAMES BOTH KEYS. Copied out of g_navHits, which is rebuilt on every frame.
@@ -576,19 +518,15 @@ namespace {
         const auto labelOf = [&](const UI::NavHit& hit) {
             std::string label;
             for (const UIHost::Draw& draw : d.frameData().draws)
-                if (draw.kind == UIHost::Kind::Text && draw.visible && draw.drawX >= hit.hitX &&
-                    draw.right() <= hit.hitX + hit.hitWidth && draw.centerY() >= hit.hitY &&
-                    draw.centerY() < hit.hitY + hit.hitHeight)
+                if (draw.kind == UIHost::Kind::Text && draw.visible && draw.drawX >= hit.hitX && draw.right() <= hit.hitX + hit.hitWidth && draw.centerY() >= hit.hitY && draw.centerY() < hit.hitY + hit.hitHeight)
                     label = draw.text;
             return label;
         };
         UI::NavHit addBadge{}, searchBadge{};
         if (!d.expect(badgeFor(Btn::Minus, addBadge), "the Items nav bar has no Minus badge")) return;
         if (!d.expect(badgeFor(Btn::Y, searchBadge), "the Items nav bar has no Y badge")) return;
-        d.expect(labelOf(addBadge) == "Add Item", "the Items nav bar's Minus badge does not say Add Item",
-                 "label=\"" + labelOf(addBadge) + "\"");
-        d.expect(labelOf(searchBadge) == "Search", "the Items nav bar's Y badge does not say Search",
-                 "label=\"" + labelOf(searchBadge) + "\"");
+        d.expect(labelOf(addBadge) == "Add Item", "the Items nav bar's Minus badge does not say Add Item", "label=\"" + labelOf(addBadge) + "\"");
+        d.expect(labelOf(searchBadge) == "Search", "the Items nav bar's Y badge does not say Search", "label=\"" + labelOf(searchBadge) + "\"");
 
         // MINUS OPENS THE ADD PICKER. A pouch can legitimately have nothing to add -- full, or already
         // holding every id it can -- and says so on the status line instead, so walk the pouches to
@@ -601,12 +539,10 @@ namespace {
             d.expect(!s.itemSearch.isFiltering(), "Minus in the Items view started a search", where);
             if (s.pickerActive) {
                 addPickerOpened = true;
-                d.expect(s.pickerKind == s.pouchPickerKind(),
-                         "Minus opened a picker, but not the pouch's add-item picker", where);
+                d.expect(s.pickerKind == s.pouchPickerKind(), "Minus opened a picker, but not the pouch's add-item picker", where);
                 break;
             }
-            d.expect(!s.storageStatus.empty(),
-                     "Minus in the Items view did nothing at all -- no add picker and no reason why", where);
+            d.expect(!s.storageStatus.empty(), "Minus in the Items view did nothing at all -- no add picker and no reason why", where);
             d.step("next pouch").press(Btn::R).frame();
         }
         if (addPickerOpened) {
@@ -615,15 +551,11 @@ namespace {
 
             // THE BADGE, TAPPED, DOES THE SAME: its label, the button it maps to and the handler all
             // have to agree, or a touch user finds a working key they cannot reach.
-            d.step("tap the nav bar's Add Item badge")
-                .tap(addBadge.hitX + addBadge.hitWidth / 2, addBadge.hitY + addBadge.hitHeight / 2)
-                .frame(2);
-            d.expect(s.pickerActive && s.pickerKind == s.pouchPickerKind(),
-                     "tapping the nav bar's Add Item badge did not open the add-item picker");
+            d.step("tap the nav bar's Add Item badge").tap(addBadge.hitX + addBadge.hitWidth / 2, addBadge.hitY + addBadge.hitHeight / 2).frame(2);
+            d.expect(s.pickerActive && s.pickerKind == s.pouchPickerKind(), "tapping the nav bar's Add Item badge did not open the add-item picker");
             if (s.pickerActive) d.press(Btn::B).frame();
         } else {
-            context.note("no pouch in this save could take a new item, so the add-item picker was not opened",
-                         "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("no pouch in this save could take a new item, so the add-item picker was not opened", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
         }
 
         // Y SEARCHES, AND OPENS NOTHING ELSE.
@@ -633,13 +565,116 @@ namespace {
         d.step("clear the search").type("").press(Btn::Y).frame(2);
         d.expect(!s.itemSearch.isFiltering(), "accepting an empty search did not clear the Items filter");
 
-        d.step("tap the nav bar's Search badge")
-            .type("a")
-            .tap(searchBadge.hitX + searchBadge.hitWidth / 2, searchBadge.hitY + searchBadge.hitHeight / 2)
-            .frame(2);
+        d.step("tap the nav bar's Search badge").type("a").tap(searchBadge.hitX + searchBadge.hitWidth / 2, searchBadge.hitY + searchBadge.hitHeight / 2).frame(2);
         d.expect(s.itemSearch.isFiltering(), "tapping the nav bar's Search badge did not start a search");
         d.expect(!s.pickerActive, "tapping the nav bar's Search badge opened the add-item picker");
         d.step("clear the search").type("").press(Btn::Y).frame(2);
+    }
+
+    /// The Boxes view's Y opens the per-Pokemon menu the Storage view opens with A, so Clone, Export and
+    /// Release are reachable outside Storage, and X opens the box menu (Sort / Search) in both views.
+    void testBoxMenus(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
+        using Screen = TrainerViewScreen;
+        Driver d(context, s, "box-menus");
+        d.step("open the box view");
+        gotoHome(d, s, 0);
+        d.press(Btn::A).frame();
+        if (!d.expect(s.detailViewActive, "could not open the box view")) return;
+
+        const int boxCount = static_cast<int>(tr.getBoxCount());
+        const int slotsPerBox = static_cast<int>(tr.getSlotsPerBox());
+        const auto occupied = [&](int box, int slot) {
+            const auto& pokemon = tr.boxes[box][slot];
+            return pokemon && pokemon->speciesID() != 0;
+        };
+        int sourceBox = -1, sourceSlot = -1, freeSlots = 0;
+        for (int box = 0; box < boxCount; ++box)
+            for (int slot = 0; slot < slotsPerBox; ++slot) {
+                if (!occupied(box, slot)) { ++freeSlots; continue; }
+                if (sourceBox < 0) { sourceBox = box; sourceSlot = slot; }
+            }
+        if (sourceBox < 0) {
+            context.note("this save has no boxed Pokemon, so the box menus were not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        s.selectedBoxIndex = sourceBox;
+        s.selectedItemIndex = sourceSlot;
+        d.frame();
+
+        d.step("the nav bar names both menus").see("Sort/Search");
+        d.step("Y opens the Pokemon menu").press(Btn::Y).frame();
+        if (!d.expect(s.storageMenuActive, "Y in the Boxes view did not open the Pokemon menu")) return;
+        d.expect(s.menuPane == 0 && s.menuBox == sourceBox && s.menuSlot == sourceSlot, "the Pokemon menu opened on the wrong slot");
+        d.see("Clone");
+        d.notSee("Find…");
+
+        // CLONE: one more Pokemon in the save, a copy of the source. Undone at once.
+        std::vector<bool> occupiedBefore;
+        for (int box = 0; box < boxCount; ++box)
+            for (int slot = 0; slot < slotsPerBox; ++slot) occupiedBefore.push_back(occupied(box, slot));
+        s.storageMenuIndex = Screen::STORAGE_MENU_ROW_CLONE;
+        d.step("clone from the Boxes view").press(Btn::A).frame();
+        d.expect(!s.storageMenuActive, "choosing Clone left the Pokemon menu open");
+        int cloneBox = -1, cloneSlot = -1;
+        for (int box = 0; box < boxCount && cloneBox < 0; ++box)
+            for (int slot = 0; slot < slotsPerBox; ++slot)
+                if (!occupiedBefore[box * slotsPerBox + slot] && occupied(box, slot)) {
+                    cloneBox = box; cloneSlot = slot; break;
+                }
+        if (freeSlots > 0) {
+            if (d.expect(cloneBox >= 0, "Clone in the Boxes view placed nothing although a slot was free")) {
+                d.expect(tr.boxes[cloneBox][cloneSlot]->speciesID() == tr.boxes[sourceBox][sourceSlot]->speciesID(), "the clone is not the same species as its source");
+                tr.boxes[cloneBox][cloneSlot].reset();
+            }
+        } else {
+            d.expect(cloneBox < 0, "Clone placed a Pokemon in a save with no free slot");
+        }
+
+        // MOVE: the Boxes view's grab, which B lets go of.
+        s.selectedBoxIndex = sourceBox;
+        s.selectedItemIndex = sourceSlot;
+        d.step("Move grabs the slot").press(Btn::Y).frame();
+        s.storageMenuIndex = Screen::STORAGE_MENU_ROW_MOVE;
+        d.press(Btn::A).frame();
+        d.expect(s.swapActive && s.swapSourceBox == sourceBox && s.swapSourceSlot == sourceSlot, "Move in the Boxes view did not grab the slot");
+        d.step("B lets go").press(Btn::B).frame();
+        d.expect(!s.swapActive, "B did not let go of a grabbed slot");
+        d.expect(s.detailViewActive, "B with a grabbed slot left the box view");
+
+        // X: the box menu, and its Search highlights and jumps.
+        d.step("X opens the box menu").press(Btn::X).frame();
+        if (!d.expect(s.boxMenuActive, "X in the Boxes view did not open the box menu")) return;
+        d.see("Sort");
+        d.see("Search…");
+        const std::string speciesName = Trainer::getSpeciesName(tr.boxes[sourceBox][sourceSlot]->speciesID());
+        s.selectedBoxIndex = (sourceBox + 1) % boxCount;
+        s.boxMenuIndex = Screen::BOX_MENU_ROW_SEARCH;
+        d.step("search for the source's species").type(speciesName).press(Btn::A).frame(2);
+        d.expect(s.storageSearch.isFiltering(), "Search in the box menu did not set a query");
+        d.expect(s.selectedItemIndex >= 0 && s.storageSlotMatchesSearch(0, s.selectedBoxIndex, s.selectedItemIndex), "the cursor did not jump to a matching Pokemon", "box=" + std::to_string(s.selectedBoxIndex) + " slot=" + std::to_string(s.selectedItemIndex));
+        s.boxMenuIndex = Screen::BOX_MENU_ROW_SEARCH;
+        d.step("clear the search").press(Btn::X).frame();
+        s.boxMenuIndex = Screen::BOX_MENU_ROW_SEARCH;
+        d.type("").press(Btn::A).frame(2);
+        d.expect(!s.storageSearch.isFiltering(), "accepting an empty search did not clear the box search");
+        d.step("leave the box view").press(Btn::B).frame(2);
+
+        // Storage: X opens the same box menu, and the Pokemon menu no longer carries Find.
+        d.step("open the storage view");
+        gotoHome(d, s, 2);
+        d.press(Btn::A).frame();
+        if (!d.expect(s.detailViewActive, "could not open the storage view")) return;
+        d.step("X opens the box menu in Storage").press(Btn::X).frame();
+        d.expect(s.boxMenuActive, "X in the Storage view did not open the box menu");
+        d.see("Search…");
+        d.step("B closes the box menu").press(Btn::B).frame();
+        d.expect(!s.boxMenuActive, "B did not close the box menu");
+        s.selectedBoxIndex = sourceBox;
+        s.stSaveSlot = sourceSlot;
+        d.step("A opens the Pokemon menu in Storage").press(Btn::A).frame();
+        if (d.expect(s.storageMenuActive, "A in Storage's Menu mode did not open the Pokemon menu"))
+            d.notSee("Find…");
+        d.press(Btn::B).frame();
     }
 
     /// The cursor responds to the d-pad. A button that stopped doing anything is otherwise silent.
@@ -653,12 +688,10 @@ namespace {
         s.selectedItemIndex = 0;
         d.step("press Right in the box grid").press(Btn::Right).frame();
         const int afterRight = s.selectedItemIndex;
-        d.expect(afterRight != 0, "Right did not move the box cursor",
-                 "selectedItemIndex stayed at " + std::to_string(afterRight));
+        d.expect(afterRight != 0, "Right did not move the box cursor", "selectedItemIndex stayed at " + std::to_string(afterRight));
 
         d.step("press Down in the box grid").press(Btn::Down).frame();
-        d.expect(s.selectedItemIndex != afterRight, "Down did not move the box cursor",
-                 "selectedItemIndex stayed at " + std::to_string(s.selectedItemIndex));
+        d.expect(s.selectedItemIndex != afterRight, "Down did not move the box cursor", "selectedItemIndex stayed at " + std::to_string(s.selectedItemIndex));
     }
 
     /// The trainer card shows the save's own OT name -- the simplest end-to-end proof that what was
@@ -681,8 +714,7 @@ namespace {
     /// an empty string would blank the name the user was editing.
     void testBoxRename(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
         if (!tr.supportsBoxNames()) {
-            context.note("this format has no box names, so the rename test was skipped",
-                     "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("this format has no box names, so the rename test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             return;
         }
         Driver d(context, s, "box-rename");
@@ -701,22 +733,19 @@ namespace {
         // row -> ... -> top row) -- so the cursor is placed first and pressed once.
         s.selectedItemIndex = 0;
         d.step("focus the box-name header").press(Btn::Up);
-        if (!d.expect(s.selectedItemIndex == -1, "Up from the top row did not reach the box-name header",
-                      "selectedItemIndex=" + std::to_string(s.selectedItemIndex)))
+        if (!d.expect(s.selectedItemIndex == -1, "Up from the top row did not reach the box-name header", "selectedItemIndex=" + std::to_string(s.selectedItemIndex)))
             return;
 
         const std::string wanted = "UITEST";
         d.step("rename the box").type(wanted).press(Btn::A).frame(2);
         const std::string after = tr.boxNames[box];
-        d.expect(after == wanted, "a box rename did not reach the save",
-                 "wanted=\"" + wanted + "\" got=\"" + after + "\" was=\"" + original + "\"");
+        d.expect(after == wanted, "a box rename did not reach the save", "wanted=\"" + wanted + "\" got=\"" + after + "\" was=\"" + original + "\"");
         d.step("the new name is on screen").see(wanted);
 
         s.selectedItemIndex = 0;
         d.step("cancel a rename").press(Btn::Up);
         d.cancelPrompt().press(Btn::A).frame(2);
-        d.expect(tr.boxNames[box] == wanted, "cancelling a rename changed the box name anyway",
-                 "expected=\"" + wanted + "\" got=\"" + tr.boxNames[box] + "\"");
+        d.expect(tr.boxNames[box] == wanted, "cancelling a rename changed the box name anyway", "expected=\"" + wanted + "\" got=\"" + tr.boxNames[box] + "\"");
 
         tr.boxNames[box] = original;   // leave the in-memory save as we found it
     }
@@ -755,9 +784,7 @@ namespace {
         d.step("tap Cancel").tap(tapX, tapY);
 
         // Half one: the dialog is still up. The press has been recorded, not delivered.
-        d.expect(s.itemEditDialogActive,
-                 "a tapped dialog button acted in its own frame, before it was ever drawn held",
-                 "dialogActive=0");
+        d.expect(s.itemEditDialogActive, "a tapped dialog button acted in its own frame, before it was ever drawn held", "dialogActive=0");
 
         // Half two: it is drawn held. The accent ring drawGlyphButton strokes around a pressed
         // button, at that button's own rectangle -- so this fails both if the ring is missing and if
@@ -766,18 +793,14 @@ namespace {
         for (const UIHost::Draw& dr : d.frameData().draws) {
             if (dr.kind != UIHost::Kind::Shape || std::string(dr.op) != "roundedRect" || !dr.visible) continue;
             if (dr.drawX != buttonX || dr.drawY != buttonY) continue;
-            if (dr.color.red == UI::Colors::Primary.red && dr.color.green == UI::Colors::Primary.green &&
-                dr.color.blue == UI::Colors::Primary.blue) { held = true; break; }
+            if (dr.color.red == UI::Colors::Primary.red && dr.color.green == UI::Colors::Primary.green && dr.color.blue == UI::Colors::Primary.blue) { held = true; break; }
         }
-        d.expect(held, "a tapped dialog button was not drawn held while its press waited",
-                 "buttonX=" + std::to_string(buttonX) + " buttonY=" + std::to_string(buttonY));
+        d.expect(held, "a tapped dialog button was not drawn held while its press waited", "buttonX=" + std::to_string(buttonX) + " buttonY=" + std::to_string(buttonY));
 
         // ...and then it acts. A press that is deferred and never delivered is a dead button, which
         // is the failure this half exists to catch.
         d.step("let the press land").frame(TrainerViewScreen::TAP_PRESS_FRAMES + 1);
-        d.expect(!s.itemEditDialogActive,
-                 "a tapped dialog button never delivered its press -- the dialog stayed open",
-                 "framesWaited=" + std::to_string(TrainerViewScreen::TAP_PRESS_FRAMES + 1));
+        d.expect(!s.itemEditDialogActive, "a tapped dialog button never delivered its press -- the dialog stayed open", "framesWaited=" + std::to_string(TrainerViewScreen::TAP_PRESS_FRAMES + 1));
         (void)tr;
     }
 
@@ -807,8 +830,7 @@ namespace {
             }
         }
         if (partySlot < 0 && boxSlot < 0) {
-            context.note("this save holds no egg with placeholder text, so the egg details page was not exercised",
-                     "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("this save holds no egg with placeholder text, so the egg details page was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             return;
         }
 
@@ -846,8 +868,7 @@ namespace {
         d.expect(!sawPlaceholder, "an egg's details page showed the stored Japanese placeholder");
         // The OT the player actually has. Read through the Japanese table the same bytes come out as
         // full-width letters, so this fails on exactly the reported bug rather than on its shape.
-        d.expect(sawTrainerName, "an egg's details page did not show the save's own trainer name",
-                 "want=\"" + tr.trainerName + "\"");
+        d.expect(sawTrainerName, "an egg's details page did not show the save's own trainer name", "want=\"" + tr.trainerName + "\"");
         // An egg has no language yet -- the hatch writes the game's own.
         d.expect(!sawJapanese, "an egg's details page claimed a language its record cannot answer for");
         d.expect(sawHatchNote, "the Language row did not say the language is set when the egg hatches");
@@ -874,8 +895,7 @@ namespace {
                 if (!Test::isEmptySlot(tr.boxes[box][slot].get())) { occupied = slot; break; }
         }
         if (occupied < 0) {
-            context.note("this save's first box is empty, so the picker search was not exercised",
-                     "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            context.note("this save's first box is empty, so the picker search was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             return;
         }
         s.selectedItemIndex = occupied;
@@ -891,12 +911,10 @@ namespace {
         // bar. Two bars here means the page is still advertising Edit / Ribbons / Save while the
         // picker holds input.
         expectOneNavBar(d, "species picker open over the details page");
-        d.expect(!s.overlayNavHint().empty(),
-                 "an open picker does not name its own controls, so the bar shows the page's");
+        d.expect(!s.overlayNavHint().empty(), "an open picker does not name its own controls, so the bar shows the page's");
 
         const int unfilteredCount = s.pickerVisibleCount();
-        d.expect(unfilteredCount > 1, "the species picker offered nothing to search",
-                 "count=" + std::to_string(unfilteredCount));
+        d.expect(unfilteredCount > 1, "the species picker offered nothing to search", "count=" + std::to_string(unfilteredCount));
         d.expect(!s.pickerSearch.isFiltering(), "a picker opened with a filter already applied");
 
         // The query is typed with the keyboard over the bottom of the screen, so the rows have to be
@@ -918,12 +936,10 @@ namespace {
                 if (button.buttonId == s.pickerSel) selectedRowShown = true;
             }
             d.expect(!s.touchButtons.empty(), "the picker drew no rows at all under the keyboard");
-            d.expect(everyRowAboveKeyboard, "a picker row was laid out under the keyboard, where it cannot be seen",
-                     "keyboardTop=" + std::to_string(keyboard.cardTop()));
+            d.expect(everyRowAboveKeyboard, "a picker row was laid out under the keyboard, where it cannot be seen", "keyboardTop=" + std::to_string(keyboard.cardTop()));
             d.expect(selectedRowShown, "the selected row was not among the rows left above the keyboard");
             expectOneNavBar(d, "keyboard open over the species picker");
-            d.expect(s.overlayNavHint() == keyboard.navHint(),
-                     "the bar did not name the keyboard's keys while it held input");
+            d.expect(s.overlayNavHint() == keyboard.navHint(), "the bar did not name the keyboard's keys while it held input");
             UI::Dialogs::setActiveKeyboard(nullptr);
             s.pickerSel = 0;
             d.frame();
@@ -935,16 +951,14 @@ namespace {
         const int filteredCount = s.pickerVisibleCount();
         d.expect(s.pickerSearch.isFiltering(), "typing a query did not put the picker into search mode");
         d.expect(filteredCount > 0, "searching \"chu\" matched no species at all");
-        d.expect(filteredCount < unfilteredCount, "the search did not narrow the list",
-                 "before=" + std::to_string(unfilteredCount) + " after=" + std::to_string(filteredCount));
+        d.expect(filteredCount < unfilteredCount, "the search did not narrow the list", "before=" + std::to_string(unfilteredCount) + " after=" + std::to_string(filteredCount));
 
         // EVERY visible row must match, and each must resolve to the same value the row draws.
         bool everyRowMatches = true, everyRowResolves = true;
         for (int visibleRow = 0; visibleRow < filteredCount; ++visibleRow) {
             const int row = s.pickerRowForVisibleIndex(visibleRow);
             if (row < 0 || row >= s.pickerCount) { everyRowResolves = false; continue; }
-            const int value = (s.pickerUsesOrder() && row < static_cast<int>(s.pickerOrder.size()))
-                                  ? s.pickerOrder[row] : row;
+            const int value = (s.pickerUsesOrder() && row < static_cast<int>(s.pickerOrder.size())) ? s.pickerOrder[row] : row;
             const std::string label = UI::Dialogs::pickerRowLabel(s, s.pickerKind, value);
             if (!s.pickerSearch.matches(label.c_str())) everyRowMatches = false;
         }
@@ -954,21 +968,14 @@ namespace {
         // The cursor's value must be the one its row shows -- the whole point of the indirection.
         s.pickerSel = 0;
         const int firstRow = s.pickerRowForVisibleIndex(0);
-        const int expectedValue = (s.pickerUsesOrder() && firstRow >= 0 &&
-                                   firstRow < static_cast<int>(s.pickerOrder.size()))
-                                      ? s.pickerOrder[firstRow] : firstRow;
-        d.expect(s.pickerSelectedValue() == expectedValue,
-                 "the selected value did not follow the filtered row",
-                 "value=" + std::to_string(s.pickerSelectedValue()) +
-                 " expected=" + std::to_string(expectedValue));
+        const int expectedValue = (s.pickerUsesOrder() && firstRow >= 0 && firstRow < static_cast<int>(s.pickerOrder.size())) ? s.pickerOrder[firstRow] : firstRow;
+        d.expect(s.pickerSelectedValue() == expectedValue, "the selected value did not follow the filtered row", "value=" + std::to_string(s.pickerSelectedValue()) + " expected=" + std::to_string(expectedValue));
         d.step("the filtered list is on screen").see(UI::Dialogs::pickerRowLabel(s, s.pickerKind, expectedValue));
 
         // An empty query clears the filter -- the only way out, so it has to work.
         d.step("clear the search").type("").press(Btn::Y).frame(2);
         d.expect(!s.pickerSearch.isFiltering(), "an empty query did not clear the filter");
-        d.expect(s.pickerVisibleCount() == unfilteredCount, "clearing the search did not restore the list",
-                 "restored=" + std::to_string(s.pickerVisibleCount()) +
-                 " original=" + std::to_string(unfilteredCount));
+        d.expect(s.pickerVisibleCount() == unfilteredCount, "clearing the search did not restore the list", "restored=" + std::to_string(s.pickerVisibleCount()) + " original=" + std::to_string(unfilteredCount));
 
         // A query nothing matches must say so and refuse to apply, rather than writing row 0.
         d.step("search for something absent").type("zzzznotaspecies").press(Btn::Y).frame(2);
@@ -978,8 +985,7 @@ namespace {
         const uint16_t speciesBefore = before ? before->speciesID() : 0;
         d.step("A on an empty result does nothing").press(Btn::A).frame(2);
         const Pokemon::Pokemon* after = s.detailsTargetPokemon();
-        d.expect(after && after->speciesID() == speciesBefore,
-                 "pressing A with no search results changed the Pokemon anyway");
+        d.expect(after && after->speciesID() == speciesBefore, "pressing A with no search results changed the Pokemon anyway");
         d.expect(s.pickerActive, "pressing A with no search results closed the picker");
 
         d.step("leave the picker").type("").press(Btn::Y).frame(2);
@@ -993,25 +999,20 @@ namespace {
         // it was one row away with nothing to say so. The empty state names the row now.
         {
             const Pokemon::Pokemon* target = s.detailsTargetPokemon();
-            const Names::LocationTable eggSources =
-                target ? Names::getEggSourceLocationTable(target->originGame()) : Names::LocationTable{nullptr, 0};
+            const Names::LocationTable eggSources = target ? Names::getEggSourceLocationTable(target->originGame()) : Names::LocationTable{nullptr, 0};
             bool eggSourceMatchesQuery = false;
             for (uint16_t sourceIndex = 0; sourceIndex < eggSources.count; ++sourceIndex)
-                if (eggSources.names[sourceIndex][0] != '\0' &&
-                    UI::listSearchMatches(eggSources.names[sourceIndex], "nursery"))
+                if (eggSources.names[sourceIndex][0] != '\0' && UI::listSearchMatches(eggSources.names[sourceIndex], "nursery"))
                     eggSourceMatchesQuery = true;
 
             if (!target || !target->hasMetData() || !eggSourceMatchesQuery) {
-                context.note("the met-location dead-end hint was not exercised: this origin has no egg-source list",
-                         "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+                context.note("the met-location dead-end hint was not exercised: this origin has no egg-source list", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
             } else {
                 s.details.selectedField = 25;               // the Met row
                 d.step("open the met-location picker").press(Btn::A).frame(2);
                 if (d.expect(s.pickerActive, "A on the Met row did not open a picker")) {
                     d.step("search the met list for an egg source").type("nursery").press(Btn::Y).frame(2);
-                    d.expect(s.pickerVisibleCount() == 0,
-                             "an egg source turned up in the met-location list, which holds places only",
-                             "matches=" + std::to_string(s.pickerVisibleCount()));
+                    d.expect(s.pickerVisibleCount() == 0, "an egg source turned up in the met-location list, which holds places only", "matches=" + std::to_string(s.pickerVisibleCount()));
                     d.see("Egg Loc");
                     d.step("leave the met picker").type("").press(Btn::Y).frame(2);
                     d.press(Btn::B).frame(2);
@@ -1040,8 +1041,7 @@ namespace {
         }
     };
 
-    int keyIndexFor(const UI::Dialogs::KeyboardState& keyboard, UI::Dialogs::KeyboardKeyAction action,
-                    const std::string& label = std::string()) {
+    int keyIndexFor(const UI::Dialogs::KeyboardState& keyboard, UI::Dialogs::KeyboardKeyAction action, const std::string& label = std::string()) {
         for (int keyIndex = 0; keyIndex < static_cast<int>(keyboard.keys.size()); ++keyIndex) {
             const UI::Dialogs::KeyboardKey& key = keyboard.keys[keyIndex];
             if (key.action == action && (label.empty() || key.lowerLabel == label)) return keyIndex;
@@ -1080,20 +1080,16 @@ namespace {
         expectOneNavBar(d, "keyboard open");
 
         // The card sits above the nav bar, and every key is inside it and a full touch target.
-        d.expect(keyboard.cardY + keyboard.cardHeight <= 720 - UI::NAV_BAR_HEIGHT,
-                 "the keyboard card runs into the nav bar",
-                 "cardBottom=" + std::to_string(keyboard.cardY + keyboard.cardHeight));
+        d.expect(keyboard.cardY + keyboard.cardHeight <= 720 - UI::NAV_BAR_HEIGHT, "the keyboard card runs into the nav bar", "cardBottom=" + std::to_string(keyboard.cardY + keyboard.cardHeight));
         bool everyKeyInCard = true, everyKeyTouchable = true, keysOverlap = false;
         for (size_t keyIndex = 0; keyIndex < keyboard.keys.size(); ++keyIndex) {
             const UI::Dialogs::KeyboardKey& key = keyboard.keys[keyIndex];
-            if (key.keyX < keyboard.cardX || key.keyX + key.keyWidth > keyboard.cardX + keyboard.cardWidth ||
-                key.keyY < keyboard.cardY || key.keyY + key.keyHeight > keyboard.cardY + keyboard.cardHeight)
+            if (key.keyX < keyboard.cardX || key.keyX + key.keyWidth > keyboard.cardX + keyboard.cardWidth || key.keyY < keyboard.cardY || key.keyY + key.keyHeight > keyboard.cardY + keyboard.cardHeight)
                 everyKeyInCard = false;
             if (key.keyHeight < UI::TouchTargetMin) everyKeyTouchable = false;
             for (size_t otherIndex = keyIndex + 1; otherIndex < keyboard.keys.size(); ++otherIndex) {
                 const UI::Dialogs::KeyboardKey& other = keyboard.keys[otherIndex];
-                if (key.keyX < other.keyX + other.keyWidth && other.keyX < key.keyX + key.keyWidth &&
-                    key.keyY < other.keyY + other.keyHeight && other.keyY < key.keyY + key.keyHeight)
+                if (key.keyX < other.keyX + other.keyWidth && other.keyX < key.keyX + key.keyWidth && key.keyY < other.keyY + other.keyHeight && other.keyY < key.keyY + key.keyHeight)
                     keysOverlap = true;
             }
         }
@@ -1104,8 +1100,7 @@ namespace {
         // The cursor opens on q; two steps right is e.
         d.step("type with the controller").press(Btn::Right, 2).press(Btn::A);
         textIs("Pikae", "A did not type the focused key");
-        d.expect(!host.reportedTexts.empty() && host.reportedTexts.back() == "Pikae",
-                 "an edit was not handed to the prompt's caller as it happened -- a live search could not follow it");
+        d.expect(!host.reportedTexts.empty() && host.reportedTexts.back() == "Pikae", "an edit was not handed to the prompt's caller as it happened -- a live search could not follow it");
 
         d.step("shift capitalises one letter").press(Btn::X);
         d.expect(!d.frameData().ops("shift-on").empty(), "X did not turn shift on");
@@ -1122,8 +1117,7 @@ namespace {
         d.expect(!keyboard.finished, "holding B ran on past the empty field and closed the prompt");
         d.step("a fresh B on an empty field cancels").press(Btn::B);
         d.expect(keyboard.finished && !keyboard.accepted, "a fresh B on an empty field did not cancel");
-        d.expect(!keyboard.result().accepted && keyboard.result().text.empty(),
-                 "a cancelled prompt still handed back text -- the caller would blank the field");
+        d.expect(!keyboard.result().accepted && keyboard.result().text.empty(), "a cancelled prompt still handed back text -- the caller would blank the field");
 
         // The left stick steps the selection exactly as the D-pad does: one key per push, nothing
         // below the press threshold, the dominant axis on a diagonal, and the same repeat when held.
@@ -1143,18 +1137,14 @@ namespace {
         d.step("the left stick moves the keyboard selection like the D-pad");
         const std::string dpadOneStep = typedAfter([&] { d.press(Btn::Right); });
         const std::string stickOneStep = typedAfter([&] { d.tilt(20000, 0); });
-        d.expect(!dpadOneStep.empty() && stickOneStep == dpadOneStep, "a stick push right did not move like D-pad Right",
-                 "stick=\"" + stickOneStep + "\" dpad=\"" + dpadOneStep + "\"");
+        d.expect(!dpadOneStep.empty() && stickOneStep == dpadOneStep, "a stick push right did not move like D-pad Right", "stick=\"" + stickOneStep + "\" dpad=\"" + dpadOneStep + "\"");
         const std::string noStep = typedAfter([] {});
         d.expect(typedAfter([&] { d.tilt(8000, 0); }) == noStep, "a stick barely off centre moved the selection");
-        d.expect(typedAfter([&] { d.tilt(20000, 12000); }) == dpadOneStep,
-                 "a diagonal stick push did not follow its dominant axis");
-        d.expect(typedAfter([&] { d.tilt(0, -20000); }) == typedAfter([&] { d.press(Btn::Down); }),
-                 "a stick push down did not move like D-pad Down");
+        d.expect(typedAfter([&] { d.tilt(20000, 12000); }) == dpadOneStep, "a diagonal stick push did not follow its dominant axis");
+        d.expect(typedAfter([&] { d.tilt(0, -20000); }) == typedAfter([&] { d.press(Btn::Down); }), "a stick push down did not move like D-pad Down");
         const std::string dpadHeld = typedAfter([&] { d.hold(Btn::Right, 40); });
         const std::string stickHeld = typedAfter([&] { d.tilt(20000, 0, 40); });
-        d.expect(dpadHeld != dpadOneStep && stickHeld == dpadHeld, "a held stick did not repeat like a held D-pad",
-                 "stick=\"" + stickHeld + "\" dpad=\"" + dpadHeld + "\"");
+        d.expect(dpadHeld != dpadOneStep && stickHeld == dpadHeld, "a held stick did not repeat like a held D-pad", "stick=\"" + stickHeld + "\" dpad=\"" + dpadHeld + "\"");
 
         Utils::KeyboardRequest boxName;
         boxName.header = "Rename Box";
@@ -1173,15 +1163,12 @@ namespace {
         textIs("abcdefgh", "a character was typed past the prompt's length cap");
         {
             const auto tallies = d.frameData().textExact("8 / 8");
-            d.expect(!tallies.empty() && tallies.front()->color.red == UI::Colors::ShinyStar.red &&
-                         tallies.front()->color.green == UI::Colors::ShinyStar.green,
-                     "the character count did not flag the refused character");
+            d.expect(!tallies.empty() && tallies.front()->color.red == UI::Colors::ShinyStar.red && tallies.front()->color.green == UI::Colors::ShinyStar.green, "the character count did not flag the refused character");
         }
 
         d.step("ZL/ZR switch layouts").press(Btn::ZR);
         d.expect(keyboard.page == UI::Dialogs::KeyboardPage::Symbols, "ZR did not move to the symbols");
-        d.expect(!d.frameData().textExact("1").empty() && !d.frameData().textExact("\u2642").empty(),
-                 "the symbols page did not draw its digits and gender signs");
+        d.expect(!d.frameData().textExact("1").empty() && !d.frameData().textExact("\u2642").empty(), "the symbols page did not draw its digits and gender signs");
         d.press(Btn::ZR);
         d.expect(keyboard.page == UI::Dialogs::KeyboardPage::Accents, "ZR did not move on to the accents");
         d.expect(!d.frameData().textExact("\u00e9").empty(), "the accents page did not draw its letters");
@@ -1203,8 +1190,7 @@ namespace {
         d.expect(!keyboard.finished, "a tapped OK closed the prompt before its press was drawn");
         d.expect(keyboard.pressedKeyIndex == okIndex, "a tapped OK was not drawn held");
         d.frame(UI::Dialogs::KeyboardState::TAP_PRESS_FRAMES);
-        d.expect(keyboard.finished && keyboard.accepted && keyboard.result().text == "w",
-                 "a tapped OK did not accept the text once its press had shown");
+        d.expect(keyboard.finished && keyboard.accepted && keyboard.result().text == "w", "a tapped OK did not accept the text once its press had shown");
 
         boxName.initialText = "Hi";
         host.open(boxName);
@@ -1270,10 +1256,8 @@ namespace {
         UIHost::queueText("\u30d4\u30ab\u30c1\u30e5\u30a6");
         tapKey(d, keyboard, keyIndexFor(keyboard, KeyboardKeyAction::SystemKeyboard));
         d.frame(UI::Dialogs::KeyboardState::TAP_PRESS_FRAMES);
-        d.expect(UIHost::promptsRaised() == 1, "the hand-off key did not open the console's keyboard",
-                 "raised=" + std::to_string(UIHost::promptsRaised()));
-        d.expect(keyboard.finished && keyboard.accepted && keyboard.text == "\u30d4\u30ab\u30c1\u30e5\u30a6",
-                 "text typed on the console's keyboard did not come back as the answer");
+        d.expect(UIHost::promptsRaised() == 1, "the hand-off key did not open the console's keyboard", "raised=" + std::to_string(UIHost::promptsRaised()));
+        d.expect(keyboard.finished && keyboard.accepted && keyboard.text == "\u30d4\u30ab\u30c1\u30e5\u30a6", "text typed on the console's keyboard did not come back as the answer");
 
         name.initialText = "Hi";
         host.open(name);
@@ -1315,8 +1299,7 @@ namespace {
         UIHost::clearPrompts();
     }
 
-    void runUI(Test::Report& rep, const std::string& target, Enums::GameVersion group,
-               Trainer::Trainer& tr, u64 titleId) {
+    void runUI(Test::Report& rep, const std::string& target, Enums::GameVersion group, Trainer::Trainer& tr, u64 titleId) {
         Test::Context context;
         context.rep = &rep; context.suite = "ui"; context.target = target;
         // The trainer names its own title, the same way the on-console runner asks a loose save.
@@ -1328,8 +1311,7 @@ namespace {
         // A fresh screen per test: these drive real state, and a test that inherited the previous
         // one's cursor position would pass or fail depending on what ran before it.
         auto fresh = [&]() {
-            return std::make_unique<TrainerViewScreen>(tr, target, std::string("/tmp/pkse-uitest"),
-                                                       titleId, AccountUid{}, false);
+            return std::make_unique<TrainerViewScreen>(tr, target, std::string("/tmp/pkse-uitest"), titleId, AccountUid{}, false);
         };
 
         { auto s = fresh(); testOpens(context, *s); }
@@ -1344,6 +1326,7 @@ namespace {
         { auto s = fresh(); testEggTextIsNotForeign(context, *s, tr); }
         { auto s = fresh(); testPickerSearch(context, *s, tr); }
         { auto s = fresh(); testItemsKeys(context, *s, tr); }
+        { auto s = fresh(); testBoxMenus(context, *s, tr); }
         { auto s = fresh(); testTapIsSeenBeforeItActs(context, *s, tr); }
         { auto s = fresh(); testInputFuzz(context, *s, 240); }
 
@@ -1378,9 +1361,7 @@ namespace {
             // to the next target, so anything still published here outlives the data behind it.
             g_suppressKeyboard = false;
             rep.setScope(target, "ui");
-            uctx.check(Test::Runner::drivenScreen() == nullptr,
-                       "the ui suite finished with a screen still published as the driven screen",
-                       "chunks=" + std::to_string(chunks));
+            uctx.check(Test::Runner::drivenScreen() == nullptr, "the ui suite finished with a screen still published as the driven screen", "chunks=" + std::to_string(chunks));
         }
 
         //
@@ -1421,16 +1402,12 @@ namespace {
             }
             g_suppressKeyboard = false;
             rep.setScope(target, "ui");
-            uctx.check(rep.failures() == failuresBefore,
-                       "walking a save with no Pokemon in it produced failures; the steps that need "
-                       "one must be skipped, not pressed through",
-                       "added=" + std::to_string(rep.failures() - failuresBefore));
+            uctx.check(rep.failures() == failuresBefore, "walking a save with no Pokemon in it produced failures; the steps that need one must be skipped, not pressed through", "added=" + std::to_string(rep.failures() - failuresBefore));
         }
     }
 
     template <typename TrainerT>
-    bool openSCBlock(Test::Report& rep, const char* label, Enums::GameVersion group,
-                     const std::string& path, u64 titleId) {
+    bool openSCBlock(Test::Report& rep, const char* label, Enums::GameVersion group, const std::string& path, u64 titleId) {
         std::vector<uint8_t> bytes = readFile(path);
         if (bytes.empty()) return false;
         std::vector<Save::Block> blocks = Encryption::decrypt(bytes.data(), bytes.size());
@@ -1463,12 +1440,9 @@ namespace {
         framebuffer.flush();
         const UIHost::Frame& frame = UIHost::Recorder::get().last();
 
-        context.check(!browser.entries.empty() && frame.has(fileName),
-                      "the refusal fixture did not list its own file", "file=\"" + fileName + "\"");
-        context.check(frame.has("is not a save PKSE can open"),
-                      "a refused file's reason was not drawn while the folder lists it", "status=\"" + browser.status + "\"");
-        context.check(frame.has("Save files") && !frame.has("Bank files"),
-                      "the save browser does not name the files it lists as save files");
+        context.check(!browser.entries.empty() && frame.has(fileName), "the refusal fixture did not list its own file", "file=\"" + fileName + "\"");
+        context.check(frame.has("is not a save PKSE can open"), "a refused file's reason was not drawn while the folder lists it", "status=\"" + browser.status + "\"");
+        context.check(frame.has("Save files") && !frame.has("Bank files"), "the save browser does not name the files it lists as save files");
 
         // A container PKSE cannot read says what to change, at the END of the line -- so when a long name
         // makes the line too wide for the strip, the name is what gets cut, never the advice.
@@ -1482,9 +1456,7 @@ namespace {
             UIHost::Recorder::get().beginFrame();
             UI::Dialogs::drawFileBrowser(browser, framebuffer, taps);
             framebuffer.flush();
-            context.check(reason && UIHost::Recorder::get().last().has("SaveRAM Compression, then save in the game again."),
-                          "a refusal that says what to change lost its advice on a long file name",
-                          "status=\"" + browser.status + "\"");
+            context.check(reason && UIHost::Recorder::get().last().has("SaveRAM Compression, then save in the game again."), "a refusal that says what to change lost its advice on a long file name", "status=\"" + browser.status + "\"");
         }
 
         browser.status.clear();
@@ -1494,17 +1466,14 @@ namespace {
         UIHost::Recorder::get().beginFrame();
         UI::Dialogs::drawFileBrowser(browser, framebuffer, taps);
         framebuffer.flush();
-        context.check(UIHost::Recorder::get().last().has("No save files here."),
-                      "an empty folder in the save browser does not say it holds no save files");
+        context.check(UIHost::Recorder::get().last().has("No save files here."), "an empty folder in the save browser does not say it holds no save files");
         rmdir(root.c_str());
     }
 }
 
 int main(int argc, char** argv) {
     const std::string outPath  = (argc > 1) ? argv[1] : std::string("uitest-report.log");
-    const std::string saveRoot = (argc > 2) ? argv[2]
-                               : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves"
-                                                      : std::string());
+    const std::string saveRoot = (argc > 2) ? argv[2] : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves" : std::string());
 
     Test::Report rep;
     rep.reset();
@@ -1582,22 +1551,17 @@ int main(int argc, char** argv) {
 
         {
             Trainer::Bank bank;
-            context.check(bank.currentBox == 0, "a fresh bank did not open on box 1",
-                          "currentBox=" + std::to_string(bank.currentBox));
+            context.check(bank.currentBox == 0, "a fresh bank did not open on box 1", "currentBox=" + std::to_string(bank.currentBox));
             context.check(!bank.hasChanged(), "a freshly loaded bank already read as changed");
 
             bank.currentBox = 7;
-            context.check(bank.hasChanged(),
-                          "moving the bank's open box did not mark the bank as changed -- the "
-                          "Save/Discard prompt would never appear, so the box could be neither "
-                          "kept nor undone");
+            context.check(bank.hasChanged(), "moving the bank's open box did not mark the bank as changed -- the Save/Discard prompt would never appear, so the box could be neither kept nor undone");
             context.check(bank.save(), "saving the bank after a box move failed");
             context.check(!bank.hasChanged(), "the bank still read as changed right after saving");
         }
         {
             Trainer::Bank bank; // reopened: the saved box has to come back
-            context.check(bank.currentBox == 7, "the saved open box did not survive a reload",
-                          "currentBox=" + std::to_string(bank.currentBox));
+            context.check(bank.currentBox == 7, "the saved open box did not survive a reload", "currentBox=" + std::to_string(bank.currentBox));
             context.check(!bank.hasChanged(), "a bank reloaded from its own file read as changed");
 
             // Discard: load() is that path, and it must put the box back to the last SAVED one
@@ -1605,29 +1569,22 @@ int main(int argc, char** argv) {
             bank.currentBox = 12;
             context.check(bank.hasChanged(), "a second box move did not mark the bank as changed");
             bank.load();
-            context.check(bank.currentBox == 7,
-                          "discarding bank changes kept the box the user had scrolled to",
-                          "currentBox=" + std::to_string(bank.currentBox) + " expected=7");
+            context.check(bank.currentBox == 7, "discarding bank changes kept the box the user had scrolled to", "currentBox=" + std::to_string(bank.currentBox) + " expected=7");
             context.check(!bank.hasChanged(), "the bank read as changed after discarding");
         }
         // A BANK WRITTEN BEFORE THIS SECTION EXISTED still has to open, on box 1 and clean. The
         // section is appended, so trimming it off is exactly what such a file looks like.
         {
             std::vector<uint8_t> image = readFile(bankFile);
-            if (context.check(image.size() > 6,
-                              "could not re-read the scratch bank to trim its open-box section")) {
+            if (context.check(image.size() > 6, "could not re-read the scratch bank to trim its open-box section")) {
                 std::FILE* trimmed = std::fopen(bankFile.c_str(), "wb");
                 if (trimmed) {
                     std::fwrite(image.data(), 1, image.size() - 6, trimmed); // drop "CBOX" + the u16
                     std::fclose(trimmed);
                 }
                 Trainer::Bank bank;
-                context.check(bank.currentBox == 0,
-                              "a bank file predating the open-box section did not default to box 1",
-                              "currentBox=" + std::to_string(bank.currentBox));
-                context.check(!bank.hasChanged(),
-                              "a bank file predating the open-box section read as changed on load, "
-                              "so opening it would prompt to save something nobody edited");
+                context.check(bank.currentBox == 0, "a bank file predating the open-box section did not default to box 1", "currentBox=" + std::to_string(bank.currentBox));
+                context.check(!bank.hasChanged(), "a bank file predating the open-box section read as changed on load, so opening it would prompt to save something nobody edited");
             }
         }
         std::remove(bankFile.c_str());
@@ -1653,36 +1610,29 @@ int main(int argc, char** argv) {
             runUI(rep, "Let's Go Eevee", Enums::GameVersion::GG, trainer, 0x0100187003A36000ULL);
             ++opened;
         }
-        opened += openSCBlock<Trainer::Trainer8SWSH>(rep, "Shield", Enums::GameVersion::SWSH,
-                                                     SaveTree::shield(saveRoot), 0x01008DB008C2C000ULL) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9LZA>(rep, "Legends Z-A", Enums::GameVersion::ZA,
-                                                    SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer8SWSH>(rep, "Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot), 0x01008DB008C2C000ULL) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer9LZA>(rep, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
     }
 
     if (opened == 0) {
         rep.setScope("-", "ui");
         Test::Context context; context.rep = &rep;
-        context.skip("no saves were opened, so no UI test ran at all",
-                 "saveRoot=\"" + saveRoot + "\"");
+        context.skip("no saves were opened, so no UI test ran at all", "saveRoot=\"" + saveRoot + "\"");
     }
 
     std::printf("\n");
     for (const auto& t : rep.tallies())
-        std::printf("  %-28s %-6s %7d checks  %4d fail  %4d warn  %4d skip\n",
-                    t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
+        std::printf("  %-28s %-6s %7d checks  %4d fail  %4d warn  %4d skip\n", t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
 
     std::printf("\nfindings:\n");
     for (const auto& g : rep.groups()) {
-        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(),
-                    g.what.c_str(), g.count);
+        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
         for (size_t i = 0; i < g.samples.size() && i < 3; ++i)
             std::printf("        %s\n", g.samples[i].c_str());
     }
     if (rep.groups().empty()) std::printf("  (none)\n");
 
     rep.write(outPath, "PKSE UI TESTS (host, real screens driven with synthetic input)\n");
-    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  shots=%d  -> %s\n",
-                rep.checks(), rep.failures(), rep.warnings(), rep.skips(), rep.notes(),
-                UIHost::Driver::shotsWritten(), outPath.c_str());
+    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  shots=%d  -> %s\n", rep.checks(), rep.failures(), rep.warnings(), rep.skips(), rep.notes(), UIHost::Driver::shotsWritten(), outPath.c_str());
     return rep.failures() == 0 ? 0 : 1;
 }

@@ -92,8 +92,7 @@ namespace Save
         }
         for (const std::string_view extension : SAVE_FILE_EXTENSIONS)
         {
-            if (lowered.size() >= extension.size() &&
-                lowered.compare(lowered.size() - extension.size(), extension.size(), extension) == 0)
+            if (lowered.size() >= extension.size() && lowered.compare(lowered.size() - extension.size(), extension.size(), extension) == 0)
             {
                 return true;
             }

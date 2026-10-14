@@ -13,8 +13,7 @@ namespace UI
 {
     namespace Panels
     {
-        void drawItems(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int itemsX, int itemsY,
-                       int itemsWidth, int itemsHeight);
+        void drawItems(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int itemsX, int itemsY, int itemsWidth, int itemsHeight);
 
         /// Display name of a pouch/category index within a game group ("Medicine", "TMs", ...).
         ///
