@@ -102,13 +102,12 @@ inline bool g_debugLogging = false;
 /// it, not a promise that every step is well behaved.
 inline bool g_suppressKeyboard = false;
 
-/// Whether this build carries the on-console self test. Its sources (src/Test/, include/Test/ and
-/// UI/TestRunnerScreen) are DEVELOPMENT-ONLY and never pushed, so a public clone has none of them
-/// and builds without it; a working tree that has them builds it in (the Makefile adds src/Test when
-/// it exists). The hooks the test drives -- g_suppressKeyboard, Bank::setRootOverride -- are inert
-/// when nothing sets them. A release must be built from a clean checkout so it does not carry it.
-/// UI.cpp asks the same __has_include question, because it must not include the header otherwise.
-#if __has_include("UI/TestRunnerScreen.h")
+/// Whether this build carries the on-console self test. Only the development build does
+/// (`make BUILD_TYPE=development`): it defines PKSE_DEVELOPMENT_BUILD and compiles src/Test/. The
+/// default production build has neither, so a release carries no self test. The hooks the test
+/// drives -- g_suppressKeyboard, Bank::setRootOverride -- are in both builds and inert when nothing
+/// sets them. UI.cpp asks the same #ifdef, because it must not include the header otherwise.
+#ifdef PKSE_DEVELOPMENT_BUILD
 inline constexpr bool SELF_TEST_AVAILABLE = true;
 #else
 inline constexpr bool SELF_TEST_AVAILABLE = false;

@@ -9,9 +9,13 @@ when something is wrong.
 | `python tools/syntax_check.py` | ~3 s | does it compile? |
 | `python tools/syntax_check.py --warnings` | ~1 min | does the optimizer object? |
 | `make` | minutes | does the `.nro` link, with every asset in it? |
+| host harnesses (`tools/harness/`) | seconds each | is the byte work right, against real saves? |
+| the self test (`PKSE-dev.nro`, `-` on the save picker) | about a minute | does it all still work on a console, for every generation? |
 | the `.nro` on a console, by hand | as long as it takes | does it do the right thing to a real save? |
 
-There is **no linter** and no unit-test framework.
+There is **no linter** and no unit-test framework in the usual sense. The harnesses and the self
+test are PKSE's automated tests; they are summarised below, and
+[`docs/DEV_TESTING.md`](../DEV_TESTING.md) is their full reference.
 
 ---
 
@@ -51,6 +55,27 @@ make            # or: make clean && make
 Only a real build proves the `.nro` links and carries its assets — the build refuses to start if a
 romfs asset is missing (chapter 02 names the fetcher to run). If you added a source directory, it
 has to be in the Makefile's `SOURCES`.
+
+---
+
+## The automated tests
+
+Both run against **real saves you supply**. None ship in the repository, because a save holds its
+owner's trainer name and id.
+
+- **The host harnesses** (`tools/harness/build-*.sh`) compile the save, entity and conversion
+  layers with the host compiler and run them against a folder of saves, one sub-folder per title
+  (default `~/pkse-test-saves`). `build.sh` is the unedited round trip described below, done for
+  every save at once. Others cover Gen 1, Gens 2 and 4–7 with every save envelope, the PKSM bank
+  import, Pokemon files against PKHeX's own test files, the legality sweep, the self test's own
+  suites, and (`uihost/run.sh`) the real screens driven headless. They stub the filesystem layer, so **only `make` proves the `.nro` links.**
+- **The self test** is in the development build only (chapter 02). Press `-` on the save picker and
+  it opens, edits, converts and writes back one save per title on hardware: an installed Switch
+  title's own save, and for a loose-file game the save under `sdmc:/PKSE/tests/saves/<Title>/`. It
+  works on copies: nothing the user owns is written.
+
+Run the harnesses whenever a change can be decided from data (a parse, an offset, a conversion),
+and the self test before a release.
 
 ---
 
@@ -131,8 +156,8 @@ side a refused action looks identical to nothing happening, so the log is how it
 |---|---|
 | anything | `syntax_check.py`, then `--warnings` |
 | a file the build lists, a source directory, an asset | `make` |
-| an offset, a parse, a save writer | an unedited round trip of a real save in that format, compared byte for byte |
+| an offset, a parse, a save writer | an unedited round trip of a real save in that format, compared byte for byte (`tools/harness/build.sh`, or `build-oldgens.sh` for Gens 2 and 4–7) |
 | an editable field | edit it, save, reopen, read it back — in every game that has it |
-| a legality rule or an encounter table | the legality view over real saves: near-silence is right, a wall of findings means the table is wrong, not the save |
-| a screen, panel, dialog or modal | click through it, by button **and** by touch, with the left stick as well as the D-pad |
+| a legality rule or an encounter table | the legality view over real saves (`tools/harness/build-legality.sh`): near-silence is right, a wall of findings means the table is wrong, not the save |
+| a screen, panel, dialog or modal | `tools/harness/uihost/run.sh`, then click through it, by button **and** by touch, with the left stick as well as the D-pad |
 | the bank, conversion | deposit and withdraw across generations, then Discard and confirm both sides rewound |

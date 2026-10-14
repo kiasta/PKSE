@@ -227,6 +227,36 @@ namespace Pokemon
             return;
         const uint8_t wantNature = nature();
         const uint32_t wantSlot = pid() & 1;
+        const uint32_t trainerShinyValue = ((trainerID32 >> 16) ^ (trainerID32 & 0xFFFF));
+        if (makeShiny)
+        {
+            // CONSTRUCTED, not searched for. A random PID has to hit the nature (1 in 25), the ability
+            // slot (1 in 2) and the shiny window (8 in 65536) at once, and a million random tries
+            // missed all three often enough that "make shiny" silently did nothing about one time in
+            // eleven. Picking the low half and deriving a high half inside the shiny window leaves
+            // only the nature to match, and walking every low half from a random start always finds
+            // one.
+            const uint32_t start = Utils::rand32() & 0xFFFF;
+            for (uint32_t offset = 0; offset < 0x10000; ++offset)
+            {
+                const uint32_t low = (start + offset) & 0xFFFF;
+                if ((low & 1) != wantSlot)
+                    continue;
+                for (uint32_t shinyValue = 0; shinyValue < 8; ++shinyValue) // Gen 3-5 threshold is 8
+                {
+                    const uint32_t high = (low ^ trainerShinyValue ^ shinyValue) & 0xFFFF;
+                    const uint32_t candidate = (high << 16) | low;
+                    if (candidate % 25 != wantNature)
+                        continue;
+                    wr32(0x00, candidate);
+                    recalculateStats();
+                    refreshChecksum();
+                    return;
+                }
+            }
+            return;
+        }
+        // Not shiny: almost every random PID qualifies, so a search finds one at once.
         for (int index = 0; index < 1000000; ++index)
         {
             const uint32_t candidate = Utils::rand32();
@@ -234,9 +264,8 @@ namespace Pokemon
                 continue;
             if ((candidate & 1) != wantSlot)
                 continue;
-            const uint32_t trainerShinyValue = ((trainerID32 >> 16) ^ (trainerID32 & 0xFFFF));
             const uint32_t pokemonShinyValue = ((candidate >> 16) ^ (candidate & 0xFFFF));
-            if ((((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0) != makeShiny)
+            if (((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0)
                 continue;
             wr32(0x00, candidate);
             recalculateStats();

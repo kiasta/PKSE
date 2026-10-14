@@ -423,6 +423,15 @@ namespace UI
         framebuffer.drawFilledRoundedRect(20, 52, boxWidth, 3, 2, Colors::Accent);
         if (!subtitle.empty())
             framebuffer.drawText(20 + boxWidth + 16, 24, subtitle, Colors::TextDim, TextStyle::Body);
+#ifdef PKSE_DEVELOPMENT_BUILD
+        // Every screen of a development build says so, at the right end of the bar, so a
+        // screenshot or a console left running is never mistaken for a release.
+        const std::string developmentLabel = "DEVELOPMENT";
+        int labelWidth, labelHeight;
+        framebuffer.measureText(developmentLabel, labelWidth, labelHeight, TextStyle::Heading);
+        framebuffer.drawText(framebuffer.getWidth() - 20 - labelWidth, (HEADER_HEIGHT - labelHeight) / 2,
+                             developmentLabel, Colors::Danger, TextStyle::Heading);
+#endif
     }
 
     // Bottom nav bar: a sheet that curves along its top edge, carrying the controller badges.

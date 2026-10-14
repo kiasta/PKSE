@@ -63,13 +63,9 @@ tools/.pokeapi_cache/
 tools/formdump/bin/
 tools/formdump/obj/
 
-# Local development tests -- the on-console self test, the host harnesses and their notes. They are
-# kept in the working tree for development and are never pushed.
-/tools/harness/
-/src/Test/
-/include/Test/
-/src/UI/TestRunnerScreen.cpp
-/include/UI/TestRunnerScreen.h
-/docs/DEV_TESTING.md
+# The development build (make BUILD_TYPE=development) and the host harnesses' build output
+/build-development/
 /build-harness/
+
+# Local Claude Code settings and notes
 /.claude/

@@ -423,6 +423,7 @@ include/            Public headers. Mirrors src/ exactly.
   Names/            Generated name/lookup tables (declarations).
   Pokemon/          Pokémon record types + generated per-species tables.
   Save/             Save block model and raw save I/O.
+  Test/             The on-console self test. Development build only (`make BUILD_TYPE=development`).
   Trainer/          Trainer/save types, inventory, bank.
   UI/               Rendering, screens, input.
     Dialogs/  Modals/  Panels/
@@ -433,11 +434,12 @@ tools/              Python table generators (gen_*.py), the romfs asset fetchers
                     (gen_fonts/typeicons/marks/hdsprites.py + asset_fetch.py),
                     pkhex_source.py, regenerate.py, syntax_check.py.
   formdump/         .NET tool that calls PKHeX's FormConverter and dumps JSON.
+  harness/          Host test programs over real saves; uihost/ drives the real UI headless.
 nanovg/             Vendored. DO NOT EDIT.
 memecrypto/         Vendored (Gen 7 save signing). DO NOT EDIT; re-sync from upstream.
 romfs/              Fetched assets (fonts, sprites). Gitignored; never hand-edited.
 assets/             Icon, banner, screenshots.
-docs/               manual/, integration/, this file.
+docs/               manual/, integration/, DEV_TESTING.md, this file.
 ```
 
 **Rules:**

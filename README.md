@@ -175,7 +175,7 @@ make                   # or: make -j$(nproc)
 
 This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output, and `make all` is an alias for `make`.
 
-There is no separate production build. SD-card logging is a **runtime** setting — Settings → *Enable Debug Logging*, off by default — so the `.nro` you test is the one you ship, and a user who hits a bug can always produce a log.
+`make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
 
 To check that the code compiles without a full build, `python tools/syntax_check.py` runs the real cross compiler over every source file in a few seconds, with no linking and no MSys2 shell needed. `--warnings` does a full optimizing pass instead and fails on any warning — the build is kept warning-free.
 

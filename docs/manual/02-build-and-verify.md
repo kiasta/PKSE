@@ -146,18 +146,35 @@ Two IntelliSense configs hardcode a copy of the version (`CppProperties.json`,
 `.vscode/c_cpp_properties.json`) because they never run the Makefile. They do not affect the built
 `.nro`, but bump them anyway so the editor does not show a stale version.
 
-## There is exactly one build
+## Two build types, one logging switch
 
-SD-card logging is a **runtime setting** — Settings → "Enable Debug Logging" (`g_debugLogging`,
-persisted to `settings.cfg`), **default off**. With it off PKSE writes no
-`sdmc:/PKSE/logs/debug_*.log` and no `sdmc:/PKSE/trace.log`. There is no release build to produce
-separately, and nothing to `make clean` between.
+```bash
+make                          # production: PKSE.nro, objects in build/ -- what a release is
+make BUILD_TYPE=development   # development: PKSE-dev.nro, objects in build-development/
+```
 
-This replaced a `make ... prod` modifier that set `-DPKSE_PROD` and compiled every sink out.
+The **development build is the production build plus the on-console self test**: it compiles
+`DEVELOPMENT_SOURCES` (`src/Test`) and defines `PKSE_DEVELOPMENT_BUILD`, which sets
+`SELF_TEST_AVAILABLE` (Globals.h) and turns on `-` on the save picker. It also **names itself**, so
+it is never mistaken for a release: "PKSE (Development)" in the home menu, a red **DEVELOPMENT** at
+the right end of every screen's title bar (`drawTitleBar`, ScreenChrome.h), `APP_VERSION` plus
+`-dev` in the `.nacp`, and `APP_VERSION_FULL` plus `-development` in the app's title bar, its logs'
+session header and the self-test report. The `-dev` counts toward the 15-character limit, and the
+Makefile refuses a version that would be truncated. **Nothing else may differ between the two.** The hooks the self test drives are compiled into both and inert when nothing sets
+them. `docs/DEV_TESTING.md` is the self test's full reference.
 
-> **Do not bring it back.** It made the shipped `.nro` a *different binary* from the tested one, it
-> needed a clean rebuild to switch (objects did not depend on the define), and — the reason that
-> actually mattered — a user who hit a bug on a release had no way to produce a log at all.
+Each build type has its **own object directory and its own output file**, so switching needs no
+`make clean`, and `make clean` removes both. That separation is deliberate. An earlier
+`make ... prod` modifier set `-DPKSE_PROD` in the same `build/` and the same `PKSE.nro`. Objects did
+not depend on the define and the old `.nro` was not relinked, so switching silently produced a mix
+unless someone remembered to clean.
+
+SD-card logging is a **runtime setting** in both — Settings → "Enable Debug Logging"
+(`g_debugLogging`, persisted to `settings.cfg`), **default off**. With it off PKSE writes no
+`sdmc:/PKSE/logs/debug_*.log` and no `sdmc:/PKSE/trace.log`.
+
+> **Never make logging compile-time again.** `-DPKSE_PROD` also compiled every sink out, and a user
+> who hit a bug on a release had no way to produce a log at all.
 
 Every sink now checks the flag, so **adding a new sink without that check is the one way to get
 this wrong.** The declarations in `Logger.h` did not change when the flag replaced the define, so

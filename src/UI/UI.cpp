@@ -9,8 +9,8 @@
 #include "Utils/HelperUtilities.h"
 #include "Utils/Logger.h"
 #include "Utils/FileUtilities.h"
-#if __has_include("UI/TestRunnerScreen.h") // the same question SELF_TEST_AVAILABLE answers
-#include "UI/TestRunnerScreen.h"
+#ifdef PKSE_DEVELOPMENT_BUILD // the same question SELF_TEST_AVAILABLE answers
+#include "Test/TestRunnerScreen.h"
 #endif
 #include "Trainer/Trainer.h"
 #include "Trainer/Trainer1RBY.h"
@@ -241,7 +241,7 @@ namespace UI
     // as one that has hung: the HOME button goes unresponsive and the overlay never appears.
     void UIManager::handleSelfTest()
     {
-#if __has_include("UI/TestRunnerScreen.h")
+#ifdef PKSE_DEVELOPMENT_BUILD
         TestRunnerScreen screen;
         framebuffer.startFade();
 

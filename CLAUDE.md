@@ -62,6 +62,7 @@ Requires `DEVKITPRO` and a POSIX shell (Linux, or MSys2 on Windows):
 python tools/gen_fonts.py && python tools/gen_typeicons.py \
   && python tools/gen_marks.py && python tools/gen_hdsprites.py   # once per checkout (romfs/)
 make                                   # -> PKSE.nro; refuses to start if a romfs asset is missing
+make BUILD_TYPE=development            # -> PKSE-dev.nro: the same app plus the on-console self test
 python tools/syntax_check.py           # seconds: does it compile (real cross compiler)
 python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept WARNING-FREE
 ```
@@ -69,16 +70,19 @@ python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept 
 - **The build downloads nothing.** Each asset group has its own fetcher, which you run by hand.
   Don't add network access to `make`, and don't add a download list for sprites (the fetcher
   mirrors the whole upstream tree).
-- **There is one build.** Debug logging is a runtime setting (`g_debugLogging`, default off).
-  Don't reintroduce a separate release build. `Utils::loadSettings()` stays the first statement
-  in `main()`.
+- **Production is the default build, and the only one a release is built as.** The development
+  build adds `src/Test` and `PKSE_DEVELOPMENT_BUILD` (the self test) and a "(Development)" /
+  `-dev` name, and nothing else. Debug logging is a runtime setting (`g_debugLogging`, default
+  off) in both; never make it compile-time. `Utils::loadSettings()` stays first in `main()`.
 - **The version is set in the `Makefile` only**: `APP_VERSION` (15 characters at most, because
   `nacptool` truncates silently) and `APP_VERSION_FULL`. Also update the copies in
   `CppProperties.json` and `.vscode/c_cpp_properties.json`.
 - A new source directory must be added to `SOURCES` in the Makefile (it does not glob recursively).
 - Before calling a change done, run `syntax_check.py`, then `--warnings`, then `make`. Changes
   to save handling must also pass a real save round trip: write an unedited save back and require
-  identical bytes (chapter 12 lists the few documented exceptions).
+  identical bytes (chapter 12 lists the few documented exceptions). The host harnesses
+  (`tools/harness/`) and the self test automate those checks: see
+  [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md).
 
 ## Architecture in one screen
 

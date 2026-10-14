@@ -42,6 +42,9 @@ namespace UI
         /// as it was opened, so nothing can open it differently afterwards.
         std::unique_ptr<Trainer::Trainer> takeSelectedFileTrainer() { return std::move(selectedFileTrainer); }
         const std::string &getSelectedFileLabel() const { return selectedFileLabel; }
+        /// Whether the Open Save File browser is showing. The self test reads it to check that Y
+        /// opened the browser and B closed it, rather than inferring both from nothing happening.
+        bool isFileBrowserOpen() const noexcept { return fileBrowser.active; }
 
         // Minus opens the self test (when the build carries it, see SELF_TEST_AVAILABLE) from here
         // rather than from inside a save, because it wants EVERY generation the console has at
