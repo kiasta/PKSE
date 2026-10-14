@@ -1664,7 +1664,7 @@ namespace UI
         std::vector<std::string> importExtensions = Trainer::PokemonFile::extensions();
         importExtensions.push_back(".bnk");
         importExtensions.push_back(".bin"); // hand-copied pre-2019 PKSM bank.bin
-        fileBrowser.open("Import Pokemon / PKSM Bank",
+        fileBrowser.open("Import Pokemon / PKSM Bank", "Pokemon or bank files",
                          {"sdmc:/3ds/PKSM/banks",
                           "sdmc:/3ds/PKSM/extDataBackup/banks",
                           "sdmc:/3ds/PKSM",
@@ -1682,7 +1682,7 @@ namespace UI
         fileBrowserPurpose = FileBrowserPurpose::TradePartner;
         // The same filters the save picker uses, so the list is exactly what openExternalSave can
         // open -- including a 3DS `main`, which has no extension and is matched by whole name.
-        fileBrowser.open("Select a Save to Trade With",
+        fileBrowser.open("Select a Save to Trade With", "Save files",
                          {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
                           "sdmc:/emulators/", "sdmc:/"},
                          Save::saveFileExtensions(), Save::saveFileExactNames());

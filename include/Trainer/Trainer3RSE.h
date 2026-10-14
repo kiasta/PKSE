@@ -52,8 +52,6 @@ namespace Trainer
     constexpr size_t RSE_BOX_NAME_OFFSET = 0x8344; // Storage; PKHeX SAV3.GetBoxOffset(COUNT_BOX)
     constexpr size_t RSE_BOX_NAME_BYTES = 9;
     constexpr size_t RSE_BOX_NAME_CHARS = 8;
-    /// Every sector's footer carries this, and all 14 must be present for a slot to be usable.
-    constexpr uint32_t RSE_SECTOR_MAGIC = 0x08012025;
 
     class Trainer3RSE : public Trainer
     {
@@ -148,11 +146,8 @@ namespace Trainer
 
         /// Apply every edit into the raw save and refresh the sector checksums, then hand back the
         /// bytes to write. The order matters: the block writers all mutate sector DATA, so every one
-        /// of them has to run before the checksums are stamped over the result.
-        ///
-        /// Ruby/Sapphire/Emerald are the only Gen 3 games PKSE opens as a loose file, so unlike
-        /// FireRed -- which arrives with a title id and is written by saveTrainerInfoFRLG -- this one
-        /// is reached through saveExternalSave, which needs the whole image in one call.
+        /// of them has to run before the checksums are stamped over the result. Reached through
+        /// saveExternalSave, which needs the whole image in one call.
         const std::vector<uint8_t> &serialize();
     };
 }

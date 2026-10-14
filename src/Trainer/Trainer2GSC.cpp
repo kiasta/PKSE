@@ -143,25 +143,25 @@ namespace Trainer
     {
         auto layoutMatches = [&](Gen2Layout layout)
         { if (out) *out = layout; return true; };
-        if (bytes.size() == GEN2_SIZE_INTL)
-        {
-            // PKHeX's order. International first; Korean GS (0x2DAE / 0x28CC) is deliberately not
-            // probed -- see the scope note in the header.
-            if (hasListAt(bytes, 0x2D6C, 0x288A, 20))
-                return layoutMatches(Gen2Layout::GS_INTL);
-            if (hasListAt(bytes, 0x2D10, 0x2865, 20))
-                return layoutMatches(Gen2Layout::C_INTL);
+        // PKHeX SaveUtil.IsG2: EITHER size, and every layout is probed whatever the size. The
+        // locale does not follow from the length -- a Japanese cartridge's SRAM is 32 KiB like
+        // everyone else's, and every Japanese offset sits below 0x8000 -- so tying the layout to
+        // the size refused ordinary Japanese saves PKHeX opens. The one Japanese field past 0x8000
+        // (Crystal's trainer gender) is bounds-checked where it is read and written.
+        if (bytes.size() != GEN2_SAVE_SIZE && bytes.size() != GEN2_SAVE_SIZE_DOUBLED)
             return false;
-        }
-        if (bytes.size() == GEN2_SIZE_JP)
-        {
-            // Japanese GS and Crystal SHARE the 0x2D10 probe (it is CurrentBox for both) and are
-            // separated only by the party offset. Probing one list cannot tell them apart.
-            if (hasListAt(bytes, 0x2D10, 0x283E, 30))
-                return layoutMatches(Gen2Layout::GS_JP);
-            if (hasListAt(bytes, 0x2D10, 0x281A, 30))
-                return layoutMatches(Gen2Layout::C_JP);
-        }
+        // PKHeX's order: international before Japanese. Korean GS (0x2DAE / 0x28CC) is
+        // deliberately not probed -- see the scope note in the header.
+        if (hasListAt(bytes, 0x2D6C, 0x288A, 20))
+            return layoutMatches(Gen2Layout::GS_INTL);
+        if (hasListAt(bytes, 0x2D10, 0x2865, 20))
+            return layoutMatches(Gen2Layout::C_INTL);
+        // Japanese GS and Crystal SHARE the 0x2D10 probe (it is CurrentBox for both) and are
+        // separated only by the party offset. Probing one list cannot tell them apart.
+        if (hasListAt(bytes, 0x2D10, 0x283E, 30))
+            return layoutMatches(Gen2Layout::GS_JP);
+        if (hasListAt(bytes, 0x2D10, 0x281A, 30))
+            return layoutMatches(Gen2Layout::C_JP);
         return false;
     }
 

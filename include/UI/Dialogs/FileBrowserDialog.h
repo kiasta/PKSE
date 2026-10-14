@@ -49,7 +49,15 @@ namespace UI
             int scroll = 0;            // index of the first visible row
             bool showAllFiles = false; // X toggles: ignore `extensions` and list every file
             bool truncated = false;    // the directory held more entries than MAX_DIRECTORY_ENTRIES
-            std::string status;        // transient note ("Couldn't open that folder.")
+            /// A note the owner or the browser leaves ("Couldn't open that folder.", why a pick was
+            /// refused). Drawn whether or not the folder lists anything: a refusal is about a file
+            /// that is still on screen, so it never arrives in an empty folder.
+            std::string status;
+
+            /// What the filter keeps, as the browser names it ("Save files", "Bank files"). Only the
+            /// owner knows, and the same dialog opens both.
+            std::string filterLabel;
+            std::string noFilteredFilesMessage; // built from filterLabel once, at open()
 
             /// The search box. Filtering happens in refresh(), so `entries` only ever
             /// holds rows that survive the query and every mover, hit test and draw below stays
@@ -81,6 +89,7 @@ namespace UI
 
             /// Opens at the first of `startDirs` that exists, falling back to the SD root.
             void open(const std::string &windowTitle,
+                      const std::string &filterLabel,
                       const std::vector<std::string> &startDirs,
                       const std::vector<std::string> &exts,
                       const std::vector<std::string> &wholeFileNames = {});

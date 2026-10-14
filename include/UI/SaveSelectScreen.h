@@ -1,12 +1,14 @@
 #ifndef UI_SAVE_SELECT_SCREEN_H
 #define UI_SAVE_SELECT_SCREEN_H
 
+#include <memory>
 #include <vector>
 #include <string>
 
 #include <switch.h>
 
 #include "Enums/GameVersion.h" // a tile remembers the version its folder and label were built from
+#include "Trainer/Trainer.h"
 #include "UI/UIScreen.h"
 #include "UI/NavigationRepeat.h"
 #include "UI/PKSEFramebuffer.h"
@@ -36,6 +38,10 @@ namespace UI
         // tell "user chose an installed title" from "user chose a file on the SD card".
         bool hasSelectedFile() const { return fileSelected; }
         const std::string &getSelectedFilePath() const { return selectedFilePath; }
+        /// The file is OPENED before the browser closes -- that is the check -- and handed over
+        /// as it was opened, so nothing can open it differently afterwards.
+        std::unique_ptr<Trainer::Trainer> takeSelectedFileTrainer() { return std::move(selectedFileTrainer); }
+        const std::string &getSelectedFileLabel() const { return selectedFileLabel; }
 
         // Minus opens the self test (when the build carries it, see SELF_TEST_AVAILABLE) from here
         // rather than from inside a save, because it wants EVERY generation the console has at
@@ -116,7 +122,8 @@ namespace UI
         std::vector<TouchButton> browserTaps;
         bool fileSelected = false;
         std::string selectedFilePath;
-        std::string browseError; // shown in the browser when a pick is not a save PKSE reads
+        std::unique_ptr<Trainer::Trainer> selectedFileTrainer;
+        std::string selectedFileLabel;
         void openFileBrowser();
         void handleFileBrowserInput(u64 buttonsDown, const TouchInput &touch);
 

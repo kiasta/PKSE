@@ -829,8 +829,10 @@ namespace Conversion
         //     Red/Blue/Green and Gold/Silver are indistinguishable; the group's representative title
         //     is stamped and the UI says so before the transfer runs. Gen 2 is the one exception --
         //     a record carrying Crystal's caught data names Crystal outright.
-        //  2. The NICKNAME and the substituted trade OT are written in ENGLISH, because PKSE ships
-        //     one species-name table. A Japanese record still transfers; its name is the English one.
+        //  2. The substituted in-game-trade OT is only half localised. The species name an
+        //     un-nicknamed Pokemon arrives with is taken in the RECORD's language, but the trade OT
+        //     is トレーナー for a Japanese record and the English "Trainer" for every other language,
+        //     where Bank would write that language's own word.
         //     A name that IS carried (a real nickname, an ordinary OT) goes through PKSE's own Gen
         //     1/2 character table rather than Bank's transporter one, which differs for Japanese:
         //     PKHeX's StringConverter12Transporter shifts katakana to hiragana when a name mixes

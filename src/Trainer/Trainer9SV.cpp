@@ -784,7 +784,7 @@ namespace Trainer
                 continue;
 
             // Size-preserving in-place write. Gen 9 stores every item at a fixed index (itemId * 0x10)
-            // as {pouchId@0x00, count@0x04 (int32 LE), flags@0x08 (isNew=bit0, isFavorite=bit1)}.
+            // as {pouchId@0x00, count@0x04 (int32 LE), flags@0x08 (isNew=bit0, isFavorite=bit1, obtained=bit2)}.
             //
             // PKSE places each item in a pouch by legal-list membership (getPouchItems, mirroring
             // PKHeX's spans); the GAME instead keys the bag off the pouchId in each record. A freshly
@@ -817,10 +817,13 @@ namespace Trainer
                         block.data[offset + 1] = static_cast<uint8_t>((pidValue >> 8) & 0xFF);
                         block.data[offset + 2] = static_cast<uint8_t>((pidValue >> 16) & 0xFF);
                         block.data[offset + 3] = static_cast<uint8_t>((pidValue >> 24) & 0xFF);
+                        // A record the save never held has no OBTAINED bit, and every item the game holds
+                        // carries one; PKHeX sets it for any non-zero count. A no-op on game-written items.
+                        block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | ITEM_OBTAINED_FLAG9_SV);
                         // isNew = flags bit 0. Only SET (for freshly-added items); never clear, so the
                         // game's own "new" markers on existing items survive round-trips.
                         if (item.isNew)
-                            block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | 0x01);
+                            block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | ITEM_NEW_FLAG9_SV);
                     }
                 }
             }
