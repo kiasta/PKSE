@@ -468,9 +468,15 @@ namespace Trainer
         load();
     }
 
+    // Where the bank file lives. Empty (the normal case) means sdmc:/PKSE/bank; see setRootOverride.
+    static std::string g_bankRootOverride;
+
+    void Bank::setRootOverride(const std::string &directory) { g_bankRootOverride = directory; }
+    bool Bank::rootOverridden() noexcept { return !g_bankRootOverride.empty(); }
+
     std::string Bank::bankDir()
     {
-        return BASE_SAVE_DIRECTORY + "/bank";
+        return g_bankRootOverride.empty() ? (BASE_SAVE_DIRECTORY + "/bank") : g_bankRootOverride;
     }
 
     std::string Bank::filePath() const
@@ -567,7 +573,10 @@ namespace Trainer
         if (!file)
         {
             // No unified bank yet: one-time import of any legacy per-group bank files, then snapshot.
-            migrateLegacyBanks();
+            // Skipped for a redirected (self-test) bank -- the legacy files are the USER's, and
+            // dragging them into a scratch file would be work nobody asked for.
+            if (!rootOverridden())
+                migrateLegacyBanks();
             savedImage = serialize();
             logInfoToFile("Bank: no unified bank file; migrated legacy banks if present", path.c_str());
             return;
@@ -901,12 +910,18 @@ namespace Trainer
 
     //
     // The bodies stay in the anonymous namespace above because every caller in this file is a free
-    // helper rather than a Bank member. These three forward to them so anything else that needs an
+    // helper rather than a Bank member. These four forward to them so anything else that needs an
     // entity of an arbitrary save format reads the same mapping instead of keeping a second copy
     // of it in step.
     std::unique_ptr<::Pokemon::Pokemon> Bank::makePokemon(GameVersion group, std::span<const std::byte> record)
     {
         return makePokemonImpl(group, record);
+    }
+
+    std::byte *Bank::encryptRecord(GameVersion group, std::span<const std::byte> decryptedRecord,
+                                   uint32_t encryptionConstant)
+    {
+        return encryptFor(group, decryptedRecord, encryptionConstant);
     }
 
     size_t Bank::recordSizeFor(GameVersion group) { return recordSizeForImpl(group); }

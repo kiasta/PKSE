@@ -66,6 +66,11 @@ namespace UI
         /// The picker has already opened it; see SaveSelectScreen::takeSelectedFileTrainer.
         void handleExternalSave(std::unique_ptr<Trainer::Trainer> trainer, const std::string &label,
                                 const std::string &path);
+        /// Runs the automated self test, when the build carries it (SELF_TEST_AVAILABLE). A third
+        /// entry point beside the two above, and for the same reason they are separate: it does not
+        /// open A save. It picks one save per title from everything the console has, copies each
+        /// into a scratch directory, and tests those.
+        void handleSelfTest();
     };
 }
 

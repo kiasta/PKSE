@@ -542,13 +542,16 @@ namespace UI
                 (pokemon && pokemon->speciesID() != 0)
                     ? Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species())
                     : "Pokémon";
-            static const char *const items[] = {"Move", "Edit", "Clone", "Export", "Release", "Find\u2026", "Cancel"};
             // A party-linked (LGPE) slot can be edited or cloned, but not moved or released -- grey those
             // two out. (Same lock rule as storageSlotLocked: save pane + a party member points here.)
             const bool locked = screen.menuPane == 0 &&
                                 screen.trainer.getPartyPosition(screen.menuBox, screen.menuSlot) > 0;
-            const uint32_t disabled = locked ? ((1u << 0) | (1u << 4)) : 0u; // Move (0), Release (4)
-            drawPopupMenu(screen, framebuffer, title, items, 7, screen.storageMenuIndex, disabled);
+            uint32_t disabledRows = 0;
+            for (int menuRow = 0; menuRow < TrainerViewScreen::STORAGE_MENU_ROW_COUNT; ++menuRow)
+                if (locked && TrainerViewScreen::storageMenuRowNeedsUnlockedSlot(menuRow))
+                    disabledRows |= 1u << menuRow;
+            drawPopupMenu(screen, framebuffer, title, TrainerViewScreen::STORAGE_MENU_LABELS,
+                          TrainerViewScreen::STORAGE_MENU_ROW_COUNT, screen.storageMenuIndex, disabledRows);
         }
 
         // Options for the block in hand. There is deliberately no "move" entry: a carried group is moved

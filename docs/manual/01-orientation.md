@@ -122,11 +122,12 @@ common source of wrong behaviour in this codebase, because callers historically 
 ```
 PKSE/
 ├── CLAUDE.md                   the terse rules, and a map into this manual
-├── Makefile                    the ONLY build. The version lives here.
+├── Makefile                    the build: production (default) and development. The version lives here.
 ├── README.md                   user-facing: features, install, build
 ├── assets/                     icon, banner, screenshots (only the icon goes into the .nro)
 ├── docs/
 │   ├── CODING_STANDARDS.md     binding naming and layout rules
+│   ├── DEV_TESTING.md          the self test and the host harnesses, in full
 │   ├── integration/            one offset guide per generation, from PKHeX
 │   └── manual/                 ← you are here
 ├── include/                    headers, mirroring src/ exactly
@@ -138,6 +139,7 @@ PKSE/
 │   ├── Names/                  generated string tables
 │   ├── Pokemon/                entity classes + generated data tables
 │   ├── Save/                   Block model, save read/write entry points, envelopes, title folders
+│   ├── Test/                   the on-console self test (development build only)
 │   ├── Trainer/                save-file classes + Inventory + Bank + the PKSM bank reader
 │   ├── UI/                     framebuffer, screens, Panels/, Dialogs/, Modals/
 │   ├── Utils/                  logging, strings, files, keyboard, settings, hashes, charsets
@@ -152,6 +154,7 @@ PKSE/
     ├── pkhex_source.py         fetches + caches PKHeX resources; tracks the default branch, PKHEX_REF pins
     ├── regenerate.py           runs every table generator in one go
     ├── formdump/               a .NET tool that calls PKHeX's real FormConverter (ch. 07)
+    ├── harness/                host test programs over real saves; uihost/ drives the real UI headless
     └── syntax_check.py         the fast compile check. Use it constantly.
 ```
 

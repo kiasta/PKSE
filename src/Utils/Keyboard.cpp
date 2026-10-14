@@ -9,6 +9,7 @@
 
 #include <switch.h>
 
+#include "Globals.h"      // g_suppressKeyboard -- the self test must never block on a prompt
 #include "Utils/Logger.h"
 
 namespace Utils
@@ -20,7 +21,23 @@ namespace Utils
         // truncate any non-ASCII name mid-sequence.
         constexpr int BYTES_PER_CHARACTER = 4;
 
+        /// Prompts refused because the self test owns the screen. See g_suppressKeyboard.
+        int gSuppressedPrompts = 0;
+
         KeyboardPresenter g_keyboardPresenter;
+
+        // Every keyboard, PKSE's or the console's, BLOCKS until a human answers it. An automated
+        // pass that reaches one stops and waits for hands on the console, so the self test refuses
+        // before either is shown. Reported as a cancel, which every call site already treats as
+        // "no change" -- see Keyboard.h's third rule.
+        bool refusedWhileTesting(const std::string &header)
+        {
+            if (!g_suppressKeyboard)
+                return false;
+            ++gSuppressedPrompts;
+            logInfoToFile("keyboard prompt refused while the self test is running", header.c_str());
+            return true;
+        }
 
         /**
          * Common swkbd plumbing. Returns false on cancel OR on applet failure -- the caller treats
@@ -30,6 +47,8 @@ namespace Utils
         bool runKeyboard(SwkbdType type, const std::string &header, const std::string &guide, const std::string &initial, int maxChars, std::string &out)
         {
             if (maxChars <= 0)
+                return false;
+            if (refusedWhileTesting(header))
                 return false;
 
             SwkbdConfig keyboardConfig;
@@ -64,6 +83,9 @@ namespace Utils
         }
     }
 
+    int keyboardPromptsSuppressed() { return gSuppressedPrompts; }
+    void resetKeyboardSuppressionCount() { gSuppressedPrompts = 0; }
+
     void setKeyboardPresenter(KeyboardPresenter presenter) { g_keyboardPresenter = std::move(presenter); }
 
     KeyboardResult promptSystemText(const std::string &header, const std::string &guide,
@@ -80,7 +102,7 @@ namespace Utils
     {
         if (!g_keyboardPresenter)
             return promptSystemText(header, guide, initial, maxChars);
-        if (maxChars <= 0)
+        if (maxChars <= 0 || refusedWhileTesting(header))
             return KeyboardResult{};
 
         KeyboardRequest request;
@@ -109,6 +131,8 @@ namespace Utils
         std::string text;
         if (g_keyboardPresenter)
         {
+            if (refusedWhileTesting(header))
+                return result;
             KeyboardRequest request;
             request.header = header;
             request.guide = range;

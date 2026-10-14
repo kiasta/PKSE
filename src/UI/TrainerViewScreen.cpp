@@ -1664,12 +1664,12 @@ namespace UI
         std::vector<std::string> importExtensions = Trainer::PokemonFile::extensions();
         importExtensions.push_back(".bnk");
         importExtensions.push_back(".bin"); // hand-copied pre-2019 PKSM bank.bin
-        fileBrowser.open("Import Pokemon / PKSM Bank",
+        fileBrowser.open("Import Pokemon / PKSM Bank", "Pokemon or bank files",
                          {"sdmc:/3ds/PKSM/banks",
                           "sdmc:/3ds/PKSM/extDataBackup/banks",
                           "sdmc:/3ds/PKSM",
                           "sdmc:/PKSM/banks",
-                          "sdmc:/PKSE/exports",
+                          POKEMON_EXPORT_DIRECTORY,
                           "sdmc:/PKSE",
                           "sdmc:/"},
                          importExtensions);
@@ -2040,7 +2040,8 @@ namespace UI
             }
             else if (Trainer::PokemonFile::supportsFileName(picked))
             {
-                size_t importBox = 0, importSlot = 0;
+                size_t importBox = 0;
+                size_t importSlot = 0;
                 std::string error;
                 if (bank && Trainer::PokemonFile::importIntoBank(*bank, picked, &importBox, &importSlot, &error))
                 {
@@ -2050,16 +2051,22 @@ namespace UI
                     fileBrowser.close();
                     pksmImport.reset();
                     postStatus("Pokemon imported - choose Save when you leave Storage.", 480);
-                    Utils::logEventToFile("POKEMONFILE action=IMPORT result=OK file=\"" + leafName(picked) +
-                                          "\" box=" + std::to_string(importBox + 1) +
-                                          " slot=" + std::to_string(importSlot + 1));
+                    if (g_debugLogging)
+                    {
+                        Utils::logEventToFile("POKEMONFILE action=IMPORT result=OK " +
+                                              Utils::logField("file", leafName(picked)) + " " +
+                                              Utils::logSlot("to", 1, stBankBox, stBankSlot) + " " +
+                                              Utils::describePokemon(*bank->boxes[importBox][importSlot], trainer));
+                    }
                 }
                 else
                 {
-                    const std::string reason = error.empty() ? "could not read Pokemon file" : error;
-                    postStatus("Import failed: " + reason, 480);
-                    Utils::logEventToFile("POKEMONFILE action=IMPORT result=FAILED file=\"" + leafName(picked) +
-                                          "\" reason=\"" + reason + "\"");
+                    if (!bank)
+                        error = "the Bank is not loaded";
+                    postStatus("Import failed: " + error, 480);
+                    Utils::logEventToFile("POKEMONFILE action=IMPORT result=FAILED " +
+                                          Utils::logField("file", leafName(picked)) + " " +
+                                          Utils::logField("reason", error));
                 }
             }
             else
@@ -3390,7 +3397,7 @@ namespace UI
                     // greyed rows). Start on Edit when Move is unavailable so the cursor doesn't
                     // land on a greyed row.
                     storageMenuActive = true;
-                    storageMenuIndex = isLocked(pane, box, slot) ? 1 : 0;
+                    storageMenuIndex = isLocked(pane, box, slot) ? STORAGE_MENU_ROW_EDIT : STORAGE_MENU_ROW_MOVE;
                     menuPane = pane;
                     menuBox = box;
                     menuSlot = slot;
@@ -5522,7 +5529,7 @@ namespace UI
         // Handle the per-Pokemon action menu (Move / Edit / Clone / Export / Release / Find / Cancel).
         if (storageMenuActive)
         {
-            constexpr int optionCount = 7;
+            constexpr int optionCount = STORAGE_MENU_ROW_COUNT;
             int touchedButton = touchedButtonId(touch);
             if (touchedButton >= 0)
             {
@@ -5530,12 +5537,9 @@ namespace UI
                 // ...and runs on the next
                 if (armTap(touchedButton, HidNpadButton_A)) return;
             }
-            // On a party-linked (locked) slot, only Move (0) and Release (4) are disabled.
-            // Export is read-only and remains available even for a locked slot.
+            // On a party-linked (locked) slot, only the rows that move the Pokemon out are disabled.
             const bool menuLocked = storageSlotLocked(menuPane, menuBox, menuSlot);
-            auto menuDisabled = [&](int menuIndex)
-            { return menuLocked && (menuIndex == 0 || menuIndex == 4); };
-            // Export (3), Find (5) and Cancel (6) do not disturb slot ownership.
+            auto menuDisabled = [&](int menuRow) { return menuLocked && storageMenuRowNeedsUnlockedSlot(menuRow); };
             if (buttonsDown & HidNpadButton_Up)
                 do
                 {
@@ -5556,7 +5560,7 @@ namespace UI
                 storageMenuActive = false;
                 switch (storageMenuIndex)
                 {
-                case 0: // Move -> pick up as a 1x1 block (blocked on a party-linked slot)
+                case STORAGE_MENU_ROW_MOVE: // Move -> pick up as a 1x1 block (blocked on a party-linked slot)
                     if (menuLocked)
                         break;
                     storageFocusPane = menuPane;
@@ -5573,10 +5577,10 @@ namespace UI
                     pickupSingle();
                     postPickup();
                     break;
-                case 1: // Edit -> open the details modal
+                case STORAGE_MENU_ROW_EDIT: // Edit -> open the details modal
                     openStorageEditor(menuPane, menuBox, menuSlot);
                     break;
-                case 2: // Clone -> duplicate into the first empty slot (this box first, then ANY box)
+                case STORAGE_MENU_ROW_CLONE: // Clone -> duplicate into the first empty slot (this box first, then ANY box)
                     if (const Pokemon::Pokemon *source = storageSlot(menuPane, menuBox, menuSlot).get())
                     {
                         if (auto copy = source->clone())
@@ -5629,27 +5633,38 @@ namespace UI
                         }
                     }
                     break;
-                case 3: // Export -> verified native file; source stays untouched
+                case STORAGE_MENU_ROW_EXPORT: // Export -> verified native file; source stays untouched
                     if (const Pokemon::Pokemon *source = storageSlot(menuPane, menuBox, menuSlot).get())
                     {
                         std::string error;
                         const std::string path = Trainer::PokemonFile::defaultExportPath(*source);
+                        if (path.empty())
+                            error = "no free file name in " + POKEMON_EXPORT_DIRECTORY;
                         if (!path.empty() && Trainer::PokemonFile::write(*source, path, &error))
                         {
-                            postStatus("Exported " + leafName(path) + " to sdmc:/PKSE/exports.", 360);
-                            Utils::logEventToFile("POKEMONFILE action=EXPORT result=OK file=\"" +
-                                                  leafName(path) + "\" " + Utils::briefPokemon(*source));
+                            postStatus("Exported " + leafName(path) + " to " + POKEMON_EXPORT_DIRECTORY + ".", 360);
+                            if (g_debugLogging)
+                            {
+                                Utils::logEventToFile("POKEMONFILE action=EXPORT result=OK " +
+                                                      Utils::logField("file", leafName(path)) + " " +
+                                                      Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " +
+                                                      Utils::briefPokemon(*source));
+                            }
                         }
                         else
                         {
-                            const std::string reason = error.empty() ? "could not create export path" : error;
-                            postStatus("Export failed: " + reason, 480);
-                            Utils::logEventToFile("POKEMONFILE action=EXPORT result=FAILED reason=\"" + reason +
-                                                  "\" " + Utils::briefPokemon(*source));
+                            postStatus("Export failed: " + error, 480);
+                            if (g_debugLogging)
+                            {
+                                Utils::logEventToFile("POKEMONFILE action=EXPORT result=FAILED " +
+                                                      Utils::logField("reason", error) + " " +
+                                                      Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " +
+                                                      Utils::briefPokemon(*source));
+                            }
                         }
                     }
                     break;
-                case 4: // Release -> confirm (blocked on a party-linked slot)
+                case STORAGE_MENU_ROW_RELEASE: // Release -> confirm (blocked on a party-linked slot)
                     if (menuLocked)
                         break;
                     releaseGroup = false;
@@ -5658,7 +5673,7 @@ namespace UI
                     releaseSlot = menuSlot;
                     releaseConfirmActive = true;
                     break;
-                case 5: // Find -> highlight matching Pokemon and jump to the first
+                case STORAGE_MENU_ROW_FIND: // Find -> highlight matching Pokemon and jump to the first
                     // The grids highlight straight from the query, so matches light up while it is
                     // typed. The cursor jumps only once it is accepted: jumping per key would move
                     // the bank's current box, which is an unsaved bank change.

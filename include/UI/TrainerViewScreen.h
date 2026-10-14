@@ -243,7 +243,26 @@ namespace UI
         int carriedCount() const;                     // non-null cells in moveMon
         const Pokemon::Pokemon *firstCarried() const; // first non-null cell, or nullptr
 
-        // Red per-Pokemon action menu (Move / Edit / Release / Cancel).
+        // Red per-Pokemon action menu. These rows are the ONE list of it: the panel draws
+        // STORAGE_MENU_LABELS, and the action handler, the greyed-row mask and the starting row all
+        // name a row by its constant. A second list of row numbers is what lets a new row leave the
+        // handler acting on its neighbour.
+        static constexpr int STORAGE_MENU_ROW_MOVE = 0;
+        static constexpr int STORAGE_MENU_ROW_EDIT = 1;
+        static constexpr int STORAGE_MENU_ROW_CLONE = 2;
+        static constexpr int STORAGE_MENU_ROW_EXPORT = 3;
+        static constexpr int STORAGE_MENU_ROW_RELEASE = 4;
+        static constexpr int STORAGE_MENU_ROW_FIND = 5;
+        static constexpr int STORAGE_MENU_ROW_CANCEL = 6;
+        static constexpr int STORAGE_MENU_ROW_COUNT = 7;
+        static constexpr const char *STORAGE_MENU_LABELS[STORAGE_MENU_ROW_COUNT] = {
+            "Move", "Edit", "Clone", "Export", "Release", "Find\u2026", "Cancel"};
+        /// Rows a party-linked (Let's Go) slot cannot use: it can be edited, cloned and exported,
+        /// but not moved or released.
+        static constexpr bool storageMenuRowNeedsUnlockedSlot(int menuRow)
+        {
+            return menuRow == STORAGE_MENU_ROW_MOVE || menuRow == STORAGE_MENU_ROW_RELEASE;
+        }
         bool storageMenuActive = false;
         int storageMenuIndex = 0;
         int menuPane = 0, menuBox = 0, menuSlot = 0; // the slot the menu acts on

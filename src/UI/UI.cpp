@@ -9,6 +9,9 @@
 #include "Utils/HelperUtilities.h"
 #include "Utils/Logger.h"
 #include "Utils/FileUtilities.h"
+#ifdef PKSE_DEVELOPMENT_BUILD // the same question SELF_TEST_AVAILABLE answers
+#include "Test/TestRunnerScreen.h"
+#endif
 #include "Trainer/Trainer.h"
 #include "Trainer/Trainer1RBY.h"
 
@@ -133,6 +136,11 @@ namespace UI
                 // Back from backup/trainer -> return so run() rebuilds the picker (re-lists saves).
                 return;
             }
+            if (SELF_TEST_AVAILABLE && selectScreen.hasRequestedSelfTest())
+            {
+                handleSelfTest();
+                return; // back to run(), which rebuilds the picker
+            }
             if (selectScreen.hasSelectedFile())
             {
                 // A loose save skips backup selection entirely: there is no backup tree for a file
@@ -225,6 +233,34 @@ namespace UI
                 running = false;
             }
         }, trainerVariant);
+    }
+
+    // The automated self test. Driven exactly like every other screen -- one update/draw per frame --
+    // because the test itself runs a slice at a time from inside update(). Running it in one blocking
+    // call would stop appletMainLoop being pumped, and the console treats an app that stops pumping
+    // as one that has hung: the HOME button goes unresponsive and the overlay never appears.
+    void UIManager::handleSelfTest()
+    {
+#ifdef PKSE_DEVELOPMENT_BUILD
+        TestRunnerScreen screen;
+        framebuffer.startFade();
+
+        while (appletMainLoop() && running && !screen.shouldExit())
+        {
+            padUpdate(&pad);
+            touch.update();
+            keyboardBackdrop = &screen;
+            screen.update(pad, touch);
+            screen.draw(framebuffer);
+            framebuffer.drawFadeOverlay();
+            framebuffer.flush();
+        }
+
+        // + closes the app rather than returning to the save picker, the same as it does from the
+        // editor. Without this the flag was set and then thrown away here, so + behaved like B.
+        if (screen.hasRequestedExit())
+            running = false;
+#endif
     }
 
     // A save the user pointed at on the SD card, rather than one belonging to an installed title.

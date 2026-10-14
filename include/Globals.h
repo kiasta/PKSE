@@ -24,6 +24,9 @@
 inline const std::string VERSION_STRING = PKSE_VERSION;
 
 inline constexpr std::string BASE_SAVE_DIRECTORY = "sdmc:/PKSE";
+/// Where Storage's Export writes Pokemon files, and the folder the import browser offers. Not
+/// constexpr: a constant-evaluated std::string must fit the 15-character small-string buffer.
+inline const std::string POKEMON_EXPORT_DIRECTORY = BASE_SAVE_DIRECTORY + "/exports";
 
 inline constexpr uint32_t SIZE_HASH_IN_BYTES = 32;
 
@@ -80,6 +83,35 @@ inline bool g_moveWarn = true;
 /// without building their own. Being a normal setting, it is also readable by anything that wants
 /// to know whether logging is on, which the preprocessor define was not.
 inline bool g_debugLogging = false;
+
+/// True while the on-console self test is driving the UI. Set by Test::Runner for the length of a
+/// run and by nothing else.
+///
+/// It exists for ONE reason: `Utils::promptText` / `promptNumber` BLOCK until a human answers --
+/// PKSE's own keyboard runs modally until OK or Cancel, and the console's keyboard it can hand off to
+/// is a library applet. An automated pass that reaches one stops dead and waits for hands on the
+/// console -- which is the opposite of what the pass is for, and it happened.
+/// While this is set, both prompts return "not accepted" immediately (a cancel, which every call
+/// site already handles as "no change") and count the attempt, so a run can neither hang nor
+/// silently pretend the user typed something.
+///
+/// The journeys are written to avoid the prompts, and this is deliberately NOT a substitute for
+/// that: `Utils::keyboardPromptsSuppressed()` is checked per step, and a journey that reaches a
+/// keyboard is reported. This is the guarantee; the journeys' care is the intent. The same
+/// reasoning as `injectToTitle(false)` and the scratch bank -- a test pass gets a hard floor under
+/// it, not a promise that every step is well behaved.
+inline bool g_suppressKeyboard = false;
+
+/// Whether this build carries the on-console self test. Only the development build does
+/// (`make BUILD_TYPE=development`): it defines PKSE_DEVELOPMENT_BUILD and compiles src/Test/. The
+/// default production build has neither, so a release carries no self test. The hooks the test
+/// drives -- g_suppressKeyboard, Bank::setRootOverride -- are in both builds and inert when nothing
+/// sets them. UI.cpp asks the same #ifdef, because it must not include the header otherwise.
+#ifdef PKSE_DEVELOPMENT_BUILD
+inline constexpr bool SELF_TEST_AVAILABLE = true;
+#else
+inline constexpr bool SELF_TEST_AVAILABLE = false;
+#endif
 
 /// Number of days to retain debug log files
 inline constexpr uint8_t LOG_RETENTION_DAYS = 30;

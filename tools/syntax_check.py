@@ -6,7 +6,7 @@ IntelliSense is an approximation; only GCC decides whether the code actually com
 codegen, no linking, no MSys2 shell -- so checking the whole project takes seconds instead of a
 full build.
 
-    python tools/syntax_check.py                     # every TU the Makefile builds
+    python tools/syntax_check.py                     # every TU either build type compiles
     python tools/syntax_check.py src/UI/UI.cpp ...   # only these files
     python tools/syntax_check.py -j 4                # cap parallelism
     python tools/syntax_check.py --print-flags       # dump the flags (for IDE config)
@@ -14,6 +14,11 @@ full build.
 Flags are derived from the Makefile (APP_VERSION, SOURCES, INCLUDES, ARCH, DEFINES) and from
 portlibs' sdl2.pc, so this tracks the build instead of duplicating it. Exits non-zero if any file
 fails, so it also works as a task/pre-commit gate.
+
+Both build types are checked. Every TU is checked as the production build compiles it. The
+development build's own sources (DEVELOPMENT_SOURCES) are checked with DEVELOPMENT_DEFINES, and so
+is every production TU that mentions the gate (PKSE_DEVELOPMENT_BUILD / SELF_TEST_AVAILABLE),
+because those compile differently in the two builds. Those rows are labelled [development].
 """
 
 from __future__ import annotations
@@ -161,9 +166,13 @@ def rel(path: Path) -> str:
         return path.as_posix()
 
 
-def all_translation_units() -> list[Path]:
+# A production TU that names one of these compiles differently in the development build.
+DEVELOPMENT_GATE = re.compile(r"\b(PKSE_DEVELOPMENT_BUILD|SELF_TEST_AVAILABLE)\b")
+
+
+def translation_units(variable: str) -> list[Path]:
     variables = read_makefile_vars()
-    sources = expand(variables.get("SOURCES", ""), variables).split()
+    sources = expand(variables.get(variable, ""), variables).split()
     files: list[Path] = []
     for directory in sources:
         base = REPO / directory
@@ -171,6 +180,18 @@ def all_translation_units() -> list[Path]:
             continue
         files += sorted(base.glob("*.cpp")) + sorted(base.glob("*.c"))
     return files
+
+
+def development_sources() -> list[Path]:
+    return [path.resolve() for path in translation_units("DEVELOPMENT_SOURCES")]
+
+
+def build_types_for(path: Path, development_only: list[Path]) -> list[bool]:
+    """[False] for production only, [True] for development only, [False, True] for both."""
+    if path.resolve() in development_only:
+        return [True]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return [False, True] if DEVELOPMENT_GATE.search(text) else [False]
 
 
 # ------------------------------------------------------------------------------------------ driver
@@ -191,6 +212,8 @@ def main() -> int:
 
     devkitpro = find_devkitpro()
     common, cxx_only = build_flags(devkitpro)
+    variables = read_makefile_vars()
+    development_defines = shlex.split(expand(variables.get("DEVELOPMENT_DEFINES", ""), variables))
 
     objdir: Path | None = None
     if args.warnings:
@@ -199,20 +222,20 @@ def main() -> int:
         common = [f for f in common if f != "-fsyntax-only"] + ["-O2"]
         objdir = Path(tempfile.mkdtemp(prefix="pkse-warncheck-"))
 
-    # There is no second build to check: SD-card logging is a runtime setting, so one pass covers
-    # everything.
-
     if args.print_flags:
         print(" ".join(common + cxx_only))
         return 0
 
     if args.files:
-        targets = [Path(f) if Path(f).is_absolute() else (REPO / f) for f in args.files]
-        missing = [t for t in targets if not t.is_file()]
+        paths = [Path(f) if Path(f).is_absolute() else (REPO / f) for f in args.files]
+        missing = [t for t in paths if not t.is_file()]
         if missing:
             sys.exit("error: no such file: " + ", ".join(str(m) for m in missing))
     else:
-        targets = all_translation_units()
+        paths = translation_units("SOURCES") + translation_units("DEVELOPMENT_SOURCES")
+    development_only = development_sources()
+    # (path, is_development_build) -- a gated TU appears once per build type.
+    targets = [(path, development) for path in paths for development in build_types_for(path, development_only)]
 
     if not targets:
         print("nothing to check")
@@ -220,8 +243,8 @@ def main() -> int:
 
     compilers = {True: find_compiler(devkitpro, True), False: find_compiler(devkitpro, False)}
     lock = threading.Lock()
-    failed: list[Path] = []
-    warned: list[Path] = []
+    failed: list[str] = []
+    warned: list[str] = []
     done = 0
 
     # The cross compiler writes its scratch files to TMPDIR; on Windows that can resolve somewhere
@@ -230,26 +253,28 @@ def main() -> int:
     if objdir is not None:
         env["TMPDIR"] = env["TMP"] = env["TEMP"] = str(objdir)
 
-    def check(path: Path) -> None:
+    def check(target: tuple[Path, bool]) -> None:
         nonlocal done
+        path, development = target
         is_cxx = path.suffix != ".c"
-        cmd = [compilers[is_cxx], *common, *(cxx_only if is_cxx else []), str(path)]
+        defines = development_defines if development else []
+        cmd = [compilers[is_cxx], *common, *defines, *(cxx_only if is_cxx else []), str(path)]
+        label = rel(path) + (" [development]" if development else "")
         if objdir is not None:
             # Flatten the repo-relative path: two dirs can hold the same basename (Legality.cpp),
             # and colliding object names would have them overwrite each other mid-run.
-            obj = objdir / (rel(path).replace("/", "_") + ".o")
+            obj = objdir / (rel(path).replace("/", "_") + ("-development" if development else "") + ".o")
             cmd += ["-c", "-o", str(obj)]
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO, env=env)
         output = (result.stdout + result.stderr).strip()
 
         with lock:
             done += 1
-            label = rel(path)
             if result.returncode != 0:
-                failed.append(path)
+                failed.append(label)
                 print(f"\n[{done}/{len(targets)}] FAIL {label}")
             elif output:
-                warned.append(path)
+                warned.append(label)
                 print(f"\n[{done}/{len(targets)}] warn {label}")
             elif args.verbose:
                 print(f"[{done}/{len(targets)}] ok   {label}")
@@ -266,14 +291,14 @@ def main() -> int:
     print(f"\n{len(targets) - len(failed)}/{len(targets)} passed", end="")
     if failed:
         print(f", {len(failed)} FAILED:")
-        for path in failed:
-            print(f"  {rel(path)}")
+        for label in failed:
+            print(f"  {label}")
         return 1
     if warned:
         # In --warnings mode a warning IS the failure: the point of the pass is a clean build.
         print(f" - no errors, {len(warned)} file(s) WITH WARNINGS:")
-        for path in warned:
-            print(f"  {rel(path)}")
+        for label in warned:
+            print(f"  {label}")
         return 1 if args.warnings else 0
     print(" - no errors" + (", no warnings" if args.warnings else ""))
     return 0
