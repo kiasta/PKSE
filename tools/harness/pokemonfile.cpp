@@ -9,7 +9,11 @@
  *   - written back, it is PKHeX's bytes again, over the length of PKHeX's file -- except that PKSE
  *     fills a party record's battle-stat tail where PKHeX's file left it all zero (PKSE opens a
  *     Pokemon with its level and stats in place; PKHeX's test files often carry none);
+ *   - encrypted, under PKHeX's encrypted name (.ek3 ... .ea9), it opens as the same Pokemon;
  *   - renamed to another format of a different size, it is refused.
+ *
+ * A directory of PKHeX-ENCRYPTED files (.ek3 ... .ea9) is read too: each must open, as the species
+ * its name says.
  *
  * Build and run:  tools/harness/build-pokemonfile.sh [PKHeX tests directory]
  *                 (default ~/repos/PKHeX/Tests)
@@ -26,6 +30,7 @@
 #include <vector>
 
 #include "Trainer/PokemonFile.h"
+#include "Trainer/Bank.h"
 #include "Pokemon/Pokemon.h"
 #include "Enums/GameVersion.h"
 
@@ -47,7 +52,7 @@ namespace Utils {
         std::fseek(file, 0, SEEK_END);
         const long length = std::ftell(file);
         std::fseek(file, 0, SEEK_SET);
-        uint8_t* bytes = static_cast<uint8_t*>(std::malloc(length > 0 ? (size_t)length : 1));
+        uint8_t* bytes = new uint8_t[length > 0 ? (size_t)length : 1];
         const size_t got = (bytes && length > 0) ? std::fread(bytes, 1, (size_t)length, file) : 0;
         std::fclose(file);
         if (!bytes) return nullptr;
@@ -85,7 +90,8 @@ bool isEntityExtension(const std::string& name) {
     if (dot == std::string::npos) return false;
     const std::string extension = name.substr(dot);
     for (const char* known : { ".pk1", ".pk2", ".pk3", ".pk4", ".pk5", ".pk6", ".pk7", ".pk8", ".pk9",
-                               ".pb7", ".pb8", ".pa8", ".pa9" })
+                               ".pb7", ".pb8", ".pa8", ".pa9", ".ek3", ".ek4", ".ek5", ".ek6", ".ek7",
+                               ".ek8", ".ek9", ".eb7", ".eb8", ".ea8", ".ea9" })
         if (extension == known) return true;
     return false;
 }
@@ -179,6 +185,10 @@ void checkFile(const std::string& path) {
                            std::to_string(expectedSpecies));
     }
 
+    // A file PKHeX saved ENCRYPTED (.ekX) has nothing more to check here: PKSE writes the plain
+    // form, which the plain files cover.
+    if (fileName[fileName.rfind('.') + 1] == 'e') return;
+
     // Written back, PKHeX's bytes again over the length of PKHeX's file. PKSE may write a party
     // record where PKHeX wrote a box one; what both wrote must agree.
     std::string error;
@@ -209,6 +219,29 @@ void checkFile(const std::string& path) {
     // Another format of a different size, by name only. Gen 3's file is the smallest from Gen 3 on,
     // so a Gen 3 file pretends to be Gen 9 and everything else pretends to be Gen 3.
     const std::string extension = fileName.substr(fileName.rfind('.'));
+    // The same record encrypted, under PKHeX's encrypted name (.pk3 -> .ek3 ...): PKHeX's
+    // "save as encrypted" form, which opens as the same Pokemon. Gens 1 and 2 have no encryption.
+    if (extension != ".pk1" && extension != ".pk2" && bytes.size() >= 4) {
+        std::string encryptedExtension = extension;
+        encryptedExtension[1] = 'e';
+        const uint32_t key = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
+                             (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
+        std::byte* encrypted = Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(loaded.pokemon->getGameGroup()),
+                                                            std::span<const std::byte>(bytes.data(), bytes.size()), key);
+        ++g_checks;
+        if (!encrypted) {
+            fail(path, "could not encrypt the record for the " + encryptedExtension + " check");
+        } else {
+            Trainer::PokemonFile::LoadResult opened = Trainer::PokemonFile::parse(
+                std::span<const std::byte>(encrypted, bytes.size()), fileName.substr(0, fileName.rfind('.')) + encryptedExtension);
+            delete[] encrypted;
+            if (!opened)
+                fail(path, "encrypted as " + encryptedExtension + ", it did not open: " + opened.error);
+            else if (opened.pokemon->speciesID() != loaded.pokemon->speciesID() || opened.pokemon->pid() != loaded.pokemon->pid())
+                fail(path, "encrypted as " + encryptedExtension + ", it opened as a different Pokemon");
+        }
+    }
+
     const std::string wrongExtension = extension == ".pk3" ? ".pk9" : ".pk3";
     ++g_checks;
     Trainer::PokemonFile::LoadResult renamed = Trainer::PokemonFile::parse(

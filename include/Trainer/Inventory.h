@@ -14,8 +14,10 @@ namespace Trainer
     {
         uint16_t itemId;
         uint16_t count;
-        bool isNew;
-        bool isFavorite;
+        // Initialised: a reader that leaves them unset must not hand the writers, which set the
+        // game's "new" marker from isNew, whatever was on the stack.
+        bool isNew = false;
+        bool isFavorite = false;
     };
 
     /// Where an item was read from, so an entry nobody touched can go back to its own slot.

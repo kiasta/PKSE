@@ -10,6 +10,8 @@
  *     Pokemon -- species, form, PID, trainer ids, nickname, IVs, moves, level and EXP;
  *   - a file renamed to another format of a different size is refused, and so is one with a byte
  *     changed under its checksum (Gen 3 on; Gens 1 and 2 have no checksum to break);
+ *   - the same record encrypted, under PKHeX's encrypted name (.ek3 ... .ea9), opens as the same
+ *     Pokemon (Gen 3 on);
  *   - importing into an empty bank lands in box 1, slot 1, as that same Pokemon.
  *
  * It runs on a few real Pokemon from each save, against a scratch bank in the run's work directory.
@@ -186,6 +188,39 @@ namespace Test
                 context.check(!renamed, "a Pokemon file renamed to another format's extension was accepted",
                               where + " as=\"" + wrongExtension + "\"");
                 remove(renamedPath.c_str());
+            }
+
+            // The same record ENCRYPTED, under PKHeX's encrypted name (.ek3, .eb7, .ea9 ...): the same
+            // Pokemon. Gens 1 and 2 have no encryption and no such name.
+            if (group != Enums::GameVersion::RBY && group != Enums::GameVersion::GSC && serialized.size() >= 4)
+            {
+                std::string encryptedExtension = expectedExtension; // .pk3 -> .ek3, .pb7 -> .eb7, .pa9 -> .ea9
+                encryptedExtension[1] = 'e';
+                const uint32_t encryptionKey = static_cast<uint32_t>(serialized[0]) | (static_cast<uint32_t>(serialized[1]) << 8) |
+                                               (static_cast<uint32_t>(serialized[2]) << 16) |
+                                               (static_cast<uint32_t>(serialized[3]) << 24);
+                std::byte *encrypted =
+                    Trainer::Bank::encryptRecord(Trainer::Bank::groupAsBanked(group), serialized, encryptionKey);
+                if (context.check(encrypted != nullptr, "a Pokemon could not be encrypted for the .ekX test", where))
+                {
+                    const std::vector<std::byte> encryptedBytes(encrypted, encrypted + serialized.size());
+                    delete[] encrypted;
+                    context.check(encryptedBytes != serialized, "the encrypted form of a Pokemon file equals its plain form",
+                                  where);
+                    const std::string encryptedPath = context.workDir + "/pokemonfile-encrypted" + encryptedExtension;
+                    if (writeBytes(encryptedPath, encryptedBytes))
+                    {
+                        Trainer::PokemonFile::LoadResult opened = Trainer::PokemonFile::load(encryptedPath);
+                        if (context.check(static_cast<bool>(opened), "an encrypted Pokemon file did not open",
+                                          where + " as=\"" + encryptedExtension + "\" error=\"" + opened.error + "\""))
+                        {
+                            const std::string difference = identityDifference(pokemon, *opened.pokemon);
+                            context.check(difference.empty(), "an encrypted Pokemon file opened as a different Pokemon",
+                                          where + " as=\"" + encryptedExtension + "\" field=" + difference);
+                        }
+                        remove(encryptedPath.c_str());
+                    }
+                }
             }
 
             // A byte changed under the checksum: refused. Gens 1 and 2 have no checksum to break.

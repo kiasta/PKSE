@@ -72,6 +72,7 @@ endif
 #
 #   make                          -> PKSE.nro      (objects in build/)
 #   make BUILD_TYPE=development   -> PKSE-dev.nro  (objects in build-development/)
+#   make all                      -> both
 #
 # The development build is the production build PLUS the on-console self test: it compiles
 # DEVELOPMENT_SOURCES and defines PKSE_DEVELOPMENT_BUILD, which turns on the save picker's `-`
@@ -250,8 +251,16 @@ endif
 # Default target when you just run 'make'. Only builds.
 default: $(BUILD)
 
-# 'make all' is the same thing. It used to fetch the romfs assets first; it does not any more.
+# 'make all' builds BOTH: the production build, then the development one (each in its own object
+# directory, so neither disturbs the other). 'make BUILD_TYPE=development' still builds the
+# development one alone, and so does 'make all BUILD_TYPE=development'. It used to fetch the romfs
+# assets first; it does not any more.
+ifeq ($(BUILD_TYPE),production)
 all: $(BUILD)
+	@$(MAKE) --no-print-directory BUILD_TYPE=development
+else
+all: $(BUILD)
+endif
 
 #---------------------------------------------------------------------------------
 # romfs assets: REQUIRED, and NOT fetched here

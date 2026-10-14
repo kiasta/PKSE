@@ -2,6 +2,8 @@
 #include <cstring>
 
 #include "Pokemon/Pokemon7SM.h"
+#include "Pokemon/PIDSearch.h"
+#include "Enums/GameVersion.h"
 #include "Pokemon/Experience.h"
 #include "Trainer/Trainer.h" // Trainer::getSpeciesName
 #include "Utils/HelperUtilities.h"
@@ -170,11 +172,22 @@ namespace Pokemon
         return ((trainerShinyValue ^ pokemonShinyValue) >> 4) == 0;
     }
 
-    void Pokemon7SM::regeneratePID(uint32_t) noexcept
+    void Pokemon7SM::regeneratePID(uint32_t trainerID32) noexcept
     {
-        // Gen 6 stores nature, gender and the ability slot as their own fields, so a new PID
-        // carries no meaning with it -- unlike Gen 3/4, where this has to preserve derived values.
-        wr32(0x18, Utils::rand32());
+        // Gen 6 stores nature, gender and the ability slot as their own fields, but the PID still
+        // decides shininess, so the new PID holds it. A Pokemon from Gens 3-5 keeps its PID: there it
+        // also decides gender, nature and the ability slot, and its encryption constant is the PID.
+        const int originGeneration = Enums::getVersionGeneration(originGame());
+        if (originGeneration >= 3 && originGeneration <= 5)
+            return;
+        PIDRequirements requirements;
+        requirements.trainerID32 = trainerID32;
+        requirements.shinyThreshold = 16; // Gen 6 on
+        requirements.wantShiny = isShiny(trainerID32, "") ? 1 : 0;
+        uint32_t pidValue = 0;
+        if (!findPID(requirements, pidValue))
+            return;
+        wr32(0x18, pidValue);
         refreshChecksum();
     }
 

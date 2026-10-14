@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <span>
 #include <string>
@@ -68,6 +67,28 @@ namespace Trainer::PokemonFile
             {".pa9", GameVersion::ZA, Encryption::SIZE_STORED9_LZA, Encryption::SIZE_PARTY9_LZA},
         };
 
+        /// PKHeX's names for the same records ENCRYPTED, as its "Save as encrypted" writes them, and
+        /// the plain extension each one is. Read only: PKSE always exports the plain form.
+        struct EncryptedExtension
+        {
+            const char *encrypted;
+            const char *plain;
+        };
+        constexpr EncryptedExtension ENCRYPTED_EXTENSIONS[] = {
+            {".ek3", ".pk3"}, {".ek4", ".pk4"}, {".ek5", ".pk5"}, {".ek6", ".pk6"}, {".ek7", ".pk7"},
+            {".eb7", ".pb7"}, {".ek8", ".pk8"}, {".eb8", ".pb8"}, {".ea8", ".pa8"}, {".ek9", ".pk9"},
+            {".ea9", ".pa9"},
+        };
+
+        /// The plain extension for `extension`: itself, or what an encrypted one stands for.
+        std::string plainExtensionFor(const std::string &extension)
+        {
+            for (const EncryptedExtension &encryptedExtension : ENCRYPTED_EXTENSIONS)
+                if (extension == encryptedExtension.encrypted)
+                    return encryptedExtension.plain;
+            return extension;
+        }
+
         /// Pokemon GO's origin-game id (PKHeX GameVersion.GO). Every GO Park transfer into Let's Go
         /// carries it, including every Meltan and Melmetal, so a .pb7 must accept it.
         constexpr uint8_t ORIGIN_GAME_GO = 34;
@@ -94,10 +115,12 @@ namespace Trainer::PokemonFile
             return extension;
         }
 
+        /// The format for a plain or an encrypted extension.
         const FormatSpec *specForExtension(const std::string &extension)
         {
+            const std::string plainExtension = plainExtensionFor(extension);
             for (const FormatSpec &formatSpec : FORMAT_SPECS)
-                if (extension == formatSpec.extension)
+                if (plainExtension == formatSpec.extension)
                     return &formatSpec;
             return nullptr;
         }
@@ -310,14 +333,16 @@ namespace Trainer::PokemonFile
                                                          const std::string &fileName,
                                                          std::string *error)
         {
-            const std::string extension = lowerExtension(fileName);
-            const FormatSpec *formatSpec = specForExtension(extension);
+            const std::string namedExtension = lowerExtension(fileName);
+            const FormatSpec *formatSpec = specForExtension(namedExtension);
             if (!formatSpec)
             {
-                reportFailure(error, extension.empty() ? "Pokemon file has no supported extension"
-                                                       : "unsupported Pokemon file extension: " + extension);
+                reportFailure(error, namedExtension.empty() ? "Pokemon file has no supported extension"
+                                                            : "unsupported Pokemon file extension: " + namedExtension);
                 return nullptr;
             }
+            const std::string extension = formatSpec->extension; // the plain name, for an .ekX too
+            const bool namedEncrypted = namedExtension != extension;
             if (!sizeAllowed(*formatSpec, bytes.size()))
             {
                 std::string sizeMessage = "wrong byte size for " + extension + ": expected " +
@@ -347,16 +372,31 @@ namespace Trainer::PokemonFile
             // entity constructors take encrypted bytes, so the plaintext is encrypted on the way in.
             // A file holding encrypted bytes under a .pk* name is the fallback. Plaintext first
             // matters: a plaintext record has about a 1-in-65,536 chance of also passing as
-            // encrypted, and would then decode as garbage.
+            // encrypted, and would then decode as garbage. An .ekX file is named encrypted, so
+            // there the order is the other way round.
             std::unique_ptr<Pokemon::Pokemon> pokemon;
-            std::byte *encrypted = Bank::encryptRecord(formatSpec->group, bytes, readUInt32At(bytes, 0));
-            if (encrypted)
+            auto readPlaintext = [&]
             {
-                pokemon = Bank::makePokemon(formatSpec->group, std::span<const std::byte>(encrypted, bytes.size()));
+                std::byte *encrypted = Bank::encryptRecord(formatSpec->group, bytes, readUInt32At(bytes, 0));
+                if (!encrypted)
+                    return std::unique_ptr<Pokemon::Pokemon>();
+                auto candidate =
+                    Bank::makePokemon(formatSpec->group, std::span<const std::byte>(encrypted, bytes.size()));
                 delete[] encrypted;
-            }
-            if (!structurallyValid(pokemon) && !gameBoyFormat)
+                return candidate;
+            };
+            if (namedEncrypted)
+            {
                 pokemon = Bank::makePokemon(formatSpec->group, bytes);
+                if (!structurallyValid(pokemon))
+                    pokemon = readPlaintext();
+            }
+            else
+            {
+                pokemon = readPlaintext();
+                if (!structurallyValid(pokemon) && !gameBoyFormat)
+                    pokemon = Bank::makePokemon(formatSpec->group, bytes);
+            }
             if (!structurallyValid(pokemon))
             {
                 reportFailure(error, "Pokemon record failed structural/checksum validation");
@@ -407,6 +447,8 @@ namespace Trainer::PokemonFile
             std::vector<std::string> fromTable;
             for (const FormatSpec &formatSpec : FORMAT_SPECS)
                 fromTable.emplace_back(formatSpec.extension);
+            for (const EncryptedExtension &encryptedExtension : ENCRYPTED_EXTENSIONS)
+                fromTable.emplace_back(encryptedExtension.encrypted);
             return fromTable;
         }();
         return supportedExtensions;
@@ -468,8 +510,7 @@ namespace Trainer::PokemonFile
         const auto bytes =
             std::span<const std::byte>(reinterpret_cast<const std::byte *>(fileContents), byteCount);
         LoadResult loadResult = parse(bytes, path);
-        // readAllBytes() allocates with malloc(); pairing it with delete[] is undefined behaviour.
-        std::free(fileContents);
+        delete[] fileContents;
         return loadResult;
     }
 
@@ -700,7 +741,7 @@ namespace Trainer::PokemonFile
         uint8_t *verifyContents = Utils::readAllBytes(temporaryPath.c_str(), &verifySize);
         const bool verified = verifyContents && verifySize == fileBytes.size() &&
                               std::memcmp(verifyContents, fileBytes.data(), fileBytes.size()) == 0;
-        std::free(verifyContents); // readAllBytes() uses malloc().
+        delete[] verifyContents;
         if (!verified)
         {
             std::remove(temporaryPath.c_str());

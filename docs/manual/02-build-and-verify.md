@@ -151,6 +151,7 @@ Two IntelliSense configs hardcode a copy of the version (`CppProperties.json`,
 ```bash
 make                          # production: PKSE.nro, objects in build/ -- what a release is
 make BUILD_TYPE=development   # development: PKSE-dev.nro, objects in build-development/
+make all                      # both of the above
 ```
 
 The **development build is the production build plus the on-console self test**: it compiles

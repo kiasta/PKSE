@@ -438,6 +438,40 @@ reversible.
 
 `formCount` in `PersonalInfoTable` counts *defined* forms, not *storable* ones.
 
+## What the PID decides, and changing it
+
+From Gen 3 to Gen 5 the PID is more than an encryption key. It decides:
+
+| | Shiny | Gender | Nature | Ability slot |
+|---|---|---|---|---|
+| Gen 3 | PID ⊕ trainer ids < 8 | low byte vs. the species' ratio | `PID % 25` | bit 0 |
+| Gen 4 | the same | the same, **and** stored at `0x40`; PKHeX requires the two to agree | `PID % 25` | bit 0 |
+| Gen 5 | the same | the same, also stored | stored at `0x41`, except a Pokémon from Gens 3–4 (`PID % 25`) | bit 16 (bit 0 for one from Gens 3–4) |
+| Gen 6 on | PID ⊕ trainer ids < 16 | stored | stored | stored |
+
+So a setter that has to change the PID must hold everything it was not asked to change. Gen 3 does it
+in `Pokemon3FRLG::rerollPID`, which also holds an Unown's letter. Gens 4 and 5 call
+`Pokemon::findPID` (`include/Pokemon/PIDSearch.h`) through each class's own `rerollPID`, and write the
+stored gender to match the new PID. Gens 6 and 7 use the same function to keep shininess. Each setter
+then pins the one thing it is changing:
+
+- `setShiny` pins shininess. `setNature` (Gen 4) pins the nature. `setGender` (Gens 4 and 5) pins the
+  gender, and only rebuilds the PID when the current one gives the other gender.
+- `regeneratePID` is a touch-up that was asked to change nothing a user can see, so it holds all of
+  them. A Gen 6/7 Pokémon from Gens 3–5 keeps its PID: its encryption constant *is* that PID.
+
+**The PID is constructed, not drawn at random until one fits.** `findPID` walks the low half from a
+random start and, when shininess is wanted, derives the high half inside the shiny window, so it finds
+a PID whenever one exists. Gens 4 and 5 used to draw a million random PIDs and give up silently, which
+happened about once in eleven Make Shiny presses (1 PID in 409,600 met all three of their tests). The
+draws also ignored the gender, and about one shiny in eight of a 7:1 species came out with a PID that
+contradicted its stored gender.
+
+**Nothing rerolls the PID after an IV or EV edit.** The stat editor used to call `regeneratePID`
+"to maintain legality". A new PID cannot restore a PID–IV link the edit broke, and in Gens 4–7 the
+random replacement turned every shiny Pokémon plain on its first IV edit. An IV or EV edit now changes
+that IV or EV and nothing else.
+
 ## The full virtual surface, grouped
 
 For orientation when implementing a new format. Pure virtual (`= 0`) means you must implement it.

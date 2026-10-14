@@ -63,6 +63,7 @@ python tools/gen_fonts.py && python tools/gen_typeicons.py \
   && python tools/gen_marks.py && python tools/gen_hdsprites.py   # once per checkout (romfs/)
 make                                   # -> PKSE.nro; refuses to start if a romfs asset is missing
 make BUILD_TYPE=development            # -> PKSE-dev.nro: the same app plus the on-console self test
+make all                               # -> both
 python tools/syntax_check.py           # seconds: does it compile (real cross compiler)
 python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept WARNING-FREE
 ```
@@ -148,7 +149,7 @@ python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept 
 | Entity offsets, Gen 1/Gen 3 quirks, stats | [`06-pokemon-entity.md`](docs/manual/06-pokemon-entity.md) |
 | Name/data tables, generators, languages | [`07-data-tables.md`](docs/manual/07-data-tables.md) |
 | Screens, input, search, sprites/forms, keyboard | [`08-ui-layer.md`](docs/manual/08-ui-layer.md), [`09-ui-recipes.md`](docs/manual/09-ui-recipes.md) |
-| Bank, conversion, Poke Transporter, PKSM import | [`10-bank-and-conversion.md`](docs/manual/10-bank-and-conversion.md) |
+| Bank, conversion, Poke Transporter, PKSM import, Pokemon files (`.pkX`/`.ekX`) | [`10-bank-and-conversion.md`](docs/manual/10-bank-and-conversion.md) |
 | Legality layers, encounter tables | [`11-legality.md`](docs/manual/11-legality.md) |
 | Verifying a change | [`12-testing.md`](docs/manual/12-testing.md) |
 | Adding a game or generation | [`13-adding-a-game.md`](docs/manual/13-adding-a-game.md) |

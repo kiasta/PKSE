@@ -1,4 +1,3 @@
-#include <cstdlib> // std::free -> readAllBytes returns a malloc'd buffer (PKSM bank import)
 #include <cstring>
 #include <ctime> // std::time / std::localtime -> a created pokemon's met date = today
 #include <algorithm>
@@ -813,7 +812,13 @@ namespace UI
             stBankBox = static_cast<int>(bank->currentBox);
         // A damaged bank file drops slots silently otherwise -- the user would just find Pokemon
         // missing with no explanation.
-        if (bank && bank->lastLoadRejects() > 0)
+        if (bank && !bank->lastLoadProblem().empty())
+        {
+            postStatus(bank->lastLoadProblem(), 600);
+            Utils::logEventToFile("BANK action=LOAD result=SET-ASIDE " +
+                                  Utils::logField("reason", bank->lastLoadProblem()));
+        }
+        else if (bank && bank->lastLoadRejects() > 0)
         {
             postStatus(std::to_string(bank->lastLoadRejects()) +
                            " damaged bank slot(s) could not be read and were skipped.",
@@ -1488,6 +1493,7 @@ namespace UI
     void TrainerViewScreen::snapshotEditTarget()
     {
         details.editSnapshot.clear();
+        details.unsavedChangesAtSnapshot = hasUnsavedChanges;
         if (const Pokemon::Pokemon *t = detailsTargetPokemon())
         {
             const auto dataBytes = t->getData();
@@ -1524,6 +1530,7 @@ namespace UI
         if (dataBytes.size() != details.editSnapshot.size()) return;
         std::copy(details.editSnapshot.begin(), details.editSnapshot.end(), dataBytes.begin());
         mirrorEditedPartyMember();
+        hasUnsavedChanges = details.unsavedChangesAtSnapshot;
     }
 
     void TrainerViewScreen::closeDetailsModal()
@@ -1698,18 +1705,17 @@ namespace UI
             return;
 
         size_t size = 0;
-        // readAllBytes hands back a malloc'd buffer, so it is freed with free().
         uint8_t *file = Utils::readAllBytes(path.c_str(), &size);
         if (!file || size == 0)
         {
             if (file)
-                std::free(file);
+                delete[] file;
             tradePartnerPick.refusalText = "Could not read";
             Utils::logErrorToFile("trade partner: could not read file", path.c_str());
             return;
         }
         std::vector<uint8_t> bytes(file, file + size);
-        std::free(file);
+        delete[] file;
 
         std::string label;
         std::unique_ptr<Trainer::Trainer> donorSave = Save::openExternalSave(std::move(bytes), path, &label);
@@ -1899,13 +1905,11 @@ namespace UI
         pksmImport.fileName = leafName(path);
 
         size_t size = 0;
-        // readAllBytes hands back a malloc'd buffer, so it is freed with free() rather than the
-        // delete[] most of the older call sites use.
         uint8_t *file = Utils::readAllBytes(path.c_str(), &size);
         if (!file || size == 0)
         {
             if (file)
-                std::free(file);
+                delete[] file;
             pksmImport.importer.fail("Couldn't read that file from the SD card.");
             pksmImport.resultActive = true;
             Utils::logErrorToFile("PKSM import: could not read file", path.c_str());
@@ -1913,7 +1917,7 @@ namespace UI
         }
 
         const bool passed = pksmImport.importer.scan(std::span<const uint8_t>(file, size));
-        std::free(file);
+        delete[] file;
 
         // Box names live in a `<name>.json` sidecar beside the .bnk. Optional -- a missing or
         // unreadable one just means the imported boxes keep their default "Bank N" labels.
@@ -1930,7 +1934,7 @@ namespace UI
                 {
                     pksmImport.importer.setBoxNames(
                         Trainer::parsePKSMBoxNames(std::span<const uint8_t>(json, jsonSize)));
-                    std::free(json);
+                    delete[] json;
                 }
             }
         }
@@ -4300,13 +4304,11 @@ namespace UI
                     int dataStatIndex = statIndexMap[statEdit.selectedStat];
 
                     // Apply IV always; apply AV for Let's Go, EV otherwise.
-                    bool ivEvModified = false; // IV/EV changes want a PID refresh; AV doesn't
                     bool anyModified = false;
                     if (statEdit.currentIV != statEdit.originalIV)
                     {
                         pokemon->setIV(dataStatIndex, statEdit.currentIV);
                         hasUnsavedChanges = true;
-                        ivEvModified = true;
                         anyModified = true;
                     }
                     if (usesAV)
@@ -4324,15 +4326,12 @@ namespace UI
                         // forwards to setEV() for every format where the two are the same thing.
                         pokemon->setEVWide(dataStatIndex, static_cast<uint16_t>(statEdit.currentEV));
                         hasUnsavedChanges = true;
-                        ivEvModified = true;
                         anyModified = true;
                     }
 
-                    // Regenerate PID to maintain legality after IV/EV changes (AVs don't affect it).
-                    if (ivEvModified)
-                    {
-                        pokemon->regeneratePID(pokemon->id32());
-                    }
+                    // The PID is left alone. A new one cannot restore a PID-IV link the edit broke, and in
+                    // Gens 3-7 it decides shininess, so rerolling it made a shiny Pokemon plain.
+
                     // If this is an LGPE party member, mirror the edit to its party copy so the
                     // save's party overlay doesn't clobber it.
                     if (anyModified)
@@ -5808,6 +5807,8 @@ namespace UI
                             stBankBox = static_cast<int>(bank->currentBox);
                             stBankSlot = 0;
                         }
+                        if (!bank->lastLoadProblem().empty())
+                            postStatus(bank->lastLoadProblem(), 600);
                     }
                     detailViewActive = false;
                     answered = true;

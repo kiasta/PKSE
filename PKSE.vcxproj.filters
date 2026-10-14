@@ -189,6 +189,9 @@
     <ClCompile Include="src\Pokemon\Experience.cpp">
       <Filter>src\Pokemon</Filter>
     </ClCompile>
+    <ClCompile Include="src\Pokemon\PIDSearch.cpp">
+      <Filter>src\Pokemon</Filter>
+    </ClCompile>
     <ClCompile Include="src\Pokemon\FormSpriteMapping.cpp">
       <Filter>src\Pokemon</Filter>
     </ClCompile>
@@ -534,6 +537,9 @@
       <Filter>include\Pokemon</Filter>
     </ClInclude>
     <ClInclude Include="include\Pokemon\Experience.h">
+      <Filter>include\Pokemon</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Pokemon\PIDSearch.h">
       <Filter>include\Pokemon</Filter>
     </ClInclude>
     <ClInclude Include="include\Pokemon\FormSpriteMapping.h">

@@ -17,6 +17,7 @@
  */
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <cstdio>
 
 #include "Test/TestSuite.h"
@@ -113,6 +114,105 @@ namespace Test
                                         " rejects=" + std::to_string(real.lastLoadRejects()));
         }
 
+        bool pathExists(const std::string &path)
+        {
+            struct stat status;
+            return stat(path.c_str(), &status) == 0;
+        }
+
+        /// The bank file is the user's only copy of everything in it, so a bank PKSE cannot use is
+        /// never written over. Run against the scratch bank the deposit check just saved (box 1 is
+        /// named "SelfTest"), in the three shapes that once lost a bank or could:
+        ///
+        ///   - a save interrupted after the new file was written but before it replaced the old one
+        ///     leaves only bank.dat.tmp, which the next load must put back;
+        ///   - a file that is not a bank is moved aside to bank.dat.unreadable, with a message;
+        ///   - a file that exists but cannot be read at all (a directory stands in for an SD card
+        ///     error here: it exists, and no read of it succeeds) is not taken for "no bank yet",
+        ///     which ran the first-run path and let the next save overwrite it.
+        void checkBankFileProtection(Context &context, const std::string &directory)
+        {
+            const std::string bankPath = directory + "/bank.dat";
+            const std::string temporaryPath = bankPath + ".tmp";
+            const std::string asidePath = bankPath + ".unreadable";
+            if (!pathExists(bankPath))
+            {
+                context.skip("the scratch bank was not written, so bank-file protection was not tested");
+                return;
+            }
+
+            // An interrupted save.
+            std::remove(temporaryPath.c_str());
+            if (context.check(std::rename(bankPath.c_str(), temporaryPath.c_str()) == 0,
+                              "could not stage an interrupted bank save", "dir=\"" + directory + "\""))
+            {
+                Trainer::Bank recovered;
+                context.check(pathExists(bankPath) && !pathExists(temporaryPath),
+                              "a bank save interrupted before its rename was not recovered from bank.dat.tmp");
+                context.check(recovered.boxNames[0] == "SelfTest",
+                              "the bank recovered from an interrupted save is not the bank that was saved",
+                              "box1=\"" + recovered.boxNames[0] + "\"");
+                context.check(recovered.lastLoadProblem().empty(),
+                              "recovering an interrupted bank save was reported as a problem",
+                              "message=\"" + recovered.lastLoadProblem() + "\"");
+            }
+
+            // A file that is not a bank.
+            std::remove(asidePath.c_str());
+            std::remove(bankPath.c_str());
+            if (FILE *garbage = std::fopen(bankPath.c_str(), "wb"))
+            {
+                std::fputs("not a PKSE bank", garbage);
+                std::fclose(garbage);
+                Trainer::Bank damaged;
+                context.check(!damaged.lastLoadProblem().empty(), "a bank file that is not a bank opened with no message");
+                context.check(pathExists(asidePath), "a bank file that is not a bank was not kept as bank.dat.unreadable");
+                damaged.boxNames[0] = "AfterDamage";
+                context.check(damaged.save(), "the bank could not be saved after its damaged file was set aside");
+                context.check(pathExists(asidePath), "saving the bank removed the damaged file that had been set aside");
+            }
+            std::remove(asidePath.c_str());
+
+            // A file that exists but will not read, staged two ways: a directory in its place (no
+            // read of it succeeds on a console), and a file with no read permission (which a
+            // console ignores but a desktop host honours).
+            auto checkUnreadable = [&](const char *how)
+            {
+                Trainer::Bank unreadable;
+                context.check(!unreadable.lastLoadProblem().empty(),
+                              "a bank file that exists but cannot be read opened as an empty bank with no message",
+                              std::string("staged=") + how);
+                unreadable.boxNames[0] = "Overwrite";
+                const bool saved = unreadable.save();
+                // Either it was moved aside and the save went to a new file, or it could not be
+                // moved and the save refused. Writing over it in place is the one wrong answer.
+                context.check(pathExists(asidePath) || !saved,
+                              "a bank file that could not be read was neither set aside nor protected from the next save",
+                              std::string("staged=") + how);
+            };
+            std::remove(bankPath.c_str());
+            if (context.check(mkdir(bankPath.c_str(), 0777) == 0, "could not stage an unreadable bank file",
+                              "dir=\"" + directory + "\""))
+            {
+                checkUnreadable("directory");
+                rmdir(asidePath.c_str());
+                rmdir(bankPath.c_str());
+            }
+            std::remove(bankPath.c_str());
+            if (FILE *locked = std::fopen(bankPath.c_str(), "wb"))
+            {
+                std::fputs("PKSEBANK", locked);
+                std::fclose(locked);
+                chmod(bankPath.c_str(), 0);
+                checkUnreadable("no-read-permission");
+                chmod(asidePath.c_str(), 0666);
+                chmod(bankPath.c_str(), 0666);
+                std::remove(asidePath.c_str());
+            }
+            std::remove(bankPath.c_str());
+            std::remove(temporaryPath.c_str());
+        }
+
         void checkScratchBank(Context &context)
         {
             if (samples().empty())
@@ -121,9 +221,12 @@ namespace Test
                 return;
             }
 
-            const std::string directory = BASE_SAVE_DIRECTORY + "/tests/work/bank";
+            // The run's work directory (sdmc:/PKSE/tests/work on a console, the harness's scratch
+            // folder on the host).
+            const std::string workRoot = context.workDir.empty() ? BASE_SAVE_DIRECTORY + "/tests/work" : context.workDir;
+            const std::string directory = workRoot + "/bank";
             mkdir((BASE_SAVE_DIRECTORY + "/tests").c_str(), 0777);
-            mkdir((BASE_SAVE_DIRECTORY + "/tests/work").c_str(), 0777);
+            mkdir(workRoot.c_str(), 0777);
             mkdir(directory.c_str(), 0777);
             std::remove((directory + "/bank.dat").c_str()); // start from an empty bank every run
 
@@ -226,6 +329,8 @@ namespace Test
                               whereLabel + " " + hex("offset", diff, 4));
                 }
             }
+
+            checkBankFileProtection(context, directory);
 
             Trainer::Bank::setRootOverride("");
             context.check(!Trainer::Bank::rootOverridden(),
