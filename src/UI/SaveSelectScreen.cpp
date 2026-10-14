@@ -591,11 +591,10 @@ namespace UI
 
     void SaveSelectScreen::openFileBrowser()
     {
-        browseError.clear();
         // Start where a Game Boy save plausibly is. Emulators on the Switch keep saves beside
         // their ROMs, and PKSE's own backup tree is the other likely home; the browser falls
         // through to the first of these that exists.
-        fileBrowser.open("Open a Save File",
+        fileBrowser.open("Open a Save File", "Save files",
             {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"},
             Save::saveFileExtensions(), Save::saveFileExactNames());
         logEventToFile("OPENSAVE action=BROWSE dir=\"" + fileBrowser.directory + "\"");
@@ -662,32 +661,34 @@ namespace UI
 
         const std::string picked = fileBrowser.chosenPath;
         fileBrowser.chosenPath.clear();
+        const size_t slashPosition = picked.find_last_of('/');
+        const std::string pickedName = (slashPosition == std::string::npos) ? picked : picked.substr(slashPosition + 1);
 
-        // Validate BEFORE leaving the picker. Handing an unrecognised file to the editor would
-        // drop the user into a blank trainer view with no way to tell what went wrong, so the
-        // refusal is reported here, in the browser, with the file still on screen.
+        // THE OPEN IS THE CHECK, made BEFORE leaving the picker. A file that passed a lighter test and
+        // then failed to open dropped the user back on the title grid with nothing said, so every
+        // refusal is reported here, in the browser, with the file still on screen and named.
         size_t length = 0;
         uint8_t *bytes = Utils::readAllBytes(picked.c_str(), &length);
         if (!bytes)
         {
-            fileBrowser.status = "Couldn't read that file.";
+            fileBrowser.status = "Couldn't read \"" + pickedName + "\".";
             logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" result=UNREADABLE");
             return;
         }
-        // The SAME probe chain the editor will run, so the picker and the opener cannot disagree
-        // about what is a save.
-        const std::vector<uint8_t> probe(bytes, bytes + length);
+        std::vector<uint8_t> fileBytes(bytes, bytes + length);
         delete[] bytes;
-        if (!Save::isExternalSave(probe))
+        std::string refusalText;
+        std::unique_ptr<Trainer::Trainer> openedTrainer =
+            Save::openExternalSave(std::move(fileBytes), picked, &selectedFileLabel, &refusalText);
+        if (!openedTrainer)
         {
-            // Naming the size is what turns "it didn't work" into something the user can act on:
-            // a save that is the right size but not recognised is a different problem from a file
-            // that was never a save.
-            fileBrowser.status = "Not a save PKSE can open (" + std::to_string(length) + " bytes).";
-            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) + " result=UNRECOGNISED");
+            fileBrowser.status = "\"" + pickedName + "\" " + refusalText + ".";
+            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) +
+                           " result=UNRECOGNISED reason=\"" + refusalText + "\"");
             return;
         }
 
+        selectedFileTrainer = std::move(openedTrainer);
         selectedFilePath = picked;
         fileSelected = true;
         fileBrowser.close();

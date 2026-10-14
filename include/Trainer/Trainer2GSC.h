@@ -36,8 +36,10 @@
 namespace Trainer
 {
 
-    inline constexpr size_t GEN2_SIZE_INTL = 0x8000;
-    inline constexpr size_t GEN2_SIZE_JP = 0x10000;
+    /// The two file sizes PKHeX accepts (SIZE_G2RAW_U / SIZE_G2RAW_J). PKHeX names them after a
+    /// locale, but the locale does not follow from the size: every layout is probed at both.
+    inline constexpr size_t GEN2_SAVE_SIZE = 0x8000;
+    inline constexpr size_t GEN2_SAVE_SIZE_DOUBLED = 0x10000;
 
     /// Which of the four (version x locale) layouts a file is. There is nothing in the file that
     /// says; it is inferred from where a well-formed Pokemon list sits.

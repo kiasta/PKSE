@@ -137,7 +137,8 @@ namespace UI
             {
                 // A loose save skips backup selection entirely: there is no backup tree for a file
                 // the user pointed at, and no "live save vs older backup" choice to make.
-                handleExternalSave(selectScreen.getSelectedFilePath());
+                handleExternalSave(selectScreen.takeSelectedFileTrainer(), selectScreen.getSelectedFileLabel(),
+                                   selectScreen.getSelectedFilePath());
                 return;
             }
         }
@@ -229,34 +230,17 @@ namespace UI
     // A save the user pointed at on the SD card, rather than one belonging to an installed title.
     // Everything the normal path derives from the title id -- which game, where the backups live,
     // which account owns it -- is either absent or comes from the file itself here.
-    void UIManager::handleExternalSave(const std::string &path)
+    void UIManager::handleExternalSave(std::unique_ptr<Trainer::Trainer> trainer, const std::string &label,
+                                       const std::string &path)
     {
-        logInfoToFile("Opening external save", path.c_str());
-
-        size_t length = 0;
-        uint8_t *raw = Utils::readAllBytes(path.c_str(), &length);
-        if (!raw)
-        {
-            logErrorToFile("External save unreadable", path.c_str());
-            return;
-        }
-        std::vector<uint8_t> bytes(raw, raw + length);
-        delete[] raw;
-
-        // The picker already validated this, but it is re-identified rather than assumed: the
-        // file could have changed on the card between the pick and here, and constructing a
-        // trainer from bytes that are not a save produces an empty editor with no explanation.
-        //
         // The trainer is owned through the base pointer because the concrete type is not known
-        // until the probe chain runs -- eleven formats across five generations arrive this way.
-        std::string label;
-        std::unique_ptr<Trainer::Trainer> trainer =
-            Save::openExternalSave(std::move(bytes), path, &label);
+        // until the probe chain runs -- thirteen formats across seven generations arrive this way.
         if (!trainer)
         {
-            logErrorToFile("External save is not a format PKSE opens", path.c_str());
+            logErrorToFile("No opened save came with the picked file", path.c_str());
             return;
         }
+        logInfoToFile("Editing external save", path.c_str());
 
         // There is no title id, so 0 is passed and the save path travels as the "backup dir" so
         // the write-back knows which file it came from.

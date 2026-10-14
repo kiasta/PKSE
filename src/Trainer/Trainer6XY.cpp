@@ -46,24 +46,9 @@ namespace Trainer
         constexpr size_t BL_CURRENT = 0x43F; // 31*0x22 backgrounds, flags, unlocked, current
     }
 
-    bool Trainer6XY::detectGen67(const std::vector<uint8_t> &bytes, size_t size,
-                                const BlockEntry3DS *tbl, size_t byteCount) noexcept
+    bool Trainer6XY::detectGen67(const std::vector<uint8_t> &bytes, size_t size) noexcept
     {
-        if (bytes.size() != size)
-            return false;
-        if (readUInt32LittleEndian(&bytes[size - BEEF_MAGIC_OFS]) != BEEF_MAGIC)
-            return false;
-        // The chunk repeats every block's length. If those disagree with this game's table the
-        // file is not this game, whatever its size says.
-        const size_t meta = size - 0x200 + 0x14;
-        for (size_t index = 0; index < byteCount; ++index)
-        {
-            if (readUInt32LittleEndian(&bytes[meta + index * 8]) != tbl[index].length)
-                return false;
-            if (readUInt16LittleEndian(&bytes[meta + index * 8 + 4]) != index)
-                return false;
-        }
-        return true;
+        return bytes.size() == size && readUInt32LittleEndian(&bytes[size - BEEF_MAGIC_OFS]) == BEEF_MAGIC;
     }
 
         

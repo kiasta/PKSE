@@ -11,7 +11,7 @@
 #include "Globals.h"
 #include "Save/Block.h"
 #include "Save/GetSaveFileContents.h"
-#include "Save/RtcFooter.h" // stripRtcFooter -- the rule lives there so it can be tested off-console
+#include "Save/SaveEnvelope.h" // the rules live there so they can be tested off-console
 #include "Utils/FileUtilities.h"
 #include "Utils/Logger.h"
 #include "Utils/HelperUtilities.h"
@@ -208,6 +208,11 @@ namespace Save
          * Uses virtual getGameGroup() method to determine concrete type without RTTI.
          */
 
+        // A file the user browsed to has no title id, and `backupDir` is that FILE. The session decides
+        // the writer, not the group: FireRed/LeafGreen arrive both as an installed title and as a file.
+        if (titleId == 0)
+            return saveExternalSave(trainer, backupDir);
+
         GameVersion version = getGameVersion(titleId);
         GameVersion group = getGameGroup(version);
         // unknown title id -- ask the bytes
@@ -245,13 +250,6 @@ namespace Save
         else if (trainerGroup == GameVersion::PLA)
         {
             passed = saveTrainerInfoLA(static_cast<Trainer8LA &>(trainer), backupDir, titleId, userUid, injectToTitle);
-        }
-        else if (isLooseSaveGroup(trainerGroup))
-        {
-            // Gens 1, 2 and 4-7 ignore titleId / userUid / injectToTitle entirely: there is no
-            // installed title behind these saves. `backupDir` carries the FILE PATH the user
-            // opened.
-            passed = saveExternalSave(trainer, backupDir);
         }
         else if (trainerGroup == GameVersion::BDSP)
         {
@@ -874,21 +872,12 @@ namespace Save
     bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
                              bool injectToTitle)
     {
-        // Apply edits into the raw save, then recompute every sector checksum.
-        trainer.updateItemBlock();
-        trainer.updateBoxBlock();
-        trainer.updateBoxNameBlock(); // must precede this game's checksum/hash pass
-        trainer.updateCurrentBoxBlock();
-        trainer.updatePartyBlock();
-        trainer.updatePokedexBlock();     // seen/caught for everything now in storage; before the checksums
-        trainer.updateTrainerInfoBlock(); // money / OT name; before the sector checksums
-        trainer.finalizeChecksums();
+        const std::vector<uint8_t> &raw = trainer.serialize();
 
         const std::string name = trainer.fileName().empty() ? std::string("save.sav") : trainer.fileName();
         char savePath[1024];
         snprintf(savePath, sizeof(savePath), "%s/%s", backupDir, name.c_str());
 
-        const std::vector<uint8_t> &raw = trainer.getSaveData();
         FILE *outFile = fopen(savePath, "wb");
         if (!outFile)
         {
@@ -961,28 +950,6 @@ namespace Save
         delete[] original;
     }
 
-    bool isLooseSaveGroup(GameVersion gameVersion) noexcept
-    {
-        switch (gameVersion)
-        {
-        case GameVersion::RBY:
-        case GameVersion::GSC:
-        case GameVersion::RSE:
-        case GameVersion::DP:
-        case GameVersion::PT:
-        case GameVersion::HGSS:
-        case GameVersion::BW:
-        case GameVersion::B2W2:
-        case GameVersion::XY:
-        case GameVersion::ORAS:
-        case GameVersion::SM:
-        case GameVersion::USUM:
-            return true;
-        default:
-            return false;
-        }
-    }
-
     namespace
     {
         /// One row per format PKSE can open from a file. The ORDER IS PKHeX'S GetTypeInfo order
@@ -1017,12 +984,11 @@ namespace Save
         const LooseFormat LOOSE_FORMATS[] = {
             {detectRBY, makeLoose<Trainer::Trainer1RBY>, GameVersion::RBY},
             {detectGSC, makeLoose<Trainer::Trainer2GSC>, GameVersion::GSC},
-            // Gen 3 goes here, between Gen 2 and Gen 4, because that is PKHeX's order. Only
-            // Ruby/Sapphire/Emerald are in the chain: FireRed/LeafGreen are a Switch title and
-            // always arrive with a title id, so there is no loose FR/LG row to be ordered against.
-            // Trainer3RSE::detect still refuses an FR/LG file outright rather than opening one with
-            // Hoenn's offsets -- the two share this container and only Small+0xAC tells them apart.
+            // Gen 3 goes here, between Gen 2 and Gen 4, because that is PKHeX's order. The two Gen 3
+            // rows cannot both match: they share a container and only Small+0xAC tells them apart, and
+            // each detect() refuses the other's file rather than open it with the wrong offsets.
             {Trainer::Trainer3RSE::detect, makeLoose<Trainer::Trainer3RSE>, GameVersion::RSE},
+            {Trainer::Trainer3FRLG::detect, makeLoose<Trainer::Trainer3FRLG>, GameVersion::FRLG},
             {Trainer::Trainer4DP::detect, makeLoose<Trainer::Trainer4DP>, GameVersion::DP},
             {Trainer::Trainer4PT::detect, makeLoose<Trainer::Trainer4PT>, GameVersion::PT},
             {Trainer::Trainer4HGSS::detect, makeLoose<Trainer::Trainer4HGSS>, GameVersion::HGSS},
@@ -1033,6 +999,18 @@ namespace Save
             {Trainer::Trainer7SM::detect, makeLoose<Trainer::Trainer7SM>, GameVersion::SM},
             {Trainer::Trainer7USUM::detect, makeLoose<Trainer::Trainer7USUM>, GameVersion::USUM},
         };
+
+        const LooseFormat *findLooseFormat(const std::vector<uint8_t> &saveImage)
+        {
+            for (const LooseFormat &format : LOOSE_FORMATS)
+            {
+                if (format.detect(saveImage))
+                    return &format;
+            }
+            return nullptr;
+        }
+
+        bool isLooseSaveImage(const std::vector<uint8_t> &saveImage) { return findLooseFormat(saveImage) != nullptr; }
     }
 
     bool groupOpensFromFile(GameVersion group) noexcept
@@ -1045,51 +1023,50 @@ namespace Save
         return false;
     }
 
-    bool isExternalSave(const std::vector<uint8_t> &bytes)
+    bool findExternalSaveEnvelope(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope,
+                                  std::vector<uint8_t> &saveImage)
     {
-        for (const LooseFormat &f : LOOSE_FORMATS)
-            if (f.detect(bytes))
-                return true;
-        // Same second chance openExternalSave gives it, or the picker would refuse a file it is
-        // about to be able to open.
-        std::vector<uint8_t> trimmed = bytes;
-        if (!stripRtcFooter(trimmed))
-            return false;
-        for (const LooseFormat &f : LOOSE_FORMATS)
-            if (f.detect(trimmed))
-                return true;
-        return false;
+        return findSaveEnvelope(fileBytes, isLooseSaveImage, envelope, saveImage);
     }
 
-    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes,
-                                                       const std::string &path,
-                                                       std::string *label)
+    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes, const std::string &path,
+                                                       std::string *label, std::string *refusalText)
     {
-        // Only when nothing recognised the file as it stands. A save that already matches a size
-        // exactly is never trimmed, so this can neither shorten a good file nor change the probe
-        // order -- it just gives an RTC-footered Game Boy save the same chance as a bare one.
-        bool recognised = false;
-        for (const LooseFormat &f : LOOSE_FORMATS)
-            recognised = recognised || f.detect(bytes);
-        if (!recognised && stripRtcFooter(bytes))
-            logInfoToFile("Stripped an RTC footer from a loose save", path.c_str());
-
-        for (const LooseFormat &f : LOOSE_FORMATS)
+        SaveEnvelope envelope;
+        std::vector<uint8_t> saveImage;
+        if (!findExternalSaveEnvelope(bytes, envelope, saveImage))
         {
-            if (!f.detect(bytes))
-                continue;
-            auto looseTrainer = f.make(std::move(bytes), path);
-            if (!looseTrainer)
-            {
-                logErrorToFile("A loose save was detected but failed to parse", path.c_str());
-                return nullptr;
-            }
-            if (label)
-                *label = externalSaveLabel(*looseTrainer);
-            logInfoToFile("Opened loose save", label ? label->c_str() : path.c_str());
-            return looseTrainer;
+            // A container PKSE recognises but cannot read says what to change; anything else gives its
+            // size, the one fact a user can check against what their emulator should have written.
+            const char *containerReason = describeUnreadableSaveContainer(bytes);
+            if (refusalText)
+                *refusalText = containerReason
+                                   ? std::string(containerReason)
+                                   : "is not a save PKSE can open (" + std::to_string(bytes.size()) + " bytes)";
+            return nullptr;
         }
-        return nullptr;
+        if (envelope.kind != SaveEnvelopeKind::None)
+            logInfoToFile((std::string("The loose save is inside ") + saveEnvelopeName(envelope.kind)).c_str(),
+                          path.c_str());
+        if (!envelope.paddingBytes.empty())
+            logInfoToFile(("The loose save is followed by " + std::to_string(envelope.paddingBytes.size()) +
+                           " bytes of padding")
+                              .c_str(),
+                          path.c_str());
+
+        const LooseFormat *format = findLooseFormat(saveImage);
+        std::unique_ptr<Trainer::Trainer> looseTrainer = format->make(std::move(saveImage), path);
+        if (!looseTrainer)
+        {
+            logErrorToFile("A loose save was detected but failed to parse", path.c_str());
+            if (refusalText)
+                *refusalText = "looks like a " + getGameVersionName(format->group) + " save, but it could not be read";
+            return nullptr;
+        }
+        if (label)
+            *label = externalSaveLabel(*looseTrainer);
+        logInfoToFile("Opened loose save", label ? label->c_str() : path.c_str());
+        return looseTrainer;
     }
 
     std::string externalSaveLabel(const Trainer::Trainer &trainer)
@@ -1147,6 +1124,9 @@ namespace Save
         case GameVersion::RSE:
             raw = &static_cast<Trainer::Trainer3RSE &>(trainer).serialize();
             break;
+        case GameVersion::FRLG:
+            raw = &static_cast<Trainer::Trainer3FRLG &>(trainer).serialize();
+            break;
         case GameVersion::DP:
             raw = &static_cast<Trainer::Trainer4DP &>(trainer).serialize();
             break;
@@ -1179,27 +1159,32 @@ namespace Save
             return false;
         }
 
-        // AN RTC FOOTER MUST SURVIVE THE ROUND TRIP. Emulators, flashcarts and dumpers append the
-        // real-time clock's state after a Game Boy or GBA save, and openExternalSave trims it so the
-        // exact size checks can recognise the file. Writing back without it silently deletes that
-        // clock -- which in Ruby/Sapphire/Emerald is berry growth and the tides, not a curiosity.
-        //
-        // It is re-read from the file on disk rather than carried on the trainer: the footer belongs
-        // to the FILE, no save format has a field for it, and this is the only place that writes one.
-        // It is kept only when the file's trimmed length is exactly the image we are about to write,
-        // so a path that turns out to hold something else is left alone rather than glued onto.
-        std::vector<uint8_t> footer;
+        // THE ENVELOPE GOES BACK ON. openExternalSave takes off whatever an emulator, a dumper or an
+        // online service wrapped around the save, and the file has to come back in that shape or the
+        // program that wrote it cannot read it: an RTC footer is Ruby's berry growth and tides, and VBA
+        // Next expects its 136 KiB .srm. It is found again in the file on disk, by the same rule that
+        // opened it, rather than carried on the trainer: it belongs to the FILE and no save format has
+        // a field for it. It is kept only around a save the size of the one being written, so a path
+        // that turns out to hold something else is left alone rather than glued onto.
+        std::vector<uint8_t> fileBytes = *raw;
         {
             size_t existingSize = 0;
             if (uint8_t *existing = readAllBytes(savePath, &existingSize))
             {
-                const size_t footerSize = rtcFooterLength(existingSize);
-                if (footerSize != 0 && existingSize - footerSize == raw->size())
-                {
-                    footer.assign(existing + existingSize - footerSize, existing + existingSize);
-                    logInfoToFile("Preserving an RTC footer on write-back", savePath);
-                }
+                const std::vector<uint8_t> existingBytes(existing, existing + existingSize);
                 delete[] existing;
+                SaveEnvelope envelope;
+                std::vector<uint8_t> existingImage;
+                if (findExternalSaveEnvelope(existingBytes, envelope, existingImage) && !isBareSave(envelope) &&
+                    existingImage.size() == raw->size())
+                {
+                    fileBytes = joinSaveEnvelope(envelope, *raw);
+                    std::string keptMessage = std::string("Keeping ") + saveEnvelopeName(envelope.kind);
+                    if (!envelope.paddingBytes.empty())
+                        keptMessage += " and " + std::to_string(envelope.paddingBytes.size()) + " bytes of padding";
+                    keptMessage += " on write-back";
+                    logInfoToFile(keptMessage.c_str(), savePath);
+                }
             }
         }
 
@@ -1209,10 +1194,9 @@ namespace Save
             logErrorToFile("Failed to open the save for writing", savePath);
             return false;
         }
-        const size_t written = fwrite(raw->data(), 1, raw->size(), f);
-        const size_t footerWritten = footer.empty() ? 0 : fwrite(footer.data(), 1, footer.size(), f);
+        const size_t written = fwrite(fileBytes.data(), 1, fileBytes.size(), f);
         fclose(f);
-        if (written != raw->size() || footerWritten != footer.size())
+        if (written != fileBytes.size())
         {
             logErrorToFile("Failed to write the complete save", savePath);
             return false;
