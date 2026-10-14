@@ -13,11 +13,12 @@
  * way tools/harness/roundtrip.cpp expects -- one folder per TITLE (FireRed/, Shield/, Violet/,
  * Legends Z-A/, Legends Arceus/), any filename inside; see tools/harness/SaveTree.h
  * and each present save becomes a target. Saves are opened READ-ONLY and never written -- the write
- * paths are the one thing here that still needs a console, along with ROMFS and the bank.
+ * paths are the one thing here that still needs a console, along with ROMFS. The bank runs against
+ * a scratch bank in the work directory.
  *
  * That gives two things: a way to know the framework works before it reaches hardware, and a fast
  * loop for the parts most likely to change. It does NOT replace the on-console run -- the save
- * WRITE path, edit persistence, the ROMFS sprite sweep and the bank are hardware-only.
+ * WRITE path, edit persistence and the ROMFS sprite sweep are hardware-only.
  *
  *   ./tools/harness/build-selftest.sh [report-path] [save-root]
  *
@@ -68,7 +69,7 @@ namespace Utils {
     void logTest(const std::string&)        {}
     void logTestSession(const std::string&) {}
     // Real, because PokemonFile::write reads its own file back to verify it before promoting it. The
-    // app's version allocates with malloc and so does this one.
+    // app's version allocates with new[] and so does this one, so delete[] matches either way.
     uint8_t* readAllBytes(const char* path, size_t* outSize) {
         if (outSize) *outSize = 0;
         FILE* file = std::fopen(path, "rb");
@@ -76,10 +77,10 @@ namespace Utils {
         std::fseek(file, 0, SEEK_END);
         const long length = std::ftell(file);
         std::fseek(file, 0, SEEK_SET);
-        uint8_t* bytes = static_cast<uint8_t*>(std::malloc(length > 0 ? (size_t)length : 1));
+        uint8_t* bytes = new uint8_t[length > 0 ? (size_t)length : 1];
         const size_t got = (bytes && length > 0) ? std::fread(bytes, 1, (size_t)length, file) : 0;
         std::fclose(file);
-        if (!bytes || got != (size_t)(length > 0 ? length : 0)) { std::free(bytes); return nullptr; }
+        if (!bytes || got != (size_t)(length > 0 ? length : 0)) { delete[] bytes; return nullptr; }
         if (outSize) *outSize = got;
         return bytes;
     }
@@ -384,6 +385,11 @@ int main(int argc, char** argv) {
         runSuite(rep, "conversion", "cross-title (auto-legalize)", Enums::GameVersion::Any,
                  Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
         g_autoLegalizeTransfers = autoLegalizeBefore;
+        // The bank, against a scratch bank in the work directory, from the samples the entity
+        // sweep collected. Its other chunk reads the user's real bank, which is not on this machine
+        // and so reads as empty.
+        runSuite(rep, "bank", "bank", Enums::GameVersion::Any, Enums::GameVersion::Invalid,
+                 Test::bankPlan, Test::bankRun);
     }
 
     std::printf("\n");

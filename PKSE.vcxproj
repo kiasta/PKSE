@@ -97,6 +97,7 @@
     <ClCompile Include="src\Pokemon\BaseStatsGen7.cpp" />
     <ClCompile Include="src\Pokemon\BaseStatsGen89.cpp" />
     <ClCompile Include="src\Pokemon\Experience.cpp" />
+    <ClCompile Include="src\Pokemon\PIDSearch.cpp" />
     <ClCompile Include="src\Pokemon\FormSpriteMapping.cpp" />
     <ClCompile Include="src\Pokemon\LearnsetTable.cpp" />
     <ClCompile Include="src\Pokemon\PersonalInfoTable.cpp" />
@@ -219,6 +220,7 @@
     <ClInclude Include="include\Pokemon\BaseStatsGen7.h" />
     <ClInclude Include="include\Pokemon\BaseStatsGen89.h" />
     <ClInclude Include="include\Pokemon\Experience.h" />
+    <ClInclude Include="include\Pokemon\PIDSearch.h" />
     <ClInclude Include="include\Pokemon\FormSpriteMapping.h" />
     <ClInclude Include="include\Pokemon\LearnsetTable.h" />
     <ClInclude Include="include\Pokemon\PersonalInfoTable.h" />

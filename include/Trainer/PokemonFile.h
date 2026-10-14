@@ -23,9 +23,10 @@ namespace Trainer
             explicit operator bool() const noexcept { return pokemon != nullptr; }
         };
 
-        /// Native Pokemon entity extensions supported by PKSE's existing entity classes.
-        /// Deliberately excludes side-game formats PKSE does not currently model as entities
-        /// (Stadium, Colosseum/XD, Battle Revolution and Ranch).
+        /// Native Pokemon entity extensions supported by PKSE's existing entity classes: PKHeX's
+        /// plain ones (.pk1 ... .pa9), which PKSE also writes, and its encrypted ones (.ek3 ... .ea9),
+        /// which PKSE only reads. Deliberately excludes side-game formats PKSE does not currently
+        /// model as entities (Stadium, Colosseum/XD, Battle Revolution and Ranch).
         const std::vector<std::string> &extensions();
 
         /// True when `fileName` ends in one of the native extensions above (case-insensitive).

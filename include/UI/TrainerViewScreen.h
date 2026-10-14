@@ -517,6 +517,10 @@ namespace UI
             int leftScroll = 0; // left-pane vertical scroll (px); auto-follows selection, reset on (re)open
             std::vector<int> leftOrder;          // left-pane editable field ids in DRAW order (rebuilt each draw)
             std::vector<std::byte> editSnapshot; // baseline bytes for the "Unsaved changes" marker + revert
+            /// hasUnsavedChanges when editSnapshot was taken. Every edit on the page sets the flag, so
+            /// rolling the bytes back has to roll it back too, or discarding the only edit left the
+            /// save marked as changed.
+            bool unsavedChangesAtSnapshot = false;
         };
         DetailsState details;
         // Creator: the Species picker was opened in "create a new pokemon" mode; where the built pokemon lands,

@@ -568,9 +568,53 @@ namespace Trainer
         currentBox = 0; // and so does the open box -- this is the discard path as well as the load
 
         const std::string path = filePath();
+        loadProblem.clear();
+        fileUntouchable = false;
+
+        // A save interrupted between removing the old file and renaming the new one into place
+        // (see save()) leaves only the temporary file, and it is complete: the old file is removed
+        // only after the new one is fully written. Put it back where it belongs.
+        const std::string temporaryPath = path + ".tmp";
+        struct stat fileStatus;
+        if (stat(path.c_str(), &fileStatus) != 0 && stat(temporaryPath.c_str(), &fileStatus) == 0)
+        {
+            if (std::rename(temporaryPath.c_str(), path.c_str()) == 0)
+                logErrorToFile("Bank: recovered bank.dat from an interrupted save", temporaryPath.c_str());
+            else
+                logErrorToFile("Bank: could not recover bank.dat from an interrupted save", temporaryPath.c_str());
+        }
+        const bool fileExists = stat(path.c_str(), &fileStatus) == 0;
+
         size_t fileSize = 0;
-        uint8_t *file = readAllBytes(path.c_str(), &fileSize);
-        if (!file)
+        uint8_t *file = fileExists ? readAllBytes(path.c_str(), &fileSize) : nullptr;
+
+        // A file we cannot use must be moved aside, NOT left in place to be silently overwritten
+        // by the next save. Whatever it is -- a newer format, a bad card, a half-finished write --
+        // it is the user's only copy of those Pokemon, and starting empty over the top of it would
+        // destroy them. Renaming lets us proceed with an empty bank while the original survives;
+        // if even that fails, save() refuses to write over it.
+        auto abandonFile = [&](const char *why)
+        {
+            const std::string aside = path + ".unreadable";
+            std::remove(aside.c_str()); // keep only the most recent casualty
+            if (std::rename(path.c_str(), aside.c_str()) == 0)
+            {
+                logErrorToFile("Bank: unreadable file preserved as bank.dat.unreadable", why);
+                loadProblem = "The bank file could not be read. It was kept as bank.dat.unreadable and the bank "
+                              "opened empty.";
+            }
+            else
+            {
+                logErrorToFile("Bank: unreadable file could NOT be preserved", why);
+                fileUntouchable = true;
+                loadProblem = "The bank file could not be read, so the bank opened empty and will not be saved "
+                              "over it.";
+            }
+            delete[] file;
+            savedImage = serialize();
+        };
+
+        if (!fileExists)
         {
             // No unified bank yet: one-time import of any legacy per-group bank files, then snapshot.
             // Skipped for a redirected (self-test) bank -- the legacy files are the USER's, and
@@ -581,25 +625,17 @@ namespace Trainer
             logInfoToFile("Bank: no unified bank file; migrated legacy banks if present", path.c_str());
             return;
         }
+        if (!file)
+        {
+            // There IS a bank file and it will not read: an SD card error, a short read, no memory.
+            // Treating that as "no bank yet" re-ran the legacy migration and let the next save
+            // overwrite every Pokemon in it.
+            abandonFile("the file exists but could not be read");
+            return;
+        }
 
         const size_t payload = maxPayloadSize();
         const size_t recSize = 4 + payload;
-
-        // A file we cannot parse must be moved aside, NOT left in place to be silently overwritten
-        // by the next save. Whatever it is -- a newer format, a bad card, a half-finished write --
-        // it is the user's only copy of those Pokemon, and starting empty over the top of it would
-        // destroy them. Renaming lets us proceed with an empty bank while the original survives.
-        auto abandonFile = [&](const char *why)
-        {
-            const std::string aside = path + ".unreadable";
-            std::remove(aside.c_str()); // keep only the most recent casualty
-            if (std::rename(path.c_str(), aside.c_str()) == 0)
-                logErrorToFile("Bank: unreadable file preserved as bank.dat.unreadable", why);
-            else
-                logErrorToFile("Bank: unreadable file could NOT be preserved", why);
-            delete[] file;
-            savedImage = serialize();
-        };
 
         if (fileSize < HEADER_SIZE || std::memcmp(file, BANK_MAGIC, 8) != 0)
         {
@@ -888,16 +924,39 @@ namespace Trainer
         verifyFailures = verifyImage(buffer);
 
         const std::string path = filePath();
-        FILE *f = fopen(path.c_str(), "wb");
+        if (fileUntouchable)
+        {
+            logErrorToFile("Bank: refusing to write over a bank file that could not be read or set aside",
+                           path.c_str());
+            return false;
+        }
+
+        // Written to a temporary file first, and only moved into place once it is complete. Writing
+        // straight into bank.dat truncated it first, so a save cut short (power, an SD error) left a
+        // damaged bank. The old file is removed before the rename because a FAT rename does not
+        // replace an existing file; load() recovers the temporary file if that is where it stopped.
+        const std::string temporaryPath = path + ".tmp";
+        FILE *f = fopen(temporaryPath.c_str(), "wb");
         if (!f)
         {
-            logErrorToFile("Bank: failed to open bank file for writing", path.c_str());
+            logErrorToFile("Bank: failed to open bank file for writing", temporaryPath.c_str());
             return false;
         }
         const size_t written = fwrite(buffer.data(), 1, buffer.size(), f);
-        fclose(f);
-        if (written != buffer.size())
+        const int flushResult = fflush(f);
+        const int closeResult = fclose(f);
+        if (written != buffer.size() || flushResult != 0 || closeResult != 0)
+        {
+            logErrorToFile("Bank: failed to write the whole bank file", temporaryPath.c_str());
+            std::remove(temporaryPath.c_str());
             return false;
+        }
+        std::remove(path.c_str());
+        if (std::rename(temporaryPath.c_str(), path.c_str()) != 0)
+        {
+            logErrorToFile("Bank: failed to move the new bank file into place", temporaryPath.c_str());
+            return false;
+        }
 
         savedImage = std::move(buffer); // in sync with disk again
         return true;

@@ -22,7 +22,7 @@ g++ -std=c++20 -O1 -Wall -Wno-unused-parameter \
     src/Pokemon/Pokemon5BW.cpp src/Pokemon/Pokemon5B2W2.cpp \
     src/Pokemon/Pokemon6XY.cpp src/Pokemon/Pokemon6ORAS.cpp \
     src/Pokemon/Pokemon7SM.cpp src/Pokemon/Pokemon7USUM.cpp \
-    src/Pokemon/Experience.cpp src/Pokemon/Gen1Tables.cpp src/Pokemon/Gen2Tables.cpp \
+    src/Pokemon/Experience.cpp src/Pokemon/PIDSearch.cpp src/Pokemon/Gen1Tables.cpp src/Pokemon/Gen2Tables.cpp \
     src/Pokemon/PersonalRecord.cpp $(find src/Pokemon -name 'PersonalInfo*.cpp') \
     $(find src/Names -name '*.cpp') \
     src/Encryption/Encryption.cpp \

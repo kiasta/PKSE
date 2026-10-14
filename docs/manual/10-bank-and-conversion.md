@@ -25,6 +25,7 @@ class Bank {
     uint16_t currentBox = 0;                      // the bank pane's open box -- see below
 
     size_t lastLoadRejects() const noexcept;      // slots dropped at load (bad record)
+    const std::string &lastLoadProblem() const noexcept; // why the file was set aside, for the user
     size_t lastVerifyFailures() const noexcept;   // slots that failed the save-time round trip
 
     static Enums::GameVersion groupAsBanked(Enums::GameVersion group) noexcept;
@@ -174,6 +175,25 @@ false positive. Writing proceeds; the anomaly is surfaced.
 
 `load()` gates each record on `Pokemon::isStructurallyValid()` — the virtual, not
 `checksumValid()` — because Gen 1 has no checksum (chapter 06).
+
+### Never writing over a bank file
+
+`bank.dat` is the only copy of everything in it, so PKSE never writes over one it could not use:
+
+- **A file that exists but will not read** (an SD card error, a short read, no memory) is not "no bank
+  yet". `load()` asks whether the file exists before reading it. Only a missing file takes the
+  first-run path, which also runs the legacy migration. A file that will not read, or will not parse,
+  is renamed to `bank.dat.unreadable`, the bank opens empty, and `lastLoadProblem()` carries the
+  message the storage view shows. If even the rename fails, `save()` refuses to write over the file.
+  Before this, a failed read looked like a first run: the legacy banks were migrated again,
+  `hasChanged()` read false, and the next save truncated the file with every Pokémon in it.
+- **A save goes through `bank.dat.tmp`.** The new image is written and flushed there, the old file is
+  removed, and the temporary file is renamed into place. A FAT rename does not replace an existing
+  file, so the removal comes first. A save cut short leaves either the old file or a complete
+  temporary one, and `load()` renames a lone `bank.dat.tmp` back.
+
+`Utils::readAllBytes` returns a `new[]` buffer that every caller releases with `delete[]`, and logs
+why a read failed instead of calling `perror()`, which prints nowhere on a console.
 
 ## Conversion
 
@@ -612,6 +632,31 @@ bank has it, the save still has it); a withdrawal a permanent **loss** (the bank
 the save was never written). Asking lets Discard rewind both sides and write nothing.
 
 `Bank::load()` doubles as "discard": it clears every slot and re-reads the on-disk state.
+
+## Pokémon files (`.pk1` … `.pa9`, `.ek3` … `.ea9`)
+
+`Trainer::PokemonFile` (`include/Trainer/PokemonFile.h`) reads and writes single-Pokémon files in
+PKHeX's formats. **Export** is Storage's action menu → Export, which writes to `sdmc:/PKSE/exports`
+(`POKEMON_EXPORT_DIRECTORY`). **Import** shares the browser behind `-` (Minus) with the PKSM bank:
+the extension decides which reader runs, and a Pokémon file lands in the first free slot of the
+in-memory bank, so Storage's Save/Discard prompt makes it permanent.
+
+- **`.pkX`, `.pbX` and `.paX` files are DECRYPTED** (PKHeX writes them that way, and so does PKSM).
+  PKSE writes only this form. **`.ekX`, `.ebX` and `.eaX` files are PKHeX's encrypted form**, which
+  PKSE reads but never writes. Each name is tried in its own form first, then the other: a plaintext
+  record has about a 1-in-65,536 chance of also passing as encrypted, and would then decode as
+  garbage.
+- **The extension chooses the format and the length chooses the record**: Japanese or international
+  for Gens 1 and 2, box or party size from Gen 3 on. A record whose contents contradict its name is
+  refused with the right name in the message. Same-size formats share their crypt and checksum, so
+  the contents are checked with PKHeX's own tests (`EntityFormat.GetFormat45`, `IsFormatReally7`,
+  `IsFormatReally8b`, `GetFormat89`). Let's Go accepts origin game 34 (GO) as well as its own two.
+- **`parse()` always returns a bank-ready, party-size record** (`prepareForBank`), grown from a box
+  record where needed with the level and stats filled in. A Gen 1/2 file written from a box carries
+  every party stat as 0, so its stats are recalculated. No caller ever holds a short record whose
+  party accessors would read past its end.
+- **An export is verified before it exists**: written to a temporary file, read back and compared
+  byte for byte, re-parsed, and only then renamed into place.
 
 ## Reading PKSM's bank
 

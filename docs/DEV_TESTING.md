@@ -11,6 +11,7 @@ stop.
 ```bash
 make                          # production: PKSE.nro, objects in build/ -- what a release is
 make BUILD_TYPE=development   # development: PKSE-dev.nro, objects in build-development/
+make all                      # both of the above
 ```
 
 The development build compiles `DEVELOPMENT_SOURCES` (`src/Test`) and defines
@@ -58,7 +59,8 @@ release done.** Anything the self test cannot reach — the SD card, ROMFS, an i
 | Pokemon file import/export (`PokemonFile*.cpp`) | `build-pokemonfile.sh`, then `build-selftest.sh` |
 | a legality rule or an encounter/event table | `build-legality.sh` |
 | a screen, panel, dialog or modal | `uihost/run.sh` |
-| the save write path, the bank, ROMFS assets | the on-console self test |
+| the bank | `build-selftest.sh` (scratch bank), then the on-console self test |
+| the save write path, ROMFS assets | the on-console self test |
 | you are about to tag a release | all four, in order |
 
 **Reach for a harness whenever a change is decidable from data** — a format parse, an offset, a
@@ -274,9 +276,16 @@ today's bugs; assert the rule.
 Every `.pkX` / `.pbX` / `.paX` file in PKHeX's test tree (200 of them). PKHeX wrote them, so they are
 the reference: each must open (except the files in `KNOWN_REFUSALS`, each with its reason -- the
 Korean Gold/Silver one), open as the species its file name starts with, be PKHeX's bytes again when
-written back, and be refused when renamed to another format of a different size. The one allowance:
+written back, open as the same Pokemon when encrypted under PKHeX's encrypted name (`.ek3` ...
+`.ea9`), and be refused when renamed to another format of a different size. The one allowance:
 PKSE fills a party record's battle-stat tail where PKHeX's file left it all zero, because PKSE opens
 a Pokemon with its level and stats in place.
+
+Pointed at a directory of `.ekX` files, it checks that each opens as the species its name says. PKHeX's
+test tree has none, so to check PKSE against PKHeX's own encryption, write the encrypted form of each
+test file with PKHeX.Core (`PKM.WriteEncryptedDataStored` / `WriteEncryptedDataParty`, at the file's
+own size) into a scratch directory and run the harness on it (170 files, 0 failures when the reader
+was added).
 
 ### `build-legality.sh` — is the checker slandering real saves?
 
@@ -338,7 +347,7 @@ six fail the run, because a checker that never fires is not a clean result.
 ./tools/harness/build-selftest.sh [report-path] [save-root]
 ```
 
-Runs **seven of the thirteen suites** in seconds — the framework's own regression test, and a fast loop
+Runs **eight of the thirteen suites** in seconds — the framework's own regression test, and a fast loop
 for whichever half you are changing.
 
 - `tables` and `gentables` need nothing and run for **all nineteen save-format groups at once**.
@@ -349,6 +358,9 @@ for whichever half you are changing.
   is there because PK7 is a conversion endpoint — Gen 1/2 land in it and every Gen 8/9 game converts
   both ways with it — so the matrix needs a real 3DS Pokemon to push through the remap rather than
   only the synthetic ones it builds itself.
+- `bank` runs against a scratch bank in the work directory, from the samples the entity sweep
+  collected. Its other chunk reads the user's real bank, which a desktop does not have, so it reads as
+  empty.
 - `conversion` has one chunk that needs **no save at all**: a synthetic Poke Transporter pass building
   PK1s and PK2s from scratch. Most consoles have no Game Boy file, so the sample-driven sweep would
   leave the whole Gen 1/2 route untested — and the cases most likely to break are the rare ones a real
@@ -360,17 +372,16 @@ It calls those suites **directly** rather than through the registry, which is wh
 `inline` in `TestSuite.h` and not in a `.cpp`: linking the registry would drag in the ones that need
 the Switch SDK.
 
-The six it cannot run are why the other harnesses exist:
+The five it cannot run are why the other harnesses exist:
 
 | Suite | Needs |
 |---|---|
 | `save` | writes through `Save::GetSaveFileContents` |
-| `bank` | the SD card |
 | `picker` | drives `SaveSelectScreen`, which enumerates save data through fs/ns |
 | `assets` | the only check anywhere that the `.nro` actually **contains** the 3260 sprites, three fonts and nineteen type icons it will ask for |
 | `ui`, `browser` | covered by `uihost/run.sh` |
 
-So only `save`, `bank`, `picker` and `assets` are console-only.
+So only `save`, `picker` and `assets` are console-only.
 
 ### `uihost/run.sh` — headless UI tests
 
@@ -648,10 +659,10 @@ load-bearing**.
 | 7 | `setters` | PerTarget | set → get on a blank entity, field by field |
 | 8 | `legality` | PerTarget | the analyzer over the save |
 | 9 | `ui` | PerTarget | **drives real screens** with synthetic input |
-| 10 | `pokemonfile` | PerTarget | .pkX export, read back, refusal of renamed or corrupted files, bank import |
+| 10 | `pokemonfile` | PerTarget | .pkX export, read back, the .ekX form, refusal of renamed or corrupted files, bank import |
 | 11 | `save` | PerTarget | save structure, round trip, **edit persistence** (an empty slot filled, a new item added), save envelopes |
 | 12 | `conversion` | Cross | the cross-generation conversion matrix, plus a synthetic Poke Transporter pass |
-| 13 | `bank` | Cross | deposit / save / reload / verify, discard by reload |
+| 13 | `bank` | Cross | deposit / save / reload / verify, discard by reload, a bank file never written over |
 
 Three of them DRIVE the app rather than calling into it: `ui`, `picker` and `browser`.
 
@@ -741,7 +752,11 @@ Emerald saves exactly (`build.sh`'s `[serialize]` rows), which is why Gen 3 is h
 **Edit persistence** — change money, trainer name, a box name, the current box (to one other than the
 open one; every format stores it except Let's Go, which has none), an item quantity and a Pokemon's
 IVs/EVs/nickname; save; re-read; check **each one separately**. *"The save didn't work"* is not a bug
-report; *"the box name persisted and the item count didn't"* is.
+report; *"the box name persisted and the item count didn't"* is. The Pokemon edit is followed by the
+call the editor makes after every details-page edit (`mirrorPartyMemberFromBox` / `FromParty`): Let's
+Go keeps a party member twice and lays the party copy over the box slot on save, so without it a boxed
+Pokemon that is also in the party lost the edit, and the suite reported a save bug the app does not
+have.
 
 **Envelopes** puts every save that has a file form inside each envelope of its size, in each layout
 that envelope comes in, then padded the ways it really turns up (`include/Test/SaveEnvelopeFixtures.h`,
@@ -786,8 +801,11 @@ A planted no-op `setHeldItem` on Violet now fails it.)
 Two probe values per field, both different from the blank entity's, and above 255 for id fields
 wherever the format's ids reach that far. The nickname and OT name get different probes and are both
 written before either is read. Shininess is checked against the formula (DVs for Gens 1-2, the PID XOR
-against 8 for Gens 3-5 and 16 from Gen 6), not only against `isShiny()`, and a Gen 3/4 shiny reroll
-must keep the nature. It runs on a blank entity from `createBlankPokemon()`, never on user data.
+against 8 for Gens 3-5 and 16 from Gen 6), not only against `isShiny()`. It is set and cleared thirty
+times on Rattata (two abilities, both genders): every pass must land, and must keep the nature, the
+gender (and, in Gens 3-5, the PID's gender agreeing with the stored one) and the PID's ability-slot bit.
+`regeneratePID` must keep a shiny Pokemon shiny with its nature and gender, and a Gen 3-5 `setGender`
+must move the PID with it. It runs on a blank entity from `createBlankPokemon()`, never on user data.
 
 The problem it exists for:
 

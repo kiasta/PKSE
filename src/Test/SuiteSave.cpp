@@ -827,6 +827,14 @@ namespace Test
                 }
                 victim->recalculateStats();
                 victim->refreshChecksum();
+                // The call the editor makes after every details-page edit (mirrorEditedPartyMember).
+                // Let's Go keeps a party member twice, in its box slot and as a party copy laid over
+                // that slot on save, so a boxed Pokemon that is also in the party loses an edit made
+                // without it. Every other format does nothing here.
+                if (victimInParty)
+                    tr.mirrorPartyMemberFromParty(victimSlot);
+                else
+                    tr.mirrorPartyMemberFromBox(victimBox, victimSlot);
             }
             else
             {

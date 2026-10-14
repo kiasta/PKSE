@@ -17,6 +17,7 @@ PKSE is a homebrew application for conveniently editing Pokemon save files on th
 - **Pokemon creator** — build a Pokemon from scratch in any supported game's format, with legal options highlighted.
 - **Legality checker** — flags illegal values as you edit, and checks whether a real encounter in the Pokemon's origin game could have produced it (informational; it never blocks or auto-changes anything).
 - **Cross-game bank** — PKSE-native persistent storage that every supported game shares, 200 boxes deep. Deposit from one game and withdraw into another and the Pokemon is converted into the destination's format on the way out, preserving its origin (OT, IDs, met data, IVs/nature/PID). Moves the destination can't legally know are cleared, since an impossible move corrupts the Pokemon in some games. Red/Blue/Yellow and Gold/Silver/Crystal Pokemon travel forward through Poke Transporter, exactly as the Virtual Console games did, and never back.
+- **Pokemon files** — export a Pokemon from Storage as a PKHeX-compatible file (`.pk3`, `.pb7`, `.pk9` and so on) to `sdmc:/PKSE/exports`, and import one into the bank through the same browser as PKSM banks. PKHeX's encrypted files (`.ek3` … `.ea9`) open too.
 - **PKSM bank import** — read a PKSM `.bnk` file straight off the SD card (Minus in the Storage view opens a file browser) and pull its Pokemon into PKSE's bank, keeping your box layout and box names. Every generation a PKSM bank can hold is covered — Gens 1 through 9 — and the preview reports exactly what it found before anything is written.
 
 ## **Screenshots**
@@ -175,7 +176,7 @@ make                   # or: make -j$(nproc)
 
 This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output, and `make all` is an alias for `make`.
 
-`make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
+`make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, and `make all` builds both. The development build is listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
 
 To check that the code compiles without a full build, `python tools/syntax_check.py` runs the real cross compiler over every source file in a few seconds, with no linking and no MSys2 shell needed. `--warnings` does a full optimizing pass instead and fails on any warning — the build is kept warning-free.
 

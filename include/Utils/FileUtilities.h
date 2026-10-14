@@ -11,6 +11,7 @@
                              // so the save layer, which includes it transitively, can be compiled.
 
 namespace Utils {
+    /// The whole file, in a buffer the caller releases with delete[]; null (logged) when it cannot be read.
     uint8_t* readAllBytes(const char* path, size_t* outSize);
     bool copyDirectory(const char* srcPath, const char* destPath);
     bool copyFile(const char* srcPath, const char* destPath);

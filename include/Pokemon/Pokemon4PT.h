@@ -7,8 +7,9 @@
  *  1. THE CRYPT SEED IS THE CHECKSUM, not the PID -- so refreshChecksum() must run BEFORE the
  *     record is encrypted. See Encryption4PT.h.
  *  2. NATURE IS DERIVED: `PID % 25`, exactly as in Gen 3. There is no nature byte, so setNature()
- *     has to rebuild the PID (regeneratePID) rather than write a field. That is destructive --
- *     it changes shininess and ability slot -- which is why the UI warns for Gen 3 and must here.
+ *     has to rebuild the PID rather than write a field. The PID also decides shininess, gender and
+ *     the ability slot, so every rebuild goes through rerollPID, which holds the ones not being
+ *     changed (and setGender rebuilds it too, since PKHeX requires the two genders to agree).
  *  3. THE EGG AND NICKNAMED FLAGS LIVE IN THE IV WORD at 0x38, bits 30 and 31. Rebuilding IV32
  *     from six IV values clears both. Always read-modify-write.
  *  4. THERE ARE TWO BALL FIELDS. 0x83 is the DP/Pt ball; 0x86 is the one HGSS added for Apricorn
@@ -225,10 +226,7 @@ namespace Pokemon
             wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x01) | (value ? 1 : 0)));
         }
         uint8_t gender() const noexcept override { return (rd8(0x40) >> 1) & 0x03; }
-        void setGender(uint8_t genderValue) noexcept override
-        {
-            wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));
-        }
+        void setGender(uint8_t genderValue) noexcept override; // holds the PID to the new gender
         uint8_t formID() const noexcept override { return rd8(0x40) >> 3; }
         uint8_t form() const noexcept override { return formID(); }
         void setForm(uint8_t form) noexcept override
@@ -401,6 +399,12 @@ namespace Pokemon
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
 
     private:
+        // A new PID holding what the caller does not change (-1 = either); false when none can.
+        bool rerollPID(int wantShiny, int wantGender, int wantNature, uint32_t trainerID32) noexcept;
+        void writeStoredGender(uint8_t genderValue) noexcept
+        {
+            wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));
+        }
         const PersonalRecord &personal() const noexcept
         {
             return getPersonalInfo4PT(speciesID(), form());

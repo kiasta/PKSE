@@ -63,7 +63,8 @@ namespace Trainer
         /// slots first, so this doubles as the "discard changes" path (revert to on-disk state).
         void load();
 
-        /// Writes the bank to its SD file (tagged, encrypted records). Returns true on success.
+        /// Writes the bank to its SD file (tagged, encrypted records), through a temporary file so an
+        /// interrupted write never damages the old one. Returns true on success.
         bool save() const;
 
         /// True if the in-memory boxes differ from the last saved/loaded on-disk state.
@@ -124,6 +125,11 @@ namespace Trainer
         /// (bad checksum, species 0, unknown tag). Non-zero means the bank file was damaged.
         size_t lastLoadRejects() const noexcept { return loadRejects; }
 
+        /// What the user must be told about the last load(), or empty. Set when the bank file existed
+        /// but could not be used: it was moved aside to bank.dat.unreadable and the bank opened empty,
+        /// or it could not even be moved, in which case save() refuses to write over it.
+        const std::string &lastLoadProblem() const noexcept { return loadProblem; }
+
         /// Occupied slots whose bytes did not survive an encrypt->decrypt round trip during the
         /// last save(). The bank's contract is byte-in == byte-out, so non-zero means a PKSE bug.
         ///
@@ -169,6 +175,8 @@ namespace Trainer
         mutable std::vector<uint8_t> savedImage; // serialized image as of the last load()/save()
         mutable size_t verifyFailures = 0;
         size_t loadRejects = 0;
+        std::string loadProblem;
+        bool fileUntouchable = false; // an unreadable bank.dat that could not be moved aside
     };
 }
 

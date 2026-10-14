@@ -57,6 +57,11 @@ namespace Trainer
 
             item.itemId = itemId;
             item.count = static_cast<uint16_t>(item.count);
+            // The game's own markers (PKHeX InventoryItem9.IsNew / IsFavorite): bit 0 is the red
+            // "new" dot, bit 1 the favourite. The writer ORs isNew back into bit 0, so an item read
+            // with the bit clear stays clear.
+            item.isNew = (item.flags & 0x1) != 0;
+            item.isFavorite = (item.flags & 0x2) != 0;
 
             return item;
         }

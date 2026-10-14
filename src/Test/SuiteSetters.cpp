@@ -133,6 +133,14 @@ namespace Test
             return group != Enums::GameVersion::RBY && group != Enums::GameVersion::GSC;
         }
 
+        /// Gens 3-5: the formats whose PID decides the gender (and whose shiny threshold is 8).
+        bool pidDecidesGenderIn(Enums::GameVersion group)
+        {
+            using Enums::GameVersion;
+            return Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT ||
+                   group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
+        }
+
         /// Shininess worked out from the record's own numbers, without asking the class: the DV
         /// pattern for Gens 1 and 2, the PID / trainer-id XOR everywhere else, against 8 for Gens 3-5
         /// and 16 from Gen 6 on (the 1-in-4096 odds; PKHeX's ShinyXor threshold per format).
@@ -149,9 +157,7 @@ namespace Test
             const uint32_t pidValue = pokemon.pid();
             const uint32_t shinyXor =
                 (pidValue >> 16) ^ (pidValue & 0xFFFF) ^ (id32 >> 16) ^ (id32 & 0xFFFF);
-            const bool gen3To5 = Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT ||
-                                 group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
-            return shinyXor < (gen3To5 ? 8u : 16u);
+            return shinyXor < (pidDecidesGenderIn(group) ? 8u : 16u);
         }
     }
 
@@ -642,23 +648,112 @@ namespace Test
         // FORMULA, not only against isShiny(): a setShiny and an isShiny that agree on the wrong
         // rule would pass each other. Where the PID also carries the nature (Gens 3 and 4), a shiny
         // reroll must keep it.
+        //
+        // It is repeated, because the PID is random: Gens 4 and 5 once drew random PIDs until one
+        // fit, and gave up silently about one time in eleven. Thirty passes miss a failure that
+        // common less than one time in seventeen. Each pass also holds what else the PID decides in
+        // Gens 3-5 -- the gender, which PKHeX requires the stored gender to agree with (the species'
+        // ratio from the shared table, not the class), and the ability slot's bit (bit 16 for a
+        // Pokemon born in Gen 5, bit 0 before) -- since a reroll that ignored them broke both.
+        //
+        // It runs on Rattata, which has two abilities and both genders, so the bit and the gender are
+        // real constraints (Pikachu has one ability in Gen 3, which leaves its bit free).
         {
+            pokemon.setSpecies(ABILITY_PROBE_SPECIES);
             const uint32_t id32 = 0x56781234u;
             const uint8_t natureBefore = pokemon.nature();
+            const uint8_t genderBefore = pokemon.gender();
+            const bool pidDecidesGender = pidDecidesGenderIn(context.group);
+            const int originGeneration = Enums::getVersionGeneration(pokemon.originGame());
+            const bool gen5Bit = (context.group == Enums::GameVersion::BW || context.group == Enums::GameVersion::B2W2) &&
+                                 originGeneration != 3 && originGeneration != 4;
+            const int abilityBitIndex = !pidDecidesGender ? -1 : gen5Bit ? 16 : 0;
+            const uint32_t abilityBitBefore = abilityBitIndex < 0 ? 0 : (pokemon.pid() >> abilityBitIndex) & 1;
+            const uint8_t genderRatio = Pokemon::getPersonalInfo(pokemon.speciesID(), pokemon.form()).genderRatio;
+            int notShiny = 0, stillShiny = 0, natureChanged = 0, genderChanged = 0, genderDisagrees = 0,
+                abilityBitChanged = 0;
+            std::string firstFailure;
+            auto noteFailure = [&](int &counter, const char *what)
+            {
+                if (counter++ == 0 && firstFailure.empty())
+                    firstFailure = std::string(what) + " " + hex("pid", pokemon.pid(), 8);
+            };
+            auto checkHeld = [&]()
+            {
+                if (pokemon.hasNature() && pokemon.nature() != natureBefore)
+                    noteFailure(natureChanged, "nature");
+                if (pidDecidesGender && pokemon.gender() != genderBefore)
+                    noteFailure(genderChanged, "gender");
+                if (pidDecidesGender && genderRatio != 0 && genderRatio < 254 &&
+                    pokemon.gender() != (((pokemon.pid() & 0xFF) < genderRatio) ? 1 : 0))
+                    noteFailure(genderDisagrees, "pidGender");
+                if (abilityBitIndex >= 0 && ((pokemon.pid() >> abilityBitIndex) & 1) != abilityBitBefore)
+                    noteFailure(abilityBitChanged, "abilityBit");
+            };
+            constexpr int SHINY_PASSES = 30;
+            for (int passIndex = 0; passIndex < SHINY_PASSES; ++passIndex)
+            {
+                pokemon.setShiny(true, id32);
+                if (!shinyByFormula(pokemon, context.group, id32))
+                    noteFailure(notShiny, "setShiny(true)");
+                checkHeld();
+                pokemon.setShiny(false, id32);
+                if (shinyByFormula(pokemon, context.group, id32))
+                    noteFailure(stillShiny, "setShiny(false)");
+                checkHeld();
+            }
+            const std::string tally = whereLabel + " passes=" + std::to_string(SHINY_PASSES) + " first=" + firstFailure;
+            context.check(notShiny == 0, "setShiny(true) did not make the Pokemon shiny",
+                          tally + " misses=" + std::to_string(notShiny));
+            context.check(stillShiny == 0, "setShiny(false) left the Pokemon shiny",
+                          tally + " misses=" + std::to_string(stillShiny));
+            context.check(natureChanged == 0, "changing shininess changed the nature",
+                          tally + " times=" + std::to_string(natureChanged));
+            context.check(genderChanged == 0, "changing shininess changed the gender",
+                          tally + " times=" + std::to_string(genderChanged));
+            context.check(genderDisagrees == 0, "after a shininess change the stored gender disagrees with the PID's",
+                          tally + " times=" + std::to_string(genderDisagrees) + " ratio=" + std::to_string(genderRatio));
+            context.check(abilityBitChanged == 0, "changing shininess changed the PID's ability-slot bit",
+                          tally + " times=" + std::to_string(abilityBitChanged) + " bit=" + std::to_string(abilityBitIndex));
+
             pokemon.setShiny(true, id32);
-            context.check(shinyByFormula(pokemon, context.group, id32), "setShiny(true) did not make the Pokemon shiny",
-                          whereLabel + " " + hex("pid", pokemon.pid(), 8));
             context.check(pokemon.isShiny(id32, pokemon.species()),
                           "isShiny() disagrees with the shiny formula on a shiny Pokemon", whereLabel);
-            if (pokemon.hasNature())
-                context.check(pokemon.nature() == natureBefore, "making the Pokemon shiny changed its nature",
-                              whereLabel + " before=" + std::to_string(natureBefore) +
-                                  " after=" + std::to_string(pokemon.nature()));
+
+            // regeneratePID is a touch-up that was asked to change nothing a user can see: a shiny
+            // Pokemon stays shiny, and keeps its nature and gender. Gens 4-7 once replaced the PID at
+            // random, which turned a shiny Pokemon plain.
+            if (pokemon.hasPID())
+            {
+                pokemon.regeneratePID(id32);
+                context.check(shinyByFormula(pokemon, context.group, id32), "regeneratePID made a shiny Pokemon plain",
+                              whereLabel + " " + hex("pid", pokemon.pid(), 8));
+                context.check(!pokemon.hasNature() || pokemon.nature() == natureBefore, "regeneratePID changed the nature",
+                              whereLabel + " after=" + std::to_string(pokemon.nature()));
+                context.check(pokemon.gender() == genderBefore, "regeneratePID changed the gender",
+                              whereLabel + " after=" + std::to_string(pokemon.gender()));
+            }
+
+            // A gender change on a two-gender species: where the PID decides it, the PID has to give
+            // the new gender too, or PKHeX reports a PID-gender mismatch.
+            if (pidDecidesGender && pokemon.hasStoredGender() && genderRatio != 0 && genderRatio < 254)
+            {
+                const uint8_t otherGender = genderBefore == 0 ? 1 : 0;
+                pokemon.setGender(otherGender);
+                context.check(pokemon.gender() == otherGender, "setGender did not change the gender",
+                              whereLabel + " wanted=" + std::to_string(otherGender));
+                context.check(pokemon.gender() == (((pokemon.pid() & 0xFF) < genderRatio) ? 1 : 0),
+                              "after setGender the stored gender disagrees with the PID's",
+                              whereLabel + " " + hex("pid", pokemon.pid(), 8));
+                context.check(shinyByFormula(pokemon, context.group, id32), "setGender made a shiny Pokemon plain",
+                              whereLabel + " " + hex("pid", pokemon.pid(), 8));
+                pokemon.setGender(genderBefore);
+            }
+
             pokemon.setShiny(false, id32);
-            context.check(!shinyByFormula(pokemon, context.group, id32), "setShiny(false) left the Pokemon shiny",
-                          whereLabel + " " + hex("pid", pokemon.pid(), 8));
             context.check(!pokemon.isShiny(id32, pokemon.species()),
                           "isShiny() disagrees with the shiny formula on a non-shiny Pokemon", whereLabel);
+            pokemon.setSpecies(PROBE_SPECIES);
         }
 
         pokemon.setEgg(true);
