@@ -168,8 +168,7 @@ def main() -> int:
      *                    gen4CanEncode() first
      * @param maxCharacterCount the game's own cap on this field (7 for a trainer name, 8 for a box)
      */
-    inline void writeGen4Field(uint8_t* destination, size_t slotCount, const std::u16string& text,
-                               size_t maxCharacterCount) noexcept {
+    inline void writeGen4Field(uint8_t* destination, size_t slotCount, const std::u16string& text, size_t maxCharacterCount) noexcept {
         if (destination == nullptr || slotCount == 0) return;
         for (size_t byteIndex = 0; byteIndex < slotCount * 2; ++byteIndex) {
             destination[byteIndex] = 0;

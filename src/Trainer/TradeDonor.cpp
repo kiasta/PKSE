@@ -23,10 +23,8 @@ namespace Trainer
             return true;
         }
         // The two places PKSE's per-save-format split is finer than the games' link cable.
-        const bool bothGen6 = (donorGroup == GameVersion::XY || donorGroup == GameVersion::ORAS) &&
-                              (recordGroup == GameVersion::XY || recordGroup == GameVersion::ORAS);
-        const bool bothGen7 = (donorGroup == GameVersion::SM || donorGroup == GameVersion::USUM) &&
-                              (recordGroup == GameVersion::SM || recordGroup == GameVersion::USUM);
+        const bool bothGen6 = (donorGroup == GameVersion::XY || donorGroup == GameVersion::ORAS) && (recordGroup == GameVersion::XY || recordGroup == GameVersion::ORAS);
+        const bool bothGen7 = (donorGroup == GameVersion::SM || donorGroup == GameVersion::USUM) && (recordGroup == GameVersion::SM || recordGroup == GameVersion::USUM);
         return bothGen6 || bothGen7;
     }
 
@@ -62,8 +60,7 @@ namespace Trainer
         // would claim the player traded with themselves -- which the games cannot do and the
         // handler checks flag.
         const bool sameName = (donorName == pokemon.otName());
-        const bool sameIdentity = sameName && donor.ID32 == pokemon.id32() &&
-                                  donor.trainerGender == pokemon.otGender();
+        const bool sameIdentity = sameName && donor.ID32 == pokemon.id32() && donor.trainerGender == pokemon.otGender();
         if (sameIdentity)
         {
             result.refusal = TradeDonorRefusal::SameTrainer;
@@ -73,8 +70,7 @@ namespace Trainer
         // Every Gen 6+ handler field is 12 characters, so this only bites for a donor from a format
         // with a longer name than the destination can hold. Refused rather than truncated: half a
         // trainer's name is not their name, and it would read as a different person.
-        if (donorName.empty() ||
-            static_cast<int>(donorName.size()) > pokemon.getMaxNicknameLength())
+        if (donorName.empty() || static_cast<int>(donorName.size()) > pokemon.getMaxNicknameLength())
         {
             result.refusal = TradeDonorRefusal::NameUnstorable;
             return result;

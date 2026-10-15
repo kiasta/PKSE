@@ -447,6 +447,10 @@ fixed-seed sweep of random presses — worth running at all.
   checking each key for the other's effect too. Add Item sat on `Y` until the search claimed it; the
   search branch returned first, so adding an item became unreachable while the nav bar still
   advertised it. Nothing failed.
+- **`testBoxMenus`** opens the Boxes view's `Y` menu and runs Clone and Move from it, then runs
+  Search from the `X` box menu in both the Boxes and Storage views. The Pokemon menu is one list
+  shared by two views, and the Boxes view's Move is a swap rather than a carry, so a change made
+  for one view can quietly break the other.
 - **`Driver::tilt`** checks the on-screen keyboard's left stick against its D-pad. The keyboard runs
   its own loop, so the stick has to be sampled there too.
 - **The box summary panel's legality verdict clears the edit hint.** The panel is 452px wide; a

@@ -113,9 +113,7 @@ namespace {
 
 namespace UI {
 
-    PKSEFramebuffer::PKSEFramebuffer()
-        : window(nullptr), glContext(nullptr), vg(nullptr),
-          fontSans(0), fontSym(0), fontSym2(0), width(1280), height(720) {}
+    PKSEFramebuffer::PKSEFramebuffer() : window(nullptr), glContext(nullptr), vg(nullptr), fontSans(0), fontSym(0), fontSym2(0), width(1280), height(720) {}
 
     PKSEFramebuffer::~PKSEFramebuffer() = default;
 
@@ -271,8 +269,7 @@ namespace UI {
         rec(std::move(d));
     }
 
-    void PKSEFramebuffer::drawSpriteIdle(int x, int y, int boxW, int boxH, int, int,
-                                         const unsigned char* data, int, float) {
+    void PKSEFramebuffer::drawSpriteIdle(int x, int y, int boxW, int boxH, int, int, const unsigned char* data, int, float) {
         if (!data) return;
         UIHost::Draw d = shape("spriteIdle", x, y, boxW, boxH, Colors::White);
         d.kind = UIHost::Kind::Sprite;

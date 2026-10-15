@@ -219,7 +219,7 @@ text (`"Btn: Label"`) rather than silently dropping the button name and leaving 
 `drawNavHints` lays it out:
 
 ```cpp
-instructions = "Arrows: Navigate  |  L/R: Box  |  A: Details  |  X: Release  |  B: Back";
+instructions = "Arrows: Navigate  |  L/R: Box  |  A: Details  |  Y: Menu  |  B: Back";
 drawNavBar(fb, instructions);
 ```
 
@@ -768,6 +768,7 @@ if (statEdit.dialogActive)             Dialogs::drawStatEditDialog(*this, frameb
 if (saveConfirmActive)                 Dialogs::drawSaveConfirmDialog(*this, framebuffer);
 if (saveInjectConfirmActive)           Dialogs::drawSaveInjectConfirm(*this, framebuffer); // OVER the picker
 if (storageMenuActive)                 Panels::drawStorageActionMenu(*this, framebuffer);
+if (boxMenuActive)                     Panels::drawStorageBoxMenu(*this, framebuffer);
 if (groupMenuActive)                   Panels::drawStorageGroupMenu(*this, framebuffer);
 if (releaseConfirmActive)              Panels::drawStorageReleaseConfirm(*this, framebuffer);
 if (storageExitConfirmActive)          Panels::drawStorageExitConfirm(*this, framebuffer);
@@ -805,7 +806,7 @@ target rather than element pickers, and each is a short list that fits on screen
 | Picker (all twenty kinds) | `Y` | `screen.pickerSearch` | Rebuilds `pickerFilteredRows`; `pickerSel` then indexes visible rows |
 | File browser | `Y` | `fileBrowser.search` | `refresh()` re-lists the folder through the query; `..` always survives |
 | Items pouch | `Y` | `screen.itemSearch` | Inside `visibleItemIndices()`, the one funnel every consumer already used |
-| Box / Bank | `X` → Find | storage action menu | Highlights matches and dims the rest; a grid is not filtered |
+| Box / Bank | `X` → Search | box menu (`boxMenuActive`) | Highlights matches and dims the rest; a grid is not filtered |
 
 ### The rules
 
@@ -855,9 +856,11 @@ where a list is cheap to rebuild.
 ### Box / Bank search highlights, it does not filter
 
 A box is a grid the player arranged and storage is positional, so hiding slots would move everything
-else. Matches keep an accent ring, the rest dim, and the cursor jumps to the first match. It is
-reached from the storage action menu (`X` → Find) rather than a key of its own, because `Y`, `X`, `ZL`
-and `ZR` are all taken in that view.
+else. Matches keep an accent ring, the rest dim, and the cursor jumps to the first match. The Boxes
+view and the Storage view share `storageSearch`; the Boxes view searches the save alone, Storage
+reaches the bank too. It sits in the box menu on `X` (Sort / Search), not on `Y` and not on a key of
+its own: every button is taken in Storage, and in both views `Y` is already the per-Pokemon menu
+(Boxes) or the cursor mode (Storage). The query is cleared when the view's HOME pill is focused.
 
 ### Egg locations live in bank 6, and the egg picker offers them
 

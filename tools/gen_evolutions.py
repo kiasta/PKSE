@@ -303,8 +303,7 @@ namespace Pokemon {
      * is returned whether or not the Pokemon is holding the item. Deciding that is the caller's,
      * so that a button can be shown and disabled rather than hidden.
      */
-    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId,
-                           TradeEvolution *outEvolutions, int maxEvolutions);
+    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId, TradeEvolution *outEvolutions, int maxEvolutions);
 }
 
 #endif  // PKM_EVOLUTION_TABLE_H
@@ -465,8 +464,7 @@ def emit_cpp(tables, tradeTables):
     L.append('        }')
     L.append('    }')
     L.append('')
-    L.append('    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId,')
-    L.append('                           TradeEvolution* outEvolutions, int maxEvolutions) {')
+    L.append('    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId, TradeEvolution* outEvolutions, int maxEvolutions) {')
     L.append('        TradeEvolutionTable table{};')
     L.append('        if (outEvolutions == nullptr || maxEvolutions <= 0 || !lookupTradeTable(group, table)) {')
     L.append('            return 0;')

@@ -87,8 +87,7 @@ static void printMissing(const char* title) {
 // AN UNEDITED SAVE MUST COME BACK BYTE FOR BYTE -- with at most one documented exception per
 // format, and none at all for most. Default: nothing may move.
 template <typename T>
-static bool differencesAreLegitimate(const T&, const std::vector<uint8_t>&, const std::vector<uint8_t>&,
-                                     std::string& why) {
+static bool differencesAreLegitimate(const T&, const std::vector<uint8_t>&, const std::vector<uint8_t>&, std::string& why) {
     why = "this format refreshes nothing on write";
     return false;
 }
@@ -100,16 +99,13 @@ static bool differencesAreLegitimate(const T&, const std::vector<uint8_t>&, cons
 // one of the two checksum words), and afterwards every mirror equals its SOURCE. Together those say
 // the write can only have brought the backup into line -- never invented anything, never touched the
 // primary. It is the Gen 2 counterpart of Gen 1's current-box mirror flush.
-static bool differencesAreLegitimate(const Trainer::Trainer2GSC& trainer,
-                                     const std::vector<uint8_t>& before,
-                                     const std::vector<uint8_t>& after, std::string& why) {
+static bool differencesAreLegitimate(const Trainer::Trainer2GSC& trainer, const std::vector<uint8_t>& before, const std::vector<uint8_t>& after, std::string& why) {
     const auto mirrors = trainer.mirrorRegions();
     const Trainer::Gen2Offsets& offset = Trainer::gen2Offsets(trainer.layout());
     size_t outside = 0, inside = 0, checksumBytes = 0;
     for (size_t i = 0; i < before.size() && i < after.size(); ++i) {
         if (before[i] == after[i]) continue;
-        if (i == offset.overallChecksumPosition || i == offset.overallChecksumPosition + 1u ||
-            i == offset.overallChecksumPosition2 || i == offset.overallChecksumPosition2 + 1u) {
+        if (i == offset.overallChecksumPosition || i == offset.overallChecksumPosition + 1u || i == offset.overallChecksumPosition2 || i == offset.overallChecksumPosition2 + 1u) {
             ++checksumBytes; continue;
         }
         bool covered = false;
@@ -123,9 +119,7 @@ static bool differencesAreLegitimate(const Trainer::Trainer2GSC& trainer,
             if (after[m.destinationOffset + k] != after[m.sourceOffset + k]) ++mismatch;
 
     char buffer[192];
-    std::snprintf(buffer, sizeof buffer,
-                  "the file's backup block was stale; %zu byte(s) in mirrors + %zu checksum brought into line",
-                  inside, checksumBytes);
+    std::snprintf(buffer, sizeof buffer, "the file's backup block was stale; %zu byte(s) in mirrors + %zu checksum brought into line", inside, checksumBytes);
     why = buffer;
     return outside == 0 && mismatch == 0;
 }
@@ -156,8 +150,7 @@ static void run(const std::string& path, const char* tag) {
         // particular leaves a full-size, correctly-checksummed `main` with a ZEROED metadata
         // header for a game that has been started but never saved -- PKHeX rejects those too.
         // Printed loudly rather than swallowed, so a real detection regression is still visible.
-        std::printf("      SKIPPED -- detect() rejected it; the file is present but is not a "
-                    "valid %s save (never written to?)\n", tag);
+        std::printf("      SKIPPED -- detect() rejected it; the file is present but is not a valid %s save (never written to?)\n", tag);
         ++g_skipped;
         return;
     }
@@ -173,19 +166,12 @@ static void run(const std::string& path, const char* tag) {
         for (auto& p : t.party)
             if (p && p->speciesID() && !p->isStructurallyValid()) ++bad;
         for (auto& p : t.items) { if (!p.empty()) ++pouches; itemCount += static_cast<int>(p.size()); }
-        std::printf("      OT=\"%s\" id=%u money=%u party=%zu boxes=%zu boxed=%d "
-                    "items=%d in %zu pouches\n",
-                    t.trainerName.c_str(), t.TID16, t.money, t.getPartySize(),
-                    t.getBoxCount(), boxed, itemCount, pouches);
+        std::printf("      OT=\"%s\" id=%u money=%u party=%zu boxes=%zu boxed=%d items=%d in %zu pouches\n", t.trainerName.c_str(), t.TID16, t.money, t.getPartySize(), t.getBoxCount(), boxed, itemCount, pouches);
         CHECK(bad == 0, "%d entities have a bad checksum", bad);
         for (size_t i = 0; i < t.party.size(); ++i) {
             auto* p = t.party[i].get();
             if (!p || !p->speciesID()) continue;
-            std::printf("        %-13s Lv%-4d %-12s IV %2d/%2d/%2d/%2d/%2d/%2d  HP %d/%d\n",
-                        Trainer::getSpeciesName(p->speciesID()), p->level(),
-                        Utils::utf16ToUtf8(p->nickname()).c_str(),
-                        p->ivHP(), p->ivATK(), p->ivDEF(), p->ivSPA(), p->ivSPD(), p->ivSPE(),
-                        p->statHPCurrent(), p->statHPMax());
+            std::printf("        %-13s Lv%-4d %-12s IV %2d/%2d/%2d/%2d/%2d/%2d  HP %d/%d\n", Trainer::getSpeciesName(p->speciesID()), p->level(), Utils::utf16ToUtf8(p->nickname()).c_str(), p->ivHP(), p->ivATK(), p->ivDEF(), p->ivSPA(), p->ivSPD(), p->ivSPE(), p->statHPCurrent(), p->statHPMax());
         }
     }
 
@@ -200,8 +186,7 @@ static void run(const std::string& path, const char* tag) {
         bool refreshed = false;
         if (diff && differencesAreLegitimate(t, orig, out, why)) { refreshed = true; diff = 0; }
         if (diff) {
-            std::printf("      [FAIL] round trip: %zu bytes differ (0x%zX..0x%zX)\n",
-                        diff, first, last);
+            std::printf("      [FAIL] round trip: %zu bytes differ (0x%zX..0x%zX)\n", diff, first, last);
             ++g_fails;
         } else if (refreshed) {
             std::printf("      round trip EXACT apart from a documented refresh -- %s\n", why.c_str());
@@ -227,8 +212,7 @@ static void run(const std::string& path, const char* tag) {
             }
         }
         if (boxed > 0) {
-            CHECK(levelless == 0, "%d of %d boxed Pokemon report level 0 "
-                  "(box records must be grown to party size on load)", levelless, boxed);
+            CHECK(levelless == 0, "%d of %d boxed Pokemon report level 0 (box records must be grown to party size on load)", levelless, boxed);
 
             // Move the first boxed Pokemon into a FREE party slot and write the save back.
             T m(orig, path);
@@ -245,12 +229,9 @@ static void run(const std::string& path, const char* tag) {
                         CHECK(!r.party.empty(), "the moved Pokemon did not reach the party");
                         if (!r.party.empty()) {
                             auto* q = r.party[r.party.size() - 1].get();
-                            CHECK(q->speciesID() == species,
-                                  "box -> party changed the species (%u -> %u)", species, q->speciesID());
-                            CHECK(q->level() == level,
-                                  "box -> party changed the level (%u -> %u)", level, q->level());
-                            CHECK(q->isStructurallyValid(),
-                                  "box -> party produced a Pokemon with a bad checksum");
+                            CHECK(q->speciesID() == species, "box -> party changed the species (%u -> %u)", species, q->speciesID());
+                            CHECK(q->level() == level, "box -> party changed the level (%u -> %u)", level, q->level());
+                            CHECK(q->isStructurallyValid(), "box -> party produced a Pokemon with a bad checksum");
                         }
                         moved = true;
                         break;
@@ -294,24 +275,19 @@ static void run(const std::string& path, const char* tag) {
         T r(img, path);
         CHECK(r.isValid(), "re-parse of the edited save failed");
         CHECK(r.money == 654321u, "money did not persist (%u)", r.money);
-        CHECK(r.trainerName == "Zephyr", "trainer name did not persist (\"%s\")",
-              r.trainerName.c_str());
+        CHECK(r.trainerName == "Zephyr", "trainer name did not persist (\"%s\")", r.trainerName.c_str());
         CHECK(r.currentBox == 7, "current box did not persist (%d)", r.currentBox);
-        CHECK(r.boxNames[2] == "Testing", "box name did not persist (\"%s\")",
-              r.boxNames[2].c_str());
+        CHECK(r.boxNames[2] == "Testing", "box name did not persist (\"%s\")", r.boxNames[2].c_str());
         if (!r.items[pi].empty()) {
             CHECK(r.items[pi][0].itemId == keepId, "item id changed under an unrelated edit");
-            CHECK(r.items[pi][0].count == 77, "item count did not persist (%d)",
-                  r.items[pi][0].count);
+            CHECK(r.items[pi][0].count == 77, "item count did not persist (%d)", r.items[pi][0].count);
         }
         if (pk && !r.party.empty()) {
             auto* q = r.party[0].get();
             const uint8_t expectedIV = q->maxIV() < 29 ? q->maxIV() : static_cast<uint8_t>(29);
-            CHECK(q->ivATK() == expectedIV, "IV Attack did not persist (%d, wanted %d)",
-                  q->ivATK(), expectedIV);
+            CHECK(q->ivATK() == expectedIV, "IV Attack did not persist (%d, wanted %d)", q->ivATK(), expectedIV);
             CHECK(q->evATK() == 52, "EV Atk did not persist (%d)", q->evATK());
-            CHECK(q->nickname() == u"Roundtrip", "nickname did not persist (\"%s\")",
-                  Utils::utf16ToUtf8(q->nickname()).c_str());
+            CHECK(q->nickname() == u"Roundtrip", "nickname did not persist (\"%s\")", Utils::utf16ToUtf8(q->nickname()).c_str());
             CHECK(q->isStructurallyValid(), "the edited party member has a bad checksum");
             CHECK(q->speciesID() == species, "species changed under an unrelated edit");
         }
@@ -339,18 +315,15 @@ static void gen2Synthetic() {
     for (size_t footer : {size_t(0x10), size_t(0x0C), size_t(0x30), size_t(0x07)}) {
         std::vector<uint8_t> padded = img;
         padded.resize(img.size() + footer, 0xA5);
-        CHECK(!Trainer::Trainer2GSC::detect(padded, nullptr),
-              "a %zu-byte-footered save was detected without stripping, so the size check is not exact", footer);
+        CHECK(!Trainer::Trainer2GSC::detect(padded, nullptr), "a %zu-byte-footered save was detected without stripping, so the size check is not exact", footer);
         CHECK(Save::stripRtcFooter(padded), "a %zu-byte RTC footer was not recognised", footer);
-        CHECK(padded.size() == img.size(), "stripping a %zu-byte footer left %zu bytes, want %zu",
-              footer, padded.size(), img.size());
+        CHECK(padded.size() == img.size(), "stripping a %zu-byte footer left %zu bytes, want %zu", footer, padded.size(), img.size());
         CHECK(Trainer::Trainer2GSC::detect(padded, nullptr), "the save did not detect after a %zu-byte strip", footer);
     }
     for (size_t footer : {size_t(0x02), size_t(0x0B), size_t(0x32), size_t(0x11)}) {
         std::vector<uint8_t> padded = img;
         padded.resize(img.size() + footer, 0xA5);
-        CHECK(!Save::stripRtcFooter(padded),
-              "a %zu-byte tail was treated as an RTC footer; only 7 or an even 0x0C..0x30 may be", footer);
+        CHECK(!Save::stripRtcFooter(padded), "a %zu-byte tail was treated as an RTC footer; only 7 or an even 0x0C..0x30 may be", footer);
     }
 
     Trainer::Trainer2GSC t(img, "<synthetic>");
@@ -399,10 +372,8 @@ static void gen2Synthetic() {
         uint16_t sum = 0;
         for (size_t i = o.trainer1; i <= o.accumulatedChecksumEnd; ++i)
             sum = static_cast<uint16_t>(sum + out[i]);
-        const uint16_t a = static_cast<uint16_t>(out[o.overallChecksumPosition] |
-                                                 (out[o.overallChecksumPosition + 1] << 8));
-        const uint16_t b = static_cast<uint16_t>(out[o.overallChecksumPosition2] |
-                                                 (out[o.overallChecksumPosition2 + 1] << 8));
+        const uint16_t a = static_cast<uint16_t>(out[o.overallChecksumPosition] | (out[o.overallChecksumPosition + 1] << 8));
+        const uint16_t b = static_cast<uint16_t>(out[o.overallChecksumPosition2] | (out[o.overallChecksumPosition2 + 1] << 8));
         CHECK(a == sum, "checksum copy 1 is %#06x, want %#06x", a, sum);
         CHECK(b == sum, "checksum copy 2 is %#06x, want %#06x", b, sum);
     }
@@ -420,18 +391,13 @@ static void gen2Synthetic() {
         CHECK(q->speciesID() == 155, "party species %u", q->speciesID());
         CHECK(q->level() == 12, "party level %u", q->level());
         CHECK(q->ivHP() == 13 || q->ivHP() <= 15, "party IV HP %u out of range", q->ivHP());
-        CHECK(q->nickname() == u"Blaze", "party nickname \"%s\"",
-              Utils::utf16ToUtf8(q->nickname()).c_str());
+        CHECK(q->nickname() == u"Blaze", "party nickname \"%s\"", Utils::utf16ToUtf8(q->nickname()).c_str());
     }
-    CHECK(r.boxes[3][0] && r.boxes[3][0]->speciesID() == 158,
-          "boxed Pokemon did not survive (compactStorage packs it to slot 0)");
+    CHECK(r.boxes[3][0] && r.boxes[3][0]->speciesID() == 158, "boxed Pokemon did not survive (compactStorage packs it to slot 0)");
     // Items: TM/HM is positional, Items is a {id,count} list, Key Items is ids only.
-    CHECK(!r.items[0].empty() && r.items[0][0].itemId == 191 && r.items[0][0].count == 3,
-          "TM/HM pouch did not persist");
-    CHECK(!r.items[1].empty() && r.items[1][0].itemId == 1 && r.items[1][0].count == 5,
-          "Items pouch did not persist");
-    CHECK(!r.items[2].empty() && r.items[2][0].itemId == 7,
-          "Key Items pouch did not persist");
+    CHECK(!r.items[0].empty() && r.items[0][0].itemId == 191 && r.items[0][0].count == 3, "TM/HM pouch did not persist");
+    CHECK(!r.items[1].empty() && r.items[1][0].itemId == 1 && r.items[1][0].count == 5, "Items pouch did not persist");
+    CHECK(!r.items[2].empty() && r.items[2][0].itemId == 7, "Key Items pouch did not persist");
 
     // Parse/serialise must be idempotent: writing what we just read changes nothing.
     {
@@ -466,19 +432,16 @@ static void gen7Signature(const std::string& path, const char* tag, size_t sigOf
     Utils::SHA256 sha;
     sha.update(&img[img.size() - 0x200], span);
     sha.finalize(want);
-    CHECK(std::memcmp(plain, want, sizeof(want)) == 0,
-          "%s: the signed hash does not match the checksum table PKSE wrote", tag);
+    CHECK(std::memcmp(plain, want, sizeof(want)) == 0, "%s: the signed hash does not match the checksum table PKSE wrote", tag);
 
     // And the edit really did move the table -- otherwise this whole check is vacuous.
-    CHECK(std::memcmp(&orig[orig.size() - 0x200], &img[img.size() - 0x200], span) != 0,
-          "%s: the checksum table did not change, so the signature check proves nothing", tag);
+    CHECK(std::memcmp(&orig[orig.size() - 0x200], &img[img.size() - 0x200], span) != 0, "%s: the checksum table did not change, so the signature check proves nothing", tag);
     std::printf("      %-16s signature verifies after an edit\n", tag);
 }
 
 
 template <typename T>
-static void gameByteFollows(const std::string& path, const char* tag, size_t gameByteOffset,
-                            Enums::GameVersion sibling) {
+static void gameByteFollows(const std::string& path, const char* tag, size_t gameByteOffset, Enums::GameVersion sibling) {
     std::vector<uint8_t> bytes = load(path);
     if (bytes.empty() || !T::detect(bytes)) { ++g_skipped; printMissing(tag); return; }
     if (gameByteOffset >= bytes.size()) { CHECK(false, "%s: the game byte is past the file", tag); return; }
@@ -489,13 +452,8 @@ static void gameByteFollows(const std::string& path, const char* tag, size_t gam
 
     bytes[gameByteOffset] = static_cast<uint8_t>(sibling);
     T flipped(std::move(bytes), path);
-    CHECK(flipped.getGameVersion() == sibling,
-          "%s: setting the game byte to %s still reports %s -- the byte is not being read", tag,
-          Enums::getGameVersionName(sibling).c_str(),
-          Enums::getGameVersionName(flipped.getGameVersion()).c_str());
-    std::printf("      %-16s names itself %s (and follows the byte to %s)\n", tag,
-                Enums::getGameVersionName(asFoundVersion).c_str(),
-                Enums::getGameVersionName(sibling).c_str());
+    CHECK(flipped.getGameVersion() == sibling, "%s: setting the game byte to %s still reports %s -- the byte is not being read", tag, Enums::getGameVersionName(sibling).c_str(), Enums::getGameVersionName(flipped.getGameVersion()).c_str());
+    std::printf("      %-16s names itself %s (and follows the byte to %s)\n", tag, Enums::getGameVersionName(asFoundVersion).c_str(), Enums::getGameVersionName(sibling).c_str());
 }
 
 /// The save a fixture was built around, for isFixtureImage(): findSaveEnvelope takes a plain function
@@ -510,15 +468,12 @@ static bool isRecoded(Save::SaveEnvelopeKind kind, bool alternateLayout) {
 }
 
 /// One enveloped file: found, joined back, and an edited save joined and found again.
-static void envelopeRoundTrip(const char* tag, const char* name, const std::vector<uint8_t>& file,
-                              Save::SaveEnvelopeKind kind, bool recoded, const std::vector<uint8_t>& image,
-                              const std::vector<uint8_t>& padding) {
+static void envelopeRoundTrip(const char* tag, const char* name, const std::vector<uint8_t>& file, Save::SaveEnvelopeKind kind, bool recoded, const std::vector<uint8_t>& image, const std::vector<uint8_t>& padding) {
     g_fixtureImage = &image;
     Save::SaveEnvelope envelope;
     std::vector<uint8_t> found;
     const bool ok = Save::findSaveEnvelope(file, isFixtureImage, envelope, found);
-    CHECK(ok && envelope.kind == kind && found == image && envelope.paddingBytes == padding,
-          "%s: not found inside %s", tag, name);
+    CHECK(ok && envelope.kind == kind && found == image && envelope.paddingBytes == padding, "%s: not found inside %s", tag, name);
     if (!ok) return;
 
     const std::vector<uint8_t> joined = Save::joinSaveEnvelope(envelope, found);
@@ -528,13 +483,9 @@ static void envelopeRoundTrip(const char* tag, const char* name, const std::vect
         // Read back by the fixture's own decoder, which shares nothing with PKSE's encoder but the format.
         std::vector<uint8_t> held = image;
         held.insert(held.end(), padding.begin(), padding.end());
-        CHECK(Test::EnvelopeFixture::nocashRunLengthDecode(joined) == held,
-              "%s: %s, coded again by PKSE, does not decode to the same save", tag, name);
+        CHECK(Test::EnvelopeFixture::nocashRunLengthDecode(joined) == held, "%s: %s, coded again by PKSE, does not decode to the same save", tag, name);
         const size_t entriesAfter = envelope.footerBytes.size();
-        CHECK(joined.size() >= entriesAfter && std::equal(envelope.footerBytes.begin(), envelope.footerBytes.end(),
-                                                          joined.end() - static_cast<long>(entriesAfter)) &&
-              std::equal(file.begin(), file.begin() + 0x40, joined.begin()),
-              "%s: %s lost its header or the entries after the save", tag, name);
+        CHECK(joined.size() >= entriesAfter && std::equal(envelope.footerBytes.begin(), envelope.footerBytes.end(), joined.end() - static_cast<long>(entriesAfter)) && std::equal(file.begin(), file.begin() + 0x40, joined.begin()), "%s: %s lost its header or the entries after the save", tag, name);
     }
 
     // An edited save goes back into the same envelope; only Switch Online's hash may move with it.
@@ -544,16 +495,13 @@ static void envelopeRoundTrip(const char* tag, const char* name, const std::vect
     g_fixtureImage = &edited;
     Save::SaveEnvelope envelopeAgain;
     std::vector<uint8_t> foundAgain;
-    CHECK(Save::findSaveEnvelope(rejoined, isFixtureImage, envelopeAgain, foundAgain) && envelopeAgain.kind == kind &&
-          foundAgain == edited && envelopeAgain.paddingBytes == padding,
-          "%s: an edited save did not come back out of %s", tag, name);
+    CHECK(Save::findSaveEnvelope(rejoined, isFixtureImage, envelopeAgain, foundAgain) && envelopeAgain.kind == kind && foundAgain == edited && envelopeAgain.paddingBytes == padding, "%s: an edited save did not come back out of %s", tag, name);
     if (!recoded) {
         size_t movedBytes = 0;
         for (size_t byteIndex = 0; byteIndex < file.size() && byteIndex < rejoined.size(); ++byteIndex)
             movedBytes += file[byteIndex] != rejoined[byteIndex];
         const size_t hashMoves = kind == Save::SaveEnvelopeKind::SwitchOnlineHeader ? 40 : 0;
-        CHECK(rejoined.size() == file.size() && movedBytes >= 1 && movedBytes <= 1 + hashMoves,
-              "%s: editing one byte moved %zu bytes of the %s file", tag, movedBytes, name);
+        CHECK(rejoined.size() == file.size() && movedBytes >= 1 && movedBytes <= 1 + hashMoves, "%s: editing one byte moved %zu bytes of the %s file", tag, movedBytes, name);
     }
     g_fixtureImage = nullptr;
 }
@@ -575,8 +523,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
         const std::string hashText(file.begin() + static_cast<long>(hashEnd - 40), file.begin() + static_cast<long>(hashEnd));
         CHECK(hashText == "a9993e364706816aba3e25717850c26c9cd0d89d", "SHA-1 of \"abc\" came out as %s", hashText.c_str());
     }
-    CHECK(Test::EnvelopeFixture::desmumeFooter(0x80000).size() == 0x7A,
-          "the DeSmuME fixture footer is %zu bytes, not DeSmuME's 0x7A", Test::EnvelopeFixture::desmumeFooter(0x80000).size());
+    CHECK(Test::EnvelopeFixture::desmumeFooter(0x80000).size() == 0x7A, "the DeSmuME fixture footer is %zu bytes, not DeSmuME's 0x7A", Test::EnvelopeFixture::desmumeFooter(0x80000).size());
 
     // no$gba's run-length code, known answers. Every control: a copy, a short repeat, a long repeat, the end.
     {
@@ -591,8 +538,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
             envelope.headerBytes.assign(emptyFile.begin(), emptyFile.begin() + 0x40);
             envelope.nocashSaveEntry.compressionMethod = 1;
             const std::vector<uint8_t> file = Save::joinSaveEnvelope(envelope, *source);
-            CHECK(Test::EnvelopeFixture::nocashRunLengthDecode(file) == *source,
-                  "no$gba's run-length code of %zu bytes does not decode back", source->size());
+            CHECK(Test::EnvelopeFixture::nocashRunLengthDecode(file) == *source, "no$gba's run-length code of %zu bytes does not decode back", source->size());
         }
         Save::SaveEnvelope envelope;
         envelope.kind = SaveEnvelopeKind::NocashGbaContainer;
@@ -600,10 +546,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
         envelope.nocashSaveEntry.compressionMethod = 1;
         const std::vector<uint8_t> file = Save::joinSaveEnvelope(envelope, held);
         const std::vector<uint8_t> expectedCode = {0x03, 1, 2, 3, 0x84, 9, 0x01, 7, 0x00};
-        CHECK(file.size() == 0x40 + 16 + expectedCode.size() &&
-              std::equal(expectedCode.begin(), expectedCode.end(), file.begin() + 0x40 + 16) &&
-              file[0x48] == expectedCode.size() + 4 && file[0x4C] == held.size(),
-              "no$gba's run-length code of 01 02 03 09 09 09 09 07 is not 03 01 02 03 84 09 01 07 00");
+        CHECK(file.size() == 0x40 + 16 + expectedCode.size() && std::equal(expectedCode.begin(), expectedCode.end(), file.begin() + 0x40 + 16) && file[0x48] == expectedCode.size() + 4 && file[0x4C] == held.size(), "no$gba's run-length code of 01 02 03 09 09 09 09 07 is not 03 01 02 03 84 09 01 07 00");
     }
 
     int wrapped = 0;
@@ -615,15 +558,12 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
         g_fixtureImage = &image;
         Save::SaveEnvelope bareEnvelope;
         std::vector<uint8_t> bareImage;
-        CHECK(Save::findSaveEnvelope(image, isFixtureImage, bareEnvelope, bareImage) &&
-              Save::isBareSave(bareEnvelope) && bareImage == image,
-              "%s: the bare save was not taken as it stands", tag);
+        CHECK(Save::findSaveEnvelope(image, isFixtureImage, bareEnvelope, bareImage) && Save::isBareSave(bareEnvelope) && bareImage == image, "%s: the bare save was not taken as it stands", tag);
 
         for (const SaveEnvelopeKind kind : Test::envelopesForSaveSize(image.size())) {
             for (const bool alternateLayout : Test::envelopeLayouts(kind)) {
                 const std::vector<uint8_t> file = Test::buildEnvelopedSave(kind, image, alternateLayout);
-                envelopeRoundTrip(tag, Save::saveEnvelopeName(kind), file, kind, isRecoded(kind, alternateLayout),
-                                  image, {});
+                envelopeRoundTrip(tag, Save::saveEnvelopeName(kind), file, kind, isRecoded(kind, alternateLayout), image, {});
                 ++wrapped;
             }
         }
@@ -632,8 +572,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
             const std::vector<uint8_t> padding(held.begin() + static_cast<long>(image.size()), held.end());
             const std::vector<uint8_t> file = Test::buildEnvelopedSave(fixture.kind, held);
             char name[96];
-            std::snprintf(name, sizeof name, "%s, padded to 0x%zX with %02X%s", Save::saveEnvelopeName(fixture.kind),
-                          fixture.paddedSize, fixture.fillByte, fixture.withYsMenuFlags ? " and YSMenu flags" : "");
+            std::snprintf(name, sizeof name, "%s, padded to 0x%zX with %02X%s", Save::saveEnvelopeName(fixture.kind), fixture.paddedSize, fixture.fillByte, fixture.withYsMenuFlags ? " and YSMenu flags" : "");
             envelopeRoundTrip(tag, name, file, fixture.kind, false, image, padding);
             ++wrapped;
 
@@ -643,8 +582,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
             g_fixtureImage = &image;
             Save::SaveEnvelope envelope;
             std::vector<uint8_t> found;
-            CHECK(!Save::findSaveEnvelope(stray, isFixtureImage, envelope, found),
-                  "%s: %s with a stray byte in its padding was still taken apart", tag, name);
+            CHECK(!Save::findSaveEnvelope(stray, isFixtureImage, envelope, found), "%s: %s with a stray byte in its padding was still taken apart", tag, name);
             g_fixtureImage = nullptr;
         }
         g_fixtureImage = nullptr;
@@ -654,9 +592,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
     // A real detector, not just a byte compare: what the app's probe chain runs on Gen 2, 4 and 5.
     auto detectGen2 = [](const std::vector<uint8_t>& bytes) { return Trainer::Trainer2GSC::detect(bytes, nullptr); };
     auto detectGen45 = [](const std::vector<uint8_t>& bytes) {
-        return Trainer::Trainer4DP::detect(bytes) || Trainer::Trainer4PT::detect(bytes) ||
-               Trainer::Trainer4HGSS::detect(bytes) || Trainer::Trainer5BW::detect(bytes) ||
-               Trainer::Trainer5B2W2::detect(bytes);
+        return Trainer::Trainer4DP::detect(bytes) || Trainer::Trainer4PT::detect(bytes) || Trainer::Trainer4HGSS::detect(bytes) || Trainer::Trainer5BW::detect(bytes) || Trainer::Trainer5B2W2::detect(bytes);
     };
     for (const auto& [path, tag] : saves) {
         std::vector<uint8_t> image = load(path);
@@ -670,19 +606,13 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
             for (const bool alternateLayout : Test::envelopeLayouts(kind)) {
                 Save::SaveEnvelope envelope;
                 std::vector<uint8_t> found;
-                CHECK(Save::findSaveEnvelope(Test::buildEnvelopedSave(kind, image, alternateLayout), detector, envelope,
-                                             found) && envelope.kind == kind && found == image,
-                      "%s: the probe chain's own detector did not find the save inside %s", tag,
-                      Save::saveEnvelopeName(kind));
+                CHECK(Save::findSaveEnvelope(Test::buildEnvelopedSave(kind, image, alternateLayout), detector, envelope, found) && envelope.kind == kind && found == image, "%s: the probe chain's own detector did not find the save inside %s", tag, Save::saveEnvelopeName(kind));
             }
         }
         for (const Test::PaddingFixture& fixture : Test::paddingForSaveSize(image.size())) {
             Save::SaveEnvelope envelope;
             std::vector<uint8_t> found;
-            CHECK(Save::findSaveEnvelope(Test::buildEnvelopedSave(fixture.kind, Test::paddedSaveBytes(fixture, image)),
-                                         detector, envelope, found) &&
-                  envelope.kind == fixture.kind && found == image,
-                  "%s: the probe chain's own detector did not find the save padded to 0x%zX", tag, fixture.paddedSize);
+            CHECK(Save::findSaveEnvelope(Test::buildEnvelopedSave(fixture.kind, Test::paddedSaveBytes(fixture, image)), detector, envelope, found) && envelope.kind == fixture.kind && found == image, "%s: the probe chain's own detector did not find the save padded to 0x%zX", tag, fixture.paddedSize);
         }
     }
 
@@ -747,8 +677,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
     {
         std::vector<uint8_t> file = Test::buildEnvelopedSave(SaveEnvelopeKind::ActionReplayMaxDriveHeader, dsImage);
         file[15] = '2';
-        CHECK(refused(SaveEnvelopeKind::ActionReplayMaxDriveHeader, file),
-              "an Action Replay header that is not \"ARDS000000000001\" was accepted");
+        CHECK(refused(SaveEnvelopeKind::ActionReplayMaxDriveHeader, file), "an Action Replay header that is not \"ARDS000000000001\" was accepted");
     }
     {
         std::vector<uint8_t> file = Test::buildEnvelopedSave(SaveEnvelopeKind::NocashGbaContainer, gbaImage);
@@ -758,8 +687,7 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
     {
         std::vector<uint8_t> file = Test::buildEnvelopedSave(SaveEnvelopeKind::NocashGbaContainer, gbaImage);
         file[0x4C] += 1; // one byte more than the code decodes to
-        CHECK(refused(SaveEnvelopeKind::NocashGbaContainer, file),
-              "a no$gba file whose code is shorter than its stated length was accepted");
+        CHECK(refused(SaveEnvelopeKind::NocashGbaContainer, file), "a no$gba file whose code is shorter than its stated length was accepted");
     }
     {
         std::vector<uint8_t> file = Test::buildEnvelopedSave(SaveEnvelopeKind::NocashGbaContainer, gbaImage);
@@ -793,21 +721,15 @@ static void envelopes(const std::vector<std::pair<std::string, const char*>>& sa
         }
         for (const auto& [path, tag] : saves) {
             const std::vector<uint8_t> image = load(path);
-            CHECK(image.empty() || !Save::describeUnreadableSaveContainer(image),
-                  "%s: a real save was explained away as a container PKSE cannot read", tag);
+            CHECK(image.empty() || !Save::describeUnreadableSaveContainer(image), "%s: a real save was explained away as a container PKSE cannot read", tag);
         }
     }
 }
 
 int main(int argc, char** argv) {
-    const std::string root = argc > 1 ? argv[1]
-                                      : std::string(std::getenv("HOME")) + "/pkse-test-saves";
+    const std::string root = argc > 1 ? argv[1] : std::string(std::getenv("HOME")) + "/pkse-test-saves";
     g_saveRoot = root;
-    std::printf("save root: %s\n"
-                "saves are found by TITLE FOLDER -- <root>/HeartGold/, <root>/Pearl/ and so on,\n"
-                "with any filename inside. Four pairs of games write byte-identical saves with no\n"
-                "version byte anywhere, so the folder is the only thing that can say which is which.\n\n",
-                root.c_str());
+    std::printf("save root: %s\nsaves are found by TITLE FOLDER -- <root>/HeartGold/, <root>/Pearl/ and so on,\nwith any filename inside. Four pairs of games write byte-identical saves with no\nversion byte anywhere, so the folder is the only thing that can say which is which.\n\n", root.c_str());
 
     // Saves are found by the TITLE FOLDER they sit in, not by a guessed filename -- see
     // SaveTree.h. Each of these is <root>/<Title>/<whatever the dump is called>. The pairs that
@@ -876,18 +798,12 @@ int main(int argc, char** argv) {
     // byte and require the reported title to follow. Reporting the right title as-found proves
     // nothing on its own, because a read that failed falls back to exactly that value.
     std::printf("\nThe save names its own title\n");
-    gameByteFollows<Trainer::Trainer5BW>  (black,      "Black",
-        Trainer::BLOCKS_5BW[Trainer::BLOCK_TRAINER_5BW].offset + 0x1F,   Enums::GameVersion::W);
-    gameByteFollows<Trainer::Trainer5B2W2>(black2,     "Black 2",
-        Trainer::BLOCKS_5B2W2[Trainer::BLOCK_TRAINER_5B2W2].offset + 0x1F, Enums::GameVersion::W2);
-    gameByteFollows<Trainer::Trainer6XY>  (pokemonX,   "X",
-        Trainer::BLOCKS_6XY[Trainer::BLOCK_STATUS_6XY].offset + 0x04,     Enums::GameVersion::Y);
-    gameByteFollows<Trainer::Trainer6ORAS>(omegaRuby,  "Omega Ruby",
-        Trainer::BLOCKS_6ORAS[Trainer::BLOCK_STATUS_6ORAS].offset + 0x04, Enums::GameVersion::AS);
-    gameByteFollows<Trainer::Trainer7SM>  (sun,        "Sun",
-        Trainer::BLOCKS_7SM[Trainer::BLOCK_STATUS_7SM].offset + 0x04,     Enums::GameVersion::MN);
-    gameByteFollows<Trainer::Trainer7USUM>(ultraSun,   "Ultra Sun",
-        Trainer::BLOCKS_7USUM[Trainer::BLOCK_STATUS_7USUM].offset + 0x04, Enums::GameVersion::UM);
+    gameByteFollows<Trainer::Trainer5BW> (black, "Black", Trainer::BLOCKS_5BW[Trainer::BLOCK_TRAINER_5BW].offset + 0x1F, Enums::GameVersion::W);
+    gameByteFollows<Trainer::Trainer5B2W2>(black2, "Black 2", Trainer::BLOCKS_5B2W2[Trainer::BLOCK_TRAINER_5B2W2].offset + 0x1F, Enums::GameVersion::W2);
+    gameByteFollows<Trainer::Trainer6XY> (pokemonX, "X", Trainer::BLOCKS_6XY[Trainer::BLOCK_STATUS_6XY].offset + 0x04, Enums::GameVersion::Y);
+    gameByteFollows<Trainer::Trainer6ORAS>(omegaRuby, "Omega Ruby", Trainer::BLOCKS_6ORAS[Trainer::BLOCK_STATUS_6ORAS].offset + 0x04, Enums::GameVersion::AS);
+    gameByteFollows<Trainer::Trainer7SM> (sun, "Sun", Trainer::BLOCKS_7SM[Trainer::BLOCK_STATUS_7SM].offset + 0x04, Enums::GameVersion::MN);
+    gameByteFollows<Trainer::Trainer7USUM>(ultraSun, "Ultra Sun", Trainer::BLOCKS_7USUM[Trainer::BLOCK_STATUS_7USUM].offset + 0x04, Enums::GameVersion::UM);
 
     std::printf("\nGen 7 MemeCrypto\n");
     gen7Signature<Trainer::Trainer7SM>  (sun,      "Sun",       0x6BB00, 0x140);
@@ -898,7 +814,6 @@ int main(int argc, char** argv) {
                {SaveTree::ruby(root), "Ruby"}, {SaveTree::fireRed(root), "FireRed"}, {diamond, "Diamond"},
                {platinum, "Platinum"}, {heartGold, "HeartGold"}, {black, "Black"}, {black2, "Black 2"}});
 
-    std::printf("\n%d checks, %d failure(s), %d save(s) skipped for want of a file\n",
-                g_checks, g_fails, g_skipped);
+    std::printf("\n%d checks, %d failure(s), %d save(s) skipped for want of a file\n", g_checks, g_fails, g_skipped);
     return g_fails != 0;
 }

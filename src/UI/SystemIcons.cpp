@@ -20,8 +20,7 @@ namespace UI
             u64 highHalf, lowHalf;
             bool operator<(const UidKey &other) const
             {
-                return highHalf != other.highHalf ? highHalf < other.highHalf
-                                                  : lowHalf < other.lowHalf;
+                return highHalf != other.highHalf ? highHalf < other.highHalf : lowHalf < other.lowHalf;
             }
         };
 
@@ -79,13 +78,11 @@ namespace UI
 
         IconImage image;
         // NsApplicationControlData is large (~0x24000); heap-allocate it.
-        NsApplicationControlData *ctl =
-            static_cast<NsApplicationControlData *>(malloc(sizeof(NsApplicationControlData)));
+        NsApplicationControlData *ctl = static_cast<NsApplicationControlData *>(malloc(sizeof(NsApplicationControlData)));
         if (ctl)
         {
             u64 outSize = 0;
-            Result resultCode = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleId,
-                                                    ctl, sizeof(NsApplicationControlData), &outSize);
+            Result resultCode = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleId, ctl, sizeof(NsApplicationControlData), &outSize);
             if (R_SUCCEEDED(resultCode) && outSize > sizeof(ctl->nacp))
             {
                 int iconLen = static_cast<int>(outSize - sizeof(ctl->nacp));

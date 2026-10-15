@@ -52,8 +52,7 @@ namespace Trainer
     }
 
         
-    Trainer7SM::Trainer7SM(std::vector<uint8_t> raw, std::string path)
-        : saveData(std::move(raw)), savePath(std::move(path))
+    Trainer7SM::Trainer7SM(std::vector<uint8_t> raw, std::string path) : saveData(std::move(raw)), savePath(std::move(path))
     {
         init();
     }
@@ -116,8 +115,7 @@ namespace Trainer
             size_t blankOfs = 0, blankLen = 0;
             if (!checksumBlank(blockIndex, blankOfs, blankLen))
             {
-                writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)],
-                                        blockCrc(&saveData[b.offset], b.length));
+                writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)], blockCrc(&saveData[b.offset], b.length));
                 continue;
             }
             // Gen 7's signature block: the checksum the game records is the one taken with the
@@ -126,8 +124,7 @@ namespace Trainer
             std::vector<uint8_t> blankedBlock(&saveData[b.offset], &saveData[b.offset] + b.length);
             if (blankOfs + blankLen <= blankedBlock.size())
                 std::memset(&blankedBlock[blankOfs], 0, blankLen);
-            writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)],
-                                    blockCrc(blankedBlock.data(), blankedBlock.size()));
+            writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)], blockCrc(blankedBlock.data(), blankedBlock.size()));
         }
     }
 
@@ -162,8 +159,7 @@ namespace Trainer
             // never valid. Sign over zeros instead, which is what PKHeX always does and which the
             // game accepts; the only thing lost is byte-exactness against the original.
             std::memset(plain, 0, sizeof(plain));
-            logErrorToFile("Gen 7: could not recover the existing MemeCrypto signature; "
-                           "signing over a blank plaintext instead");
+            logErrorToFile("Gen 7: could not recover the existing MemeCrypto signature; signing over a blank plaintext instead");
         }
 
         // Overwrite the hash with a SHA-256 of the checksum table. memecrypto_sign fills in the
@@ -197,8 +193,7 @@ namespace Trainer
         TID = TID16;
         SID = SID16;
         trainerGender = sourceBytes[ST_GENDER] & 1;
-        money = readUInt32LittleEndian(at(blkMisc()) +
-                                       MISC_MONEY);
+        money = readUInt32LittleEndian(at(blkMisc()) + MISC_MONEY);
         currentBox = at(blkBoxLayout())[BL_CURRENT];
     }
 
@@ -298,8 +293,7 @@ namespace Trainer
         const size_t recordSize = Encryption::SIZE_PARTY7_SM;
         const auto blank = Encryption::blankRecord7SM(recordSize);
         size_t written = 0;
-        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-             ++partySlotIndex)
+        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
@@ -363,8 +357,7 @@ namespace Trainer
         writeUtf16Field(sourceBytes + otOfs, ST_OT_BYTES / 2, utf8ToUtf16(trainerName), UTF16_TERM_G67, false);
         writeUInt32LittleEndian(sourceBytes + ST_ID32, ID32);
         sourceBytes[ST_GENDER] = trainerGender & 1;
-        writeUInt32LittleEndian(at(blkMisc()) + MISC_MONEY,
-                                money > getMaxMoney() ? getMaxMoney() : money);
+        writeUInt32LittleEndian(at(blkMisc()) + MISC_MONEY, money > getMaxMoney() ? getMaxMoney() : money);
     }
 
     void Trainer7SM::updateBoxNameBlock()
@@ -374,8 +367,7 @@ namespace Trainer
         {
             if (!isBoxNameDirty(boxIndex))
                 continue;
-            writeUtf16Field(l + boxIndex * BL_NAME_BYTES, BL_NAME_BYTES / 2,
-                            utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G67, false);
+            writeUtf16Field(l + boxIndex * BL_NAME_BYTES, BL_NAME_BYTES / 2, utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G67, false);
         }
     }
 
@@ -395,10 +387,7 @@ namespace Trainer
             uint8_t *pouch = g + pouchLayout[pouchIndex].offset;
             // Gen 7 packs id, count, the free-space sort index and the new flag into ONE word, so
             // it places the items with the shared rule and writes its own codec over the result.
-            const std::vector<ItemPlacement> placement =
-                placePouchPositional(capacity, items[pouchIndex],
-                                     pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex]
-                                                                                      : std::vector<ItemOrigin>{});
+            const std::vector<ItemPlacement> placement = placePouchPositional(capacity, items[pouchIndex], pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex] : std::vector<ItemOrigin>{});
 
             for (size_t slotIndex = 0; slotIndex < capacity; ++slotIndex)
             {
@@ -414,8 +403,7 @@ namespace Trainer
                 // The player's free-space sort index and new flag describe the entry this item was
                 // read from, so they ride along with it and an item new to the pouch gets neither.
                 uint32_t carry = 0;
-                if (pouchIndex < static_cast<int>(itemRaw.size()) &&
-                    placement[itemIndex].originIndex < itemRaw[pouchIndex].size())
+                if (pouchIndex < static_cast<int>(itemRaw.size()) && placement[itemIndex].originIndex < itemRaw[pouchIndex].size())
                 {
                     carry = itemRaw[pouchIndex][placement[itemIndex].originIndex] & ITEM_CARRY_MASK7_SM;
                 }
@@ -423,11 +411,7 @@ namespace Trainer
                 {
                     carry = ITEM_NEW_BIT7_SM;
                 }
-                writeUInt32LittleEndian(pouch + placement[itemIndex].slot * 4,
-                                        (inventoryItem.itemId & ITEM_ID_MASK7_SM) |
-                                            ((inventoryItem.count & ITEM_ID_MASK7_SM)
-                                             << ITEM_COUNT_SHIFT7_SM) |
-                                            carry);
+                writeUInt32LittleEndian(pouch + placement[itemIndex].slot * 4, (inventoryItem.itemId & ITEM_ID_MASK7_SM) | ((inventoryItem.count & ITEM_ID_MASK7_SM) << ITEM_COUNT_SHIFT7_SM) | carry);
             }
         }
     }

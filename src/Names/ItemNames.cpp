@@ -24211,8 +24211,7 @@ namespace Names
         ITEM_NAMES_ZH_HANS,
         ITEM_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(ITEM_NAMES_BY_LANGUAGE) / sizeof(ITEM_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ITEM_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(ITEM_NAMES_BY_LANGUAGE) / sizeof(ITEM_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ITEM_NAMES_BY_LANGUAGE must carry one table per language");
 
     const char *getItemName(uint16_t itemId)
     {
@@ -27699,8 +27698,7 @@ namespace Names
         ITEM3_NAMES_ZH_HANS,
         ITEM3_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(ITEM3_NAMES_BY_LANGUAGE) / sizeof(ITEM3_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ITEM3_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(ITEM3_NAMES_BY_LANGUAGE) / sizeof(ITEM3_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ITEM3_NAMES_BY_LANGUAGE must carry one table per language");
 
     static constexpr size_t ITEM3_NAMES_COUNT = 377;
 

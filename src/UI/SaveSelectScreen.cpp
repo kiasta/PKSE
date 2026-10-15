@@ -357,11 +357,7 @@ namespace UI
         // A tap on a nav-bar badge becomes that button's press, so every handler below is
         // reached identically whether the user pressed the button or tapped its on-screen badge.
         const HidAnalogStickState stick = padGetStickPos(&pad, 0);
-        u64 buttonsDown = controllerNavigation.apply(
-            padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y,
-            HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right,
-            HidNpadButton_L | HidNpadButton_R)
-            | navTouchButton(touch);
+        u64 buttonsDown = controllerNavigation.apply(padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right, HidNpadButton_L | HidNpadButton_R) | navTouchButton(touch);
 
         // A tap recorded earlier fires once its selection has actually been on screen. See armTap().
         if (pendingTapButton != 0 && --pendingTapFrames <= 0)
@@ -486,8 +482,7 @@ namespace UI
             int nameLineHeight = framebuffer.lineHeight(TextStyle::Title);
             framebuffer.drawText(nameX, avY + 6, u->name, Colors::Text, TextStyle::Title);
             int saveCount = (int)u->titles.size();
-            std::string subtitleText =
-                std::to_string(saveCount) + (saveCount == 1 ? " Pokémon save" : " Pokémon saves");
+            std::string subtitleText = std::to_string(saveCount) + (saveCount == 1 ? " Pokémon save" : " Pokémon saves");
             framebuffer.drawText(nameX, avY + 6 + nameLineHeight + 4, subtitleText, Colors::TextDim, TextStyle::Caption);
         }
 
@@ -563,8 +558,7 @@ namespace UI
                 const std::string &label = u->titles[index].label;
                 int labelWidth, lh;
                 framebuffer.measureText(label, labelWidth, lh, TextStyle::Caption);
-                framebuffer.drawText(tileX + (TILE_W - labelWidth) / 2, iconY + ICON + 8, label,
-                            selectedIndex ? Colors::Text : Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(tileX + (TILE_W - labelWidth) / 2, iconY + ICON + 8, label, selectedIndex ? Colors::Text : Colors::TextDim, TextStyle::Caption);
 
                 titleRects.push_back({tileX, tileY, TILE_W, TILE_H, index});
             }
@@ -572,8 +566,7 @@ namespace UI
             // Scrollbar to the right of the grid, drawn only when the rows overflow -- same thumb
             // the backup list and the details editor use.
             constexpr int ROW_PITCH = TILE_H + CARD_GAP;
-            drawScrollbar(framebuffer, startX + gridW + 12, GRID_Y, VISIBLE_ROWS * ROW_PITCH, rows * ROW_PITCH,
-                          first * ROW_PITCH);
+            drawScrollbar(framebuffer, startX + gridW + 12, GRID_Y, VISIBLE_ROWS * ROW_PITCH, rows * ROW_PITCH, first * ROW_PITCH);
         }
 
         // ONE nav bar, naming whatever owns input. A second bar drawn over this, plus a third strip inside
@@ -585,12 +578,9 @@ namespace UI
         else if (fileBrowser.active)
             drawNavBar(framebuffer, "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  B: Up / Close");
         else if (users.size() > 1)
-            drawNavBar(framebuffer, SELF_TEST_AVAILABLE
-                                        ? "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  -: Self Test  |  +: Exit"
-                                        : "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
         else
-            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  Y: Open Save File  |  -: Self Test  |  +: Exit"
-                                                        : "A: Select  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  Y: Open Save File  |  +: Exit");
 
         // Drawn last so it sits above the grid.
         if (fileBrowser.active)
@@ -602,9 +592,7 @@ namespace UI
         // Start where a Game Boy save plausibly is. Emulators on the Switch keep saves beside
         // their ROMs, and PKSE's own backup tree is the other likely home; the browser falls
         // through to the first of these that exists.
-        fileBrowser.open("Open a Save File", "Save files",
-            {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"},
-            Save::saveFileExtensions(), Save::saveFileExactNames());
+        fileBrowser.open("Open a Save File", "Save files", {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
         logEventToFile("OPENSAVE action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
 
@@ -654,8 +642,7 @@ namespace UI
         {
             for (const auto &r : browserTaps)
             {
-                if (touch.x() >= r.hitX && touch.x() < r.hitX + r.hitWidth && touch.y() >= r.hitY &&
-                    touch.y() < r.hitY + r.hitHeight)
+                if (touch.x() >= r.hitX && touch.x() < r.hitX + r.hitWidth && touch.y() >= r.hitY && touch.y() < r.hitY + r.hitHeight)
                 {
                     fileBrowser.selectedIndex = r.buttonId; // draws selected this frame
                     fileBrowser.move(0);
@@ -686,13 +673,11 @@ namespace UI
         std::vector<uint8_t> fileBytes(bytes, bytes + length);
         delete[] bytes;
         std::string refusalText;
-        std::unique_ptr<Trainer::Trainer> openedTrainer =
-            Save::openExternalSave(std::move(fileBytes), picked, &selectedFileLabel, &refusalText);
+        std::unique_ptr<Trainer::Trainer> openedTrainer = Save::openExternalSave(std::move(fileBytes), picked, &selectedFileLabel, &refusalText);
         if (!openedTrainer)
         {
             fileBrowser.status = "\"" + pickedName + "\" " + refusalText + ".";
-            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) +
-                           " result=UNRECOGNISED reason=\"" + refusalText + "\"");
+            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) + " result=UNRECOGNISED reason=\"" + refusalText + "\"");
             return;
         }
 

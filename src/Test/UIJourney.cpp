@@ -205,9 +205,7 @@ namespace Test
         }
     }
 
-    Journey::Journey(Context &c, UI::UIScreen &s, const UI::TrainerViewScreen *t,
-                     const Trainer::Trainer *trainerForSnapshot, std::string journeyName)
-        : context(c), screen(s), tvs(t), trainer(trainerForSnapshot), name(std::move(journeyName))
+    Journey::Journey(Context &c, UI::UIScreen &s, const UI::TrainerViewScreen *t, const Trainer::Trainer *trainerForSnapshot, std::string journeyName) : context(c), screen(s), tvs(t), trainer(trainerForSnapshot), name(std::move(journeyName))
     {
         if (tvs && trainer)
         {
@@ -251,8 +249,7 @@ namespace Test
             return;
         }
         const UISnapshot after = UISnapshot::take(*tvs, *trainer);
-        const std::vector<const char *> changed = haveBefore ? before.diff(after)
-                                                             : std::vector<const char *>{};
+        const std::vector<const char *> changed = haveBefore ? before.diff(after) : std::vector<const char *>{};
 
         std::vector<const char *> illegal;
         for (const char *f : changed)
@@ -260,8 +257,7 @@ namespace Test
                 illegal.push_back(f);
 
         // The change log the whole design is for: one line per action, whatever the outcome.
-        const std::string line = "  [" + name + "] " + what + " -> changed: " + join(changed) +
-                                 (illegal.empty() ? "" : "   !! UNDECLARED: " + join(illegal));
+        const std::string line = "  [" + name + "] " + what + " -> changed: " + join(changed) + (illegal.empty() ? "" : "   !! UNDECLARED: " + join(illegal));
         if (context.rep)
             context.rep->addTrace(line);
         Utils::logTest(line);
@@ -273,9 +269,7 @@ namespace Test
         for (const char *f : illegal)
         {
             ++findingCount;
-            context.fail("a UI action changed something it should not have",
-                     where() + " action=\"" + what + "\" field=" + f +
-                         " allChanged=" + join(changed));
+            context.fail("a UI action changed something it should not have", where() + " action=\"" + what + "\" field=" + f + " allChanged=" + join(changed));
         }
         if (illegal.empty())
             context.rep ? context.rep->pass() : void();

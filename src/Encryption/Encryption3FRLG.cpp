@@ -34,10 +34,7 @@ namespace Encryption
 
         inline uint32_t rd32(const std::byte *bytes)
         {
-            return static_cast<uint32_t>(static_cast<uint8_t>(bytes[0])) |
-                   (static_cast<uint32_t>(static_cast<uint8_t>(bytes[1])) << 8) |
-                   (static_cast<uint32_t>(static_cast<uint8_t>(bytes[2])) << 16) |
-                   (static_cast<uint32_t>(static_cast<uint8_t>(bytes[3])) << 24);
+            return static_cast<uint32_t>(static_cast<uint8_t>(bytes[0])) | (static_cast<uint32_t>(static_cast<uint8_t>(bytes[1])) << 8) | (static_cast<uint32_t>(static_cast<uint8_t>(bytes[2])) << 16) | (static_cast<uint32_t>(static_cast<uint8_t>(bytes[3])) << 24);
         }
         inline void wr32(std::byte *bytes, uint32_t value)
         {
@@ -52,8 +49,7 @@ namespace Encryption
     {
         uint16_t checksum = 0;
         for (size_t offset = 0x20; offset + 1 < 0x50 && offset + 1 < bytes.size(); offset += 2)
-            checksum += static_cast<uint16_t>(static_cast<uint8_t>(bytes[offset])) |
-                   (static_cast<uint16_t>(static_cast<uint8_t>(bytes[offset + 1])) << 8);
+            checksum += static_cast<uint16_t>(static_cast<uint8_t>(bytes[offset])) | (static_cast<uint16_t>(static_cast<uint8_t>(bytes[offset + 1])) << 8);
         return checksum;
     }
 

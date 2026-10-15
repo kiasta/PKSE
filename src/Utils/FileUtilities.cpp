@@ -257,8 +257,7 @@ namespace Utils
         Result result = fsdevMountSaveData("save", titleId, userUid);
         if (R_FAILED(result))
         {
-            snprintf(buffer, sizeof(buffer), "fsdevMountSaveData failed for titleId 0x%016llX: 0x%x",
-                     static_cast<unsigned long long>(titleId), result);
+            snprintf(buffer, sizeof(buffer), "fsdevMountSaveData failed for titleId 0x%016llX: 0x%x", static_cast<unsigned long long>(titleId), result);
             logErrorToFile(buffer);
             return false;
         }
@@ -342,9 +341,7 @@ namespace Utils
      * So an absent optional file is skipped and not logged as a failure. A file that IS there and
      * will not copy still stops the restore, before the commit, leaving the game save untouched.
      */
-    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char *backupDir,
-                              const std::string &primaryFile,
-                              const std::vector<std::string> &optionalFiles)
+    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char *backupDir, const std::string &primaryFile, const std::vector<std::string> &optionalFiles)
     {
         char buffer[LOG_BUFFER_SIZE];
         logInfoToFile("Restoring backup to game save", backupDir);

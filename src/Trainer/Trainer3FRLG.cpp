@@ -165,8 +165,7 @@ namespace Trainer
             // always holds a level, a max HP and 0xFF as its mail id, so an all-zero tail is padding from
             // wherever the record was lengthened -- the bank's 100-byte record is one such place. Copying
             // it as found wrote a level 0, 0/0 HP Pokemon into the party.
-            const bool hasPartyTail =
-                byteCount == 100 && std::any_of(buffer + 80, buffer + 100, [](uint8_t value) { return value != 0; });
+            const bool hasPartyTail = byteCount == 100 && std::any_of(buffer + 80, buffer + 100, [](uint8_t value) { return value != 0; });
             if (!hasPartyTail)
             {
                 // Box-sourced: no tail in the source bytes, so derive one. 0x50 (status) stays 0
@@ -182,8 +181,7 @@ namespace Trainer
                 writeUInt16LittleEndian(buffer + 0x60, pk.statSPA());
                 writeUInt16LittleEndian(buffer + 0x62, pk.statSPD());
             }
-            std::byte *encryptedRecord = encryptArray3FRLG(
-                std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 100));
+            std::byte *encryptedRecord = encryptArray3FRLG(std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 100));
             std::memcpy(out, encryptedRecord, 100);
             delete[] encryptedRecord;
         }
@@ -195,15 +193,13 @@ namespace Trainer
             std::memset(buffer, 0, sizeof(buffer));
             const size_t byteCount = std::min<size_t>(pk.getDataSize(), 80);
             std::memcpy(buffer, pk.getData().data(), byteCount);
-            std::byte *encryptedRecord = encryptArray3FRLG(
-                std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 80));
+            std::byte *encryptedRecord = encryptArray3FRLG(std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 80));
             std::memcpy(out, encryptedRecord, 80);
             delete[] encryptedRecord;
         }
     }
 
-    Trainer3FRLG::Trainer3FRLG(std::vector<uint8_t> data, std::string fileName)
-        : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
+    Trainer3FRLG::Trainer3FRLG(std::vector<uint8_t> data, std::string fileName) : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
     {
         // Always leave the containers in a consistent shape, even for a bad save.
         boxes.clear();
@@ -266,8 +262,7 @@ namespace Trainer
         valid = (found == static_cast<int>(FRLG_SECTORS));
 
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "FRLG active slot @0x%05zX (counter A=%u%s B=%u%s)", slotBaseOffset,
-                 slotACounter, slotAComplete ? "" : " incomplete", slotBCounter, slotBComplete ? "" : " incomplete");
+        snprintf(buffer, sizeof(buffer), "FRLG active slot @0x%05zX (counter A=%u%s B=%u%s)", slotBaseOffset, slotACounter, slotAComplete ? "" : " incomplete", slotBCounter, slotBComplete ? "" : " incomplete");
         logInfoToFile(buffer);
     }
 
@@ -306,8 +301,7 @@ namespace Trainer
         if (size > sizeof(scratch))
             size = sizeof(scratch);
         readBlock(blockBaseId, logical, scratch, size);
-        auto pokemon = std::make_unique<Pokemon3FRLG>(
-            std::span<const std::byte>(reinterpret_cast<const std::byte *>(scratch), size));
+        auto pokemon = std::make_unique<Pokemon3FRLG>(std::span<const std::byte>(reinterpret_cast<const std::byte *>(scratch), size));
         // Which charset this save is written in. An EGG needs it: its own language byte always says
         // Japanese, so nothing in the record can say how to read the OT name beside it.
         pokemon->setSaveLanguage(languageId);
@@ -331,8 +325,7 @@ namespace Trainer
     void Trainer3FRLG::detectLanguage(size_t smallBlockOffset)
     {
         const bool japanese = readUInt16LittleEndian(&saveData[smallBlockOffset + 0x06]) == 0;
-        languageId = static_cast<uint8_t>(japanese ? Enums::LanguageID::Japanese
-                                                     : Enums::LanguageID::English);
+        languageId = static_cast<uint8_t>(japanese ? Enums::LanguageID::Japanese : Enums::LanguageID::English);
     }
 
     void Trainer3FRLG::parseTrainer()
@@ -409,14 +402,12 @@ namespace Trainer
             uint8_t nameBuf[FRLG_BOX_NAME_BYTES];
             // Seed with what's already in the save: g3Encode only writes the text and terminator,
             // deliberately leaving the bytes past it untouched (see g3Encode).
-            readBlock(STORAGE_ID, FRLG_BOX_NAME_OFFSET + boxNameIndex * FRLG_BOX_NAME_BYTES,
-                      nameBuf, FRLG_BOX_NAME_BYTES);
+            readBlock(STORAGE_ID, FRLG_BOX_NAME_OFFSET + boxNameIndex * FRLG_BOX_NAME_BYTES, nameBuf, FRLG_BOX_NAME_BYTES);
             // A name the Gen 3 table can't express is skipped rather than written mangled. The UI
             // validates before getting here, so this is a backstop, not the primary check.
             if (!g3Encode(boxNames[boxNameIndex], nameBuf, FRLG_BOX_NAME_BYTES, FRLG_BOX_NAME_CHARS, languageId))
                 continue;
-            writeBlock(STORAGE_ID, FRLG_BOX_NAME_OFFSET + boxNameIndex * FRLG_BOX_NAME_BYTES,
-                       nameBuf, FRLG_BOX_NAME_BYTES);
+            writeBlock(STORAGE_ID, FRLG_BOX_NAME_OFFSET + boxNameIndex * FRLG_BOX_NAME_BYTES, nameBuf, FRLG_BOX_NAME_BYTES);
         }
     }
 

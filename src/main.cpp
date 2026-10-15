@@ -103,10 +103,7 @@ int main()
     UI::Sprite *testSprite = UI::SpriteManager::getSprite(25, false); // Pikachu
     if (testSprite && testSprite->data)
     {
-        logInfoToFile(("SUCCESS: Test sprite loaded! (" +
-                       std::to_string(testSprite->width) + "x" +
-                       std::to_string(testSprite->height) + ")")
-                          .c_str());
+        logInfoToFile(("SUCCESS: Test sprite loaded! (" + std::to_string(testSprite->width) + "x" + std::to_string(testSprite->height) + ")").c_str());
     }
     else
     {

@@ -44,12 +44,10 @@ namespace Pokemon
             return false;
         uint16_t ancestorSpecies[EVO_MAX_CHAIN];
         uint8_t ancestorForms[EVO_MAX_CHAIN];
-        const int ancestorCount =
-            getPreEvolutionChain(group, species, form, ancestorSpecies, ancestorForms, EVO_MAX_CHAIN);
+        const int ancestorCount = getPreEvolutionChain(group, species, form, ancestorSpecies, ancestorForms, EVO_MAX_CHAIN);
         for (int ancestorIndex = 0; ancestorIndex < ancestorCount; ++ancestorIndex)
         {
-            const AbilitySlots ancestorSlots =
-                getAbilitySlots(ancestorSpecies[ancestorIndex], ancestorForms[ancestorIndex], group);
+            const AbilitySlots ancestorSlots = getAbilitySlots(ancestorSpecies[ancestorIndex], ancestorForms[ancestorIndex], group);
             if (slotIndex < ancestorSlots.count && ancestorSlots.slot[slotIndex] == abilityId)
                 return true;
         }

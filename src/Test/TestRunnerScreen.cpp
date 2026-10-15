@@ -216,34 +216,27 @@ namespace UI
         const int stripHeight = 76, stripY = screenHeight - stripHeight;
 
         framebuffer.drawFilledRect(0, stripY, screenWidth, stripHeight, Color(0, 0, 0, 205));
-        framebuffer.drawFilledRect(0, stripY, screenWidth, 2,
-                          caption.changedSomethingUndeclared ? Colors::ShinyStar : Colors::Accent);
+        framebuffer.drawFilledRect(0, stripY, screenWidth, 2, caption.changedSomethingUndeclared ? Colors::ShinyStar : Colors::Accent);
 
         char headingText[220];
-        snprintf(headingText, sizeof(headingText), "UI WALKTHROUGH   %s   %s   step %d/%d",
-                 caption.target.c_str(), caption.journey.c_str(), caption.step, caption.total);
+        snprintf(headingText, sizeof(headingText), "UI WALKTHROUGH   %s   %s   step %d/%d", caption.target.c_str(), caption.journey.c_str(), caption.step, caption.total);
         framebuffer.drawText(MARGIN, stripY + 10, headingText, Colors::TextDim, TextStyle::Caption);
         framebuffer.drawText(MARGIN, stripY + 30, caption.action, Colors::Text, TextStyle::Body);
 
-        const std::string changedText =
-            "changed: " + (caption.changed.empty() ? std::string("nothing") : caption.changed);
-        framebuffer.drawText(MARGIN, stripY + 54, changedText,
-                    caption.changedSomethingUndeclared ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
+        const std::string changedText = "changed: " + (caption.changed.empty() ? std::string("nothing") : caption.changed);
+        framebuffer.drawText(MARGIN, stripY + 54, changedText, caption.changedSomethingUndeclared ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
 
         char tallyText[120];
-        snprintf(tallyText, sizeof(tallyText), "%d checks   %d failed   %ds", rep.checks(),
-                 rep.failures(), runner.elapsedSeconds());
+        snprintf(tallyText, sizeof(tallyText), "%d checks   %d failed   %ds", rep.checks(), rep.failures(), runner.elapsedSeconds());
         int tallyWidth = 0, tallyHeight = 0;
         framebuffer.measureText(tallyText, tallyWidth, tallyHeight, TextStyle::Caption);
-        framebuffer.drawText(screenWidth - MARGIN - tallyWidth, stripY + 54, tallyText,
-                    rep.failures() > 0 ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
+        framebuffer.drawText(screenWidth - MARGIN - tallyWidth, stripY + 54, tallyText, rep.failures() > 0 ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
 
         // Progress along the walkthrough itself.
         const int progressBarWidth = screenWidth - MARGIN * 2;
         framebuffer.drawPill(MARGIN, stripY + stripHeight - 8, progressBarWidth, 4, Colors::Border);
         if (caption.total > 0)
-            framebuffer.drawPill(MARGIN, stripY + stripHeight - 8,
-                        (progressBarWidth * caption.step) / caption.total, 4, Colors::Accent);
+            framebuffer.drawPill(MARGIN, stripY + stripHeight - 8, (progressBarWidth * caption.step) / caption.total, 4, Colors::Accent);
     }
 
     void TestRunnerScreen::draw(PKSEFramebuffer &framebuffer)
@@ -277,8 +270,7 @@ namespace UI
         drawTitleBar(framebuffer, "Self Test");
         if (view == View::Plan)
         {
-            framebuffer.drawText(MARGIN, 86, "One save per title. Every title, not one per generation.",
-                        Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(MARGIN, 86, "One save per title. Every title, not one per generation.", Colors::TextDim, TextStyle::Caption);
             const int rowCount = (int)rows.size();
             const int visibleRows = visibleRowCapacity(framebuffer.getHeight());
             const int firstRow = firstVisibleRow(rowIndex, rowCount, visibleRows);
@@ -295,19 +287,14 @@ namespace UI
                 const bool isSelected = (index == rowIndex);
 
                 framebuffer.drawSoftShadow(MARGIN, rowY, screenWidth - MARGIN * 2, rowHeight, 14);
-                framebuffer.drawFilledRoundedRect(MARGIN, rowY, screenWidth - MARGIN * 2, rowHeight, 14,
-                                         isSelected ? Colors::PanelAlt : Colors::Panel);
-                framebuffer.drawRoundedRect(MARGIN, rowY, screenWidth - MARGIN * 2, rowHeight, 14,
-                                   isSelected ? Colors::Primary : Colors::Border, isSelected ? 3 : 1);
+                framebuffer.drawFilledRoundedRect(MARGIN, rowY, screenWidth - MARGIN * 2, rowHeight, 14, isSelected ? Colors::PanelAlt : Colors::Panel);
+                framebuffer.drawRoundedRect(MARGIN, rowY, screenWidth - MARGIN * 2, rowHeight, 14, isSelected ? Colors::Primary : Colors::Border, isSelected ? 3 : 1);
 
                 const bool hasSave = !row.candidateTargets.empty();
                 const bool willRun = hasSave && row.included;
 
-                framebuffer.drawPill(MARGIN + 18, rowCenterY - 11, 22, 22,
-                            willRun ? Colors::Accent : Colors::Border);
-                framebuffer.drawText(MARGIN + 56, framebuffer.textYCenteredOn(rowCenterY, TextStyle::Heading),
-                            Enums::getGameVersionName(row.title),
-                            willRun ? Colors::Text : Colors::TextDim, TextStyle::Heading);
+                framebuffer.drawPill(MARGIN + 18, rowCenterY - 11, 22, 22, willRun ? Colors::Accent : Colors::Border);
+                framebuffer.drawText(MARGIN + 56, framebuffer.textYCenteredOn(rowCenterY, TextStyle::Heading), Enums::getGameVersionName(row.title), willRun ? Colors::Text : Colors::TextDim, TextStyle::Heading);
 
                 std::string status;
                 Color statusColor = Colors::TextDim;
@@ -320,8 +307,7 @@ namespace UI
                     // at all, so the note was either redundant or -- on FireRed, whose save comes
                     // from a title id -- flatly wrong.
                     if (row.candidateTargets.size() > 1)
-                        status += "   (" + std::to_string(row.chosenCandidate + 1) + " of " +
-                                  std::to_string(row.candidateTargets.size()) + " - Left/Right)";
+                        status += "   (" + std::to_string(row.chosenCandidate + 1) + " of " + std::to_string(row.candidateTargets.size()) + " - Left/Right)";
                     if (row.included)
                         statusColor = Colors::Text;
                     else
@@ -340,14 +326,10 @@ namespace UI
                     }
                     else
                     {
-                        status = Test::comesFromLooseFile(row.title)
-                                     ? "no save file found - put one in sdmc:/PKSE/tests/saves/" +
-                                           Enums::getGameVersionName(row.title) + "/"
-                                     : "no save for this title on this console";
+                        status = Test::comesFromLooseFile(row.title) ? "no save file found - put one in sdmc:/PKSE/tests/saves/" + Enums::getGameVersionName(row.title) + "/" : "no save for this title on this console";
                     }
                 }
-                framebuffer.drawText(MARGIN + 320, framebuffer.textYCenteredOn(rowCenterY, TextStyle::Body), status,
-                                     statusColor, TextStyle::Body);
+                framebuffer.drawText(MARGIN + 320, framebuffer.textYCenteredOn(rowCenterY, TextStyle::Body), status, statusColor, TextStyle::Body);
             }
 
             // BESIDE THE ROWS, NOT ON THEM. The rows run edge to edge of the margin, so a track inside
@@ -355,18 +337,12 @@ namespace UI
             // save picker puts its bar the same 12px right of its tiles. The track spans exactly the
             // rows' extent -- without the gap after the last one -- so the thumb bottoms out level
             // with the last row rather than below it.
-            drawScrollbar(framebuffer, screenWidth - MARGIN + 12, LIST_Y,
-                          visibleRows * ROW_PITCH - ROW_GAP,
-                          rowCount * ROW_PITCH - ROW_GAP,
-                          firstRow * ROW_PITCH);
+            drawScrollbar(framebuffer, screenWidth - MARGIN + 12, LIST_Y, visibleRows * ROW_PITCH - ROW_GAP, rowCount * ROW_PITCH - ROW_GAP, firstRow * ROW_PITCH);
 
             const int visibleCount = std::min(rowCount, visibleRows);
             const int footY = LIST_Y + visibleCount * ROW_PITCH + 14;
-            framebuffer.drawText(MARGIN, footY, "Nothing is written: saves are copied to sdmc:/PKSE/tests/work first,",
-                                 Colors::TextDim, TextStyle::Caption);
-            framebuffer.drawText(MARGIN, footY + 22,
-                                 "the live game save is never injected into, and the bank tests use a scratch file.",
-                                 Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(MARGIN, footY, "Nothing is written: saves are copied to sdmc:/PKSE/tests/work first,", Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(MARGIN, footY + 22, "the live game save is never injected into, and the bank tests use a scratch file.", Colors::TextDim, TextStyle::Caption);
 
             drawNavBar(framebuffer, "A: Run  |  Left/Right: Change Save  |  X: Skip Title  |  B: Back  |  +: Exit App");
             return;
@@ -389,11 +365,8 @@ namespace UI
                 framebuffer.drawPill(barX, barY, filled, barH, Colors::Accent);
 
             char counts[160];
-            snprintf(counts, sizeof(counts), "target %d/%d      %d checks      %d failed      %d warnings      %ds",
-                     runner.targetIndex() + 1, runner.targetCount() > 0 ? runner.targetCount() : 1, rep.checks(),
-                     rep.failures(), rep.warnings(), runner.elapsedSeconds());
-            framebuffer.drawText(MARGIN + 20, 214, counts, rep.failures() > 0 ? Colors::ShinyStar : Colors::TextDim,
-                                 TextStyle::Caption);
+            snprintf(counts, sizeof(counts), "target %d/%d      %d checks      %d failed      %d warnings      %ds", runner.targetIndex() + 1, runner.targetCount() > 0 ? runner.targetCount() : 1, rep.checks(), rep.failures(), rep.warnings(), runner.elapsedSeconds());
+            framebuffer.drawText(MARGIN + 20, 214, counts, rep.failures() > 0 ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
 
             // Live ticker of the most recent problems.
             framebuffer.drawText(MARGIN, 250, "Recent findings", Colors::TextDim, TextStyle::Caption);
@@ -405,8 +378,7 @@ namespace UI
                 // Findings carry their full detail string, which is written to be read in the report
                 // rather than on a 1280px line. Clipped here so a long one cannot run off the edge
                 // and take the rest of the ticker's alignment with it.
-                framebuffer.drawText(MARGIN, rowY, line.size() > 118 ? line.substr(0, 115) + "..." : line, color,
-                                     TextStyle::Caption);
+                framebuffer.drawText(MARGIN, rowY, line.size() > 118 ? line.substr(0, 115) + "..." : line, color, TextStyle::Caption);
                 rowY += 24;
             }
             if (recent.empty())
@@ -420,11 +392,9 @@ namespace UI
         const bool clean = rep.failures() == 0;
 
         framebuffer.drawCard(MARGIN, 92, screenWidth - MARGIN * 2, 92);
-        framebuffer.drawText(MARGIN + 20, 104, clean ? "No failures" : (std::to_string(rep.failures()) + " failures"),
-                             clean ? Colors::Accent : Colors::ShinyStar, TextStyle::Title);
+        framebuffer.drawText(MARGIN + 20, 104, clean ? "No failures" : (std::to_string(rep.failures()) + " failures"), clean ? Colors::Accent : Colors::ShinyStar, TextStyle::Title);
         char subtitleBuffer[192];
-        snprintf(subtitleBuffer, sizeof(subtitleBuffer), "%d checks   %d warnings   %d skipped   %d notes   %ds",
-                 rep.checks(), rep.warnings(), rep.skips(), rep.notes(), runner.elapsedSeconds());
+        snprintf(subtitleBuffer, sizeof(subtitleBuffer), "%d checks   %d warnings   %d skipped   %d notes   %ds", rep.checks(), rep.warnings(), rep.skips(), rep.notes(), runner.elapsedSeconds());
         framebuffer.drawText(MARGIN + 20, 146, subtitleBuffer, Colors::TextDim, TextStyle::Caption);
 
         framebuffer.drawText(MARGIN, 196, "Report: " + runner.reportPath(), Colors::TextDim, TextStyle::Caption);
@@ -457,8 +427,7 @@ namespace UI
                     full = true;
                     break;
                 }
-                std::string head = std::string(Test::severityName(g.severity)) + "  " + g.suite + ": " + g.what +
-                                   (g.count > 1 ? ("   x" + std::to_string(g.count)) : "");
+                std::string head = std::string(Test::severityName(g.severity)) + "  " + g.suite + ": " + g.what + (g.count > 1 ? ("   x" + std::to_string(g.count)) : "");
                 if (head.size() > 128)
                     head = head.substr(0, 125) + "...";
                 framebuffer.drawText(MARGIN, rowY, head, severityColor(g.severity), TextStyle::Caption);
@@ -466,16 +435,14 @@ namespace UI
                 if (!g.samples.empty() && rowY <= bottom - 20)
                 {
                     const std::string &s0 = g.samples[0];
-                    framebuffer.drawText(MARGIN + 24, rowY, s0.size() > 124 ? s0.substr(0, 121) + "..." : s0,
-                                         Colors::TextDim, TextStyle::Caption);
+                    framebuffer.drawText(MARGIN + 24, rowY, s0.size() > 124 ? s0.substr(0, 121) + "..." : s0, Colors::TextDim, TextStyle::Caption);
                     rowY += 22;
                 }
                 ++shown;
             }
         }
         if (shown == 0 && resultScroll == 0)
-            framebuffer.drawText(MARGIN, rowY, "Nothing to report: every check passed.", Colors::TextDim,
-                                 TextStyle::Body);
+            framebuffer.drawText(MARGIN, rowY, "Nothing to report: every check passed.", Colors::TextDim, TextStyle::Body);
 
         drawNavBar(framebuffer, "Up/Down: Scroll  |  L/R: Page  |  A: Done  |  +: Exit App");
     }

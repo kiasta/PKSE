@@ -82,38 +82,31 @@ void testTables() {
         const uint8_t internal = Pokemon::nationalToG1(sp);
         check(internal != 0, "species has an internal index", "national " + std::to_string(sp));
         if (internal == 0) continue;
-        check(Pokemon::g1ToNational(internal) == sp, "species index round trip",
-              "national " + std::to_string(sp) + " -> internal " + std::to_string(internal)
-              + " -> " + std::to_string(Pokemon::g1ToNational(internal)));
+        check(Pokemon::g1ToNational(internal) == sp, "species index round trip", "national " + std::to_string(sp) + " -> internal " + std::to_string(internal) + " -> " + std::to_string(Pokemon::g1ToNational(internal)));
         ++roundTripped;
 
         const Pokemon::PersonalRecord& bs = Pokemon::getPersonalInfo1RBY(sp, 0);
         check(bs.hp != 0, "has a base-stat row", "national " + std::to_string(sp));
         if (bs.hp == 0) continue;
-        check(bs.hp > 0 && bs.atk > 0 && bs.spa > 0, "base stats non-zero",
-              "national " + std::to_string(sp));
+        check(bs.hp > 0 && bs.atk > 0 && bs.spa > 0, "base stats non-zero", "national " + std::to_string(sp));
         // Types must be real PKSE ids, and must survive the inverse mapping. A type that does not
         // round trip means the ROM<->PKSE tables disagree, which draws the wrong type icon.
         check(bs.type1 != 255, "types mapped", "national " + std::to_string(sp));
-        check(Pokemon::g1TypeToPKSE(Pokemon::pkseTypeToG1(bs.type1)) == bs.type1,
-              "type1 round trip", "national " + std::to_string(sp));
+        check(Pokemon::g1TypeToPKSE(Pokemon::pkseTypeToG1(bs.type1)) == bs.type1, "type1 round trip", "national " + std::to_string(sp));
         // A MONO-TYPED SPECIES REPORTS TYPE_NONE IN SLOT 2, not a repeat of slot 1. That is the
         // table's convention and it is what stops the badge row drawing "Normal Normal"; the ROM
         // itself stores the id twice, and Pokemon1RBY::setSpecies re-expands the sentinel when it
         // writes a record. TYPE_NONE is not a type, so there is nothing to round trip.
         if (bs.type2 != Pokemon::PERSONAL_TYPE_NONE)
         {
-            check(Pokemon::g1TypeToPKSE(Pokemon::pkseTypeToG1(bs.type2)) == bs.type2,
-                  "type2 round trip", "national " + std::to_string(sp));
+            check(Pokemon::g1TypeToPKSE(Pokemon::pkseTypeToG1(bs.type2)) == bs.type2, "type2 round trip", "national " + std::to_string(sp));
         }
         // Gender ratio must be one of the canonical values -- an arbitrary byte here would mean
         // the personal_rb byte 0 is NOT the substituted ratio we believe it is.
         const uint8_t g = bs.genderRatio;
-        check(g == 0 || g == 31 || g == 63 || g == 127 || g == 191 || g == 225 || g == 254 || g == 255,
-              "gender ratio is canonical", "national " + std::to_string(sp) + " ratio " + std::to_string(g));
+        check(g == 0 || g == 31 || g == 63 || g == 127 || g == 191 || g == 225 || g == 254 || g == 255, "gender ratio is canonical", "national " + std::to_string(sp) + " ratio " + std::to_string(g));
     }
-    std::printf("      %d/%d species round-trip through the internal index\n",
-                roundTripped, Pokemon::MAX_SPECIES_GEN1);
+    std::printf("      %d/%d species round-trip through the internal index\n", roundTripped, Pokemon::MAX_SPECIES_GEN1);
 
     // Gen 1's unused "Bird" type must NOT map to anything.
     check(Pokemon::g1TypeToPKSE(6) == 255, "ROM type 6 (unused Bird) maps to TYPE_NONE");
@@ -124,8 +117,7 @@ void testTables() {
         check(pp > 0 && pp <= 40, "move PP in range", "move " + std::to_string(m) + " pp " + std::to_string(pp));
         if (pp) ++ppKnown;
         // 3 PP Ups must never exceed the 6-bit PP field the record actually has.
-        check(Pokemon::getMovePPGen1WithUps(m, 3) <= 63, "PP with 3 Ups fits 6 bits",
-              "move " + std::to_string(m));
+        check(Pokemon::getMovePPGen1WithUps(m, 3) <= 63, "PP with 3 Ups fits 6 bits", "move " + std::to_string(m));
     }
     std::printf("      %d/%d moves have PP\n", ppKnown, Pokemon::MAX_MOVE_GEN1);
 }
@@ -146,11 +138,9 @@ void testLearnsets() {
         totalMoves += n;
         // Nothing outside Gen 1's move range may be reachable.
         for (uint16_t m = Pokemon::MAX_MOVE_GEN1 + 1; m < 300; ++m)
-            check(!Pokemon::isLearnable(sp, 0, G1, m), "no post-Gen-1 move is learnable",
-                  "national " + std::to_string(sp) + " move " + std::to_string(m));
+            check(!Pokemon::isLearnable(sp, 0, G1, m), "no post-Gen-1 move is learnable", "national " + std::to_string(sp) + " move " + std::to_string(m));
     }
-    std::printf("      %d/%d species have a pool, %d learnable (species, move) pairs\n",
-                withPool, Pokemon::MAX_SPECIES_GEN1, totalMoves);
+    std::printf("      %d/%d species have a pool, %d learnable (species, move) pairs\n", withPool, Pokemon::MAX_SPECIES_GEN1, totalMoves);
 
     // The initial moves in the personal table are the ones that exist ONLY there -- lvlmove
     // starts above level 1 for most species -- so they are the specific regression to pin.
@@ -176,8 +166,7 @@ void testLearnsets() {
     {
         using namespace Pokemon;
         TypePair clef = getPokemonTypes(35, 0, G1);      // Clefairy: Normal in Gen 1, Fairy from Gen 6
-        check(clef.type1 == TYPE_NORMAL, "Clefairy is Normal in Gen 1",
-              "got " + std::to_string(clef.type1));
+        check(clef.type1 == TYPE_NORMAL, "Clefairy is Normal in Gen 1", "got " + std::to_string(clef.type1));
         TypePair magn = getPokemonTypes(81, 0, G1);      // Magnemite: Electric, not Electric/Steel
         check(magn.type1 == TYPE_ELECTRIC && !hasSecondType(magn), "Magnemite is pure Electric in Gen 1");
         TypePair ratt = getPokemonTypes(19, 0, G1);      // stored duplicated -> must collapse
@@ -196,8 +185,7 @@ void testCharset() {
             if (c == 0) continue;
             ++glyphs;
             const uint8_t back = Utils::charToGen1(c, jp != 0);
-            check(back == b, jp ? "JP byte round trip" : "EN byte round trip",
-                  "byte 0x" + std::to_string(b) + " -> back 0x" + std::to_string(back));
+            check(back == b, jp ? "JP byte round trip" : "EN byte round trip", "byte 0x" + std::to_string(b) + " -> back 0x" + std::to_string(back));
         }
         std::printf("      %s: %d glyphs, all round-trip\n", jp ? "JP" : "EN", glyphs);
     }
@@ -208,8 +196,7 @@ void testCharset() {
 }
 
 uint32_t rd32le(const uint8_t* p) {
-    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8)
-         | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
 }
 
 void testBank(const char* path) {
@@ -262,21 +249,14 @@ void testBank(const char* path) {
         const uint16_t sHP = pk.statHPMax(), sAT = pk.statATK(), sDF = pk.statDEF();
         const uint16_t sSP = pk.statSPE(),   sSC = pk.statSPA();
         pk.recalculateStats();
-        const bool same = pk.statHPMax() == sHP && pk.statATK() == sAT && pk.statDEF() == sDF
-                       && pk.statSPE() == sSP && pk.statSPA() == sSC;
-        check(same, "recalculateStats reproduces the stored stats",
-              same ? "" : tag + " stored " + std::to_string(sHP) + "/" + std::to_string(sAT) + "/"
-                     + std::to_string(sDF) + "/" + std::to_string(sSP) + "/" + std::to_string(sSC)
-                     + " got " + std::to_string(pk.statHPMax()) + "/" + std::to_string(pk.statATK())
-                     + "/" + std::to_string(pk.statDEF()) + "/" + std::to_string(pk.statSPE())
-                     + "/" + std::to_string(pk.statSPA()));
+        const bool same = pk.statHPMax() == sHP && pk.statATK() == sAT && pk.statDEF() == sDF && pk.statSPE() == sSP && pk.statSPA() == sSC;
+        check(same, "recalculateStats reproduces the stored stats", same ? "" : tag + " stored " + std::to_string(sHP) + "/" + std::to_string(sAT) + "/" + std::to_string(sDF) + "/" + std::to_string(sSP) + "/" + std::to_string(sSC) + " got " + std::to_string(pk.statHPMax()) + "/" + std::to_string(pk.statATK()) + "/" + std::to_string(pk.statDEF()) + "/" + std::to_string(pk.statSPE()) + "/" + std::to_string(pk.statSPA()));
         if (same) ++statsOk;
 
         auto c = pk.clone();
         check(c != nullptr, "clone", tag);
         if (c) {
-            const bool identical = c->getData().size() == listLen
-                && std::memcmp(c->getData().data(), payload, listLen) == 0;
+            const bool identical = c->getData().size() == listLen && std::memcmp(c->getData().data(), payload, listLen) == 0;
             check(identical, "clone is byte-identical to the source", tag);
             if (identical) ++roundTripOk;
         }
@@ -288,12 +268,10 @@ void testBank(const char* path) {
             Pokemon::Pokemon1RBY probe(raw);
             probe.setNickname(nick);
             probe.setOTName(ot);
-            const bool nameBytesMatch =
-                std::memcmp(probe.getData().data() + probe.ofsNick(), payload + probe.ofsNick(), probe.nameLen()) == 0;
+            const bool nameBytesMatch = std::memcmp(probe.getData().data() + probe.ofsNick(), payload + probe.ofsNick(), probe.nameLen()) == 0;
             // The OT field can hold the in-game-trade marker, which is not a name and does not
             // re-encode; exclude only that case, and count it separately below.
-            const bool otBytesMatch = pk.isInGameTradeOT() ||
-                std::memcmp(probe.getData().data() + probe.ofsOT(), payload + probe.ofsOT(), probe.nameLen()) == 0;
+            const bool otBytesMatch = pk.isInGameTradeOT() || std::memcmp(probe.getData().data() + probe.ofsOT(), payload + probe.ofsOT(), probe.nameLen()) == 0;
             check(nameBytesMatch, "nickname re-encodes to the original bytes", tag + " '" + u16ToUtf8(nick) + "'");
             check(otBytesMatch, "OT name re-encodes to the original bytes", tag + " '" + u16ToUtf8(ot) + "'");
             if (nameBytesMatch && otBytesMatch) ++nameOk;
@@ -306,14 +284,10 @@ void testBank(const char* path) {
         for (int m = 0; m < 4; ++m) {
             const uint16_t mv = pk.move(m);
             if (mv == 0) continue;
-            check(Pokemon::isLearnable(pk.speciesID(), 0, Enums::GameVersion::RBY, mv),
-                  "a real Pokemon's move is in its learn pool",
-                  tag + " move " + std::to_string(mv));
+            check(Pokemon::isLearnable(pk.speciesID(), 0, Enums::GameVersion::RBY, mv), "a real Pokemon's move is in its learn pool", tag + " move " + std::to_string(mv));
             // PP must be within what the move can hold with its recorded PP Ups.
             const uint8_t maxPP = Pokemon::getMovePPGen1WithUps(mv, pk.movePPUps(m));
-            check(pk.movePP(m) <= maxPP, "move PP within its Gen 1 maximum",
-                  tag + " move " + std::to_string(mv) + " pp " + std::to_string(pk.movePP(m))
-                  + " max " + std::to_string(maxPP));
+            check(pk.movePP(m) <= maxPP, "move PP within its Gen 1 maximum", tag + " move " + std::to_string(mv) + " pp " + std::to_string(pk.movePP(m)) + " max " + std::to_string(maxPP));
         }
 
         // Every one of these Pokemon was caught and trained on real hardware, so any "Invalid"
@@ -355,18 +329,10 @@ void testBank(const char* path) {
         if (pk.isNicknamed()) ++nicknamed;
 
         const uint8_t lvExp = Pokemon::getLevelFromExp(pk.exp(), pk.growthRate());
-        check(pk.level() == lvExp, "stored level agrees with EXP",
-              tag + " stored " + std::to_string(pk.level()) + " vs EXP-derived " + std::to_string(lvExp));
+        check(pk.level() == lvExp, "stored level agrees with EXP", tag + " stored " + std::to_string(pk.level()) + " vs EXP-derived " + std::to_string(lvExp));
 
         if (seen <= 3) {
-            firstFew += "        " + std::string(pk.species()) + " '" + u16ToUtf8(nick) + "'"
-                     + " OT '" + u16ToUtf8(ot) + "'"
-                     + " Lv" + std::to_string(pk.level())
-                     + " DV " + std::to_string(pk.ivHP()) + "/" + std::to_string(pk.ivATK()) + "/"
-                     + std::to_string(pk.ivDEF()) + "/" + std::to_string(pk.ivSPE()) + "/"
-                     + std::to_string(pk.ivSPA())
-                     + " stats " + std::to_string(sHP) + "/" + std::to_string(sAT) + "/"
-                     + std::to_string(sDF) + "/" + std::to_string(sSP) + "/" + std::to_string(sSC) + "\n";
+            firstFew += "        " + std::string(pk.species()) + " '" + u16ToUtf8(nick) + "'" + " OT '" + u16ToUtf8(ot) + "'" + " Lv" + std::to_string(pk.level()) + " DV " + std::to_string(pk.ivHP()) + "/" + std::to_string(pk.ivATK()) + "/" + std::to_string(pk.ivDEF()) + "/" + std::to_string(pk.ivSPE()) + "/" + std::to_string(pk.ivSPA()) + " stats " + std::to_string(sHP) + "/" + std::to_string(sAT) + "/" + std::to_string(sDF) + "/" + std::to_string(sSP) + "/" + std::to_string(sSC) + "\n";
         }
     }
 
@@ -375,9 +341,7 @@ void testBank(const char* path) {
     std::printf("      byte-exact round trip  : %d/%d\n", roundTripOk, seen);
     std::printf("      names re-encode exactly: %d/%d\n", nameOk, seen);
     std::printf("      shiny DV pattern       : %d   nicknamed: %d\n", shiny, nicknamed);
-    std::printf("      legality: %d/%d with no Invalid finding (%d warnings total, "
-                "%d glitch Mew refused as PKHeX refuses it)\n",
-                legalityClean, seen, legalityWarnings, glitchMewRefusals);
+    std::printf("      legality: %d/%d with no Invalid finding (%d warnings total, %d glitch Mew refused as PKHeX refuses it)\n", legalityClean, seen, legalityWarnings, glitchMewRefusals);
     if (!firstFew.empty()) std::printf("%s", firstFew.c_str());
 }
 
@@ -394,8 +358,7 @@ void testSetters() {
     check(pk.level() == 50, "setLevel survives a read-back");
     check(pk.exp() == Pokemon::getExpForLevel(50, pk.growthRate()), "setLevel writes matching EXP");
     // Charizard is Fire/Flying. The STORED type bytes must be ROM ids, not PKSE ids.
-    check(pk.storedType1() == 9 && pk.storedType2() == 2, "stored types map back to Fire/Flying",
-          "got " + std::to_string(pk.storedType1()) + "/" + std::to_string(pk.storedType2()));
+    check(pk.storedType1() == 9 && pk.storedType2() == 2, "stored types map back to Fire/Flying", "got " + std::to_string(pk.storedType1()) + "/" + std::to_string(pk.storedType2()));
 
     // Special aliasing: writing SpA must be visible through SpD, and vice versa.
     pk.setIV(4, 12);
@@ -441,8 +404,7 @@ void testSetters() {
     pk.setNickname(u"BLAZE");
     check(pk.isNicknamed(), "a different name is a nickname");
     pk.setNickname(u"ABCDEFGHIJKLMNOP");
-    check(pk.nickname().size() == 10, "an over-long nickname is capped at 10 characters",
-          "got " + std::to_string(pk.nickname().size()));
+    check(pk.nickname().size() == 10, "an over-long nickname is capped at 10 characters", "got " + std::to_string(pk.nickname().size()));
     check(!pk.canStoreNickname(u"ABCDEFGHIJK"), "an 11-character nickname is rejected");
     check(pk.canStoreNickname(u"ABCDEFGHIJ"), "a 10-character nickname is accepted");
 
@@ -492,17 +454,11 @@ void testSave(const char* path) {
         const size_t ofs = jp ? 0x3594u : 0x3523u;
         uint8_t sum = 0;
         for (size_t i = 0x2598; i < ofs; ++i) sum = static_cast<uint8_t>(sum + d[i]);
-        check(static_cast<uint8_t>(~sum) == d[ofs], "the save's own checksum validates",
-              std::string("stored 0x") + std::to_string(d[ofs]) + " computed 0x" +
-                  std::to_string(static_cast<uint8_t>(~sum)));
+        check(static_cast<uint8_t>(~sum) == d[ofs], "the save's own checksum validates", std::string("stored 0x") + std::to_string(d[ofs]) + " computed 0x" + std::to_string(static_cast<uint8_t>(~sum)));
     }
 
-    std::printf("      locale=%s  game=%s  OT='%s'  ID=%u  money=%u  coins=%u  badges=0x%02X\n",
-                sav.japanese() ? "JP" : "INT", sav.gameTitle(),
-                sav.trainerName.c_str(), sav.TID16, sav.money, sav.coins, sav.badgeFlags);
-    std::printf("      played %02u:%02u:%02u   dex owned=%u seen=%u   rival='%s'\n",
-                sav.playedHours, sav.playedMinutes, sav.playedSeconds,
-                sav.dexOwned, sav.dexSeen, sav.rivalName.c_str());
+    std::printf("      locale=%s  game=%s  OT='%s'  ID=%u  money=%u  coins=%u  badges=0x%02X\n", sav.japanese() ? "JP" : "INT", sav.gameTitle(), sav.trainerName.c_str(), sav.TID16, sav.money, sav.coins, sav.badgeFlags);
+    std::printf("      played %02u:%02u:%02u   dex owned=%u seen=%u   rival='%s'\n", sav.playedHours, sav.playedMinutes, sav.playedSeconds, sav.dexOwned, sav.dexSeen, sav.rivalName.c_str());
 
     // A brand-new save has no trainer name yet, and that is a real state -- the Yellow save here
     // is one. Only require a name once the file shows evidence of having been played.
@@ -510,17 +466,13 @@ void testSave(const char* path) {
     if (played) check(!sav.trainerName.empty(), "a played save has a trainer name");
     else std::printf("      (never-played save: no trainer name, empty boxes -- expected)\n");
     check(sav.playedHours <= 255 && sav.playedMinutes < 60 && sav.playedSeconds < 60, "play time in range");
-    check(sav.dexOwned <= sav.dexSeen, "dex owned never exceeds seen",
-          std::to_string(sav.dexOwned) + " > " + std::to_string(sav.dexSeen));
+    check(sav.dexOwned <= sav.dexSeen, "dex owned never exceeds seen", std::to_string(sav.dexOwned) + " > " + std::to_string(sav.dexSeen));
     check(sav.money <= 999999, "money within the BCD ceiling", std::to_string(sav.money));
 
     std::printf("      party (%zu):\n", sav.party.size());
     for (const auto& pk : sav.party) {
-        check(pk->speciesID() >= 1 && pk->speciesID() <= Pokemon::MAX_SPECIES_GEN1,
-              "party species in Gen 1 range", std::to_string(pk->speciesID()));
-        std::printf("        %-11s Lv%-3u  %s  stats %u/%u/%u/%u/%u\n",
-                    pk->species(), pk->level(), u16ToUtf8(pk->nickname()).c_str(),
-                    pk->statHPMax(), pk->statATK(), pk->statDEF(), pk->statSPE(), pk->statSPA());
+        check(pk->speciesID() >= 1 && pk->speciesID() <= Pokemon::MAX_SPECIES_GEN1, "party species in Gen 1 range", std::to_string(pk->speciesID()));
+        std::printf("        %-11s Lv%-3u  %s  stats %u/%u/%u/%u/%u\n", pk->species(), pk->level(), u16ToUtf8(pk->nickname()).c_str(), pk->statHPMax(), pk->statATK(), pk->statDEF(), pk->statSPE(), pk->statSPA());
         // A party record carries the stats the game LAST computed, and it recomputes them only on a
         // level-up, an evolution or a trip through the PC. Stat Experience gained since then leaves a
         // stored stat BELOW the formula -- never above it, and never below what the same level gives
@@ -544,8 +496,7 @@ void testSave(const char* path) {
         const std::vector<uint16_t> lowest = statsOf(*withoutEffort);
         bool withinBand = true, exact = true;
         for (size_t statIndex = 0; statIndex < stored.size(); ++statIndex) {
-            withinBand =
-                withinBand && stored[statIndex] >= lowest[statIndex] && stored[statIndex] <= highest[statIndex];
+            withinBand = withinBand && stored[statIndex] >= lowest[statIndex] && stored[statIndex] <= highest[statIndex];
             exact = exact && stored[statIndex] == highest[statIndex];
         }
         check(withinBand, "party stats reproduce from the tables", std::string(pk->species()));
@@ -558,15 +509,13 @@ void testSave(const char* path) {
         for (size_t s = 0; s < sav.getSlotsPerBox(); ++s)
             if (sav.boxes[b][s]) {
                 ++boxMons;
-                check(sav.boxes[b][s]->speciesID() >= 1 && sav.boxes[b][s]->speciesID() <= Pokemon::MAX_SPECIES_GEN1,
-                      "box species in Gen 1 range", std::to_string(sav.boxes[b][s]->speciesID()));
+                check(sav.boxes[b][s]->speciesID() >= 1 && sav.boxes[b][s]->speciesID() <= Pokemon::MAX_SPECIES_GEN1, "box species in Gen 1 range", std::to_string(sav.boxes[b][s]->speciesID()));
             }
     std::printf("      boxes: %zu Pokemon across %zu boxes of %zu\n", boxMons, sav.getBoxCount(), sav.getSlotsPerBox());
 
     size_t bagItems = 0, pcItems = 0;
     for (const auto& it : sav.items[0]) { ++bagItems;
-        check(Pokemon::getItemNameGen1(static_cast<uint8_t>(it.itemId))[0] != '?' || it.itemId == 0,
-              "bag item has a Gen 1 name", "id " + std::to_string(it.itemId));
+        check(Pokemon::getItemNameGen1(static_cast<uint8_t>(it.itemId))[0] != '?' || it.itemId == 0, "bag item has a Gen 1 name", "id " + std::to_string(it.itemId));
         // 255, not 99: the quantity field is one byte and a real save can exceed the game's own
         // cap. This save carries Max Elixir x158. Above 99 is a legality question, not a parse one.
         check(it.count >= 1 && it.count <= 255, "bag quantity fits the field", std::to_string(it.count)); }
@@ -588,16 +537,13 @@ void testSave(const char* path) {
     size_t diffs = 0; size_t firstDiff = 0;
     for (size_t i = 0; i < out.size() && i < original.size(); ++i)
         if (out[i] != original[i]) { if (!diffs) firstDiff = i; ++diffs; }
-    std::printf("      unedited write-back differs in %zu / %zu bytes%s\n",
-                diffs, out.size(), diffs ? "" : "  <- byte-exact");
+    std::printf("      unedited write-back differs in %zu / %zu bytes%s\n", diffs, out.size(), diffs ? "" : "  <- byte-exact");
     if (diffs) {
-        std::printf("        first difference at 0x%04zX: %02X -> %02X\n",
-                    firstDiff, original[firstDiff], out[firstDiff]);
+        std::printf("        first difference at 0x%04zX: %02X -> %02X\n", firstDiff, original[firstDiff], out[firstDiff]);
         size_t shown = 0;
         for (size_t i = 0; i < out.size() && shown < 8; ++i) {
             if (out[i] == original[i]) continue;
-            const char* where =
-                i >= 0x4000 ? "box bank" : (i >= 0x2598 ? "trainer/party area" : "before trainer block");
+            const char* where = i >= 0x4000 ? "box bank" : (i >= 0x2598 ? "trainer/party area" : "before trainer block");
             std::printf("        0x%04zX %02X -> %02X   (%s)\n", i, original[i], out[i], where);
             ++shown;
         }
@@ -618,19 +564,14 @@ void testSave(const char* path) {
         const bool initializedBit = i == flush.initializedFlagOffset && (out[i] ^ original[i]) == 0x80;
         bool emptyHeaderInitialised = false;
         for (const size_t boxOffset : flush.everyBankBoxOffset)
-            emptyHeaderInitialised = emptyHeaderInitialised || (!bankWasInitialized &&
-                ((i == boxOffset && out[i] == 0x00) || (i == boxOffset + 1 && out[i] == 0xFF)));
+            emptyHeaderInitialised = emptyHeaderInitialised || (!bankWasInitialized && ((i == boxOffset && out[i] == 0x00) || (i == boxOffset + 1 && out[i] == 0xFF)));
         if (inBankCopy || initializedBit || emptyHeaderInitialised || i == flush.checksumOffset) ++flushedBytes;
         else ++outsideFlush;
     }
-    const bool bankMatchesLive = std::equal(out.begin() + flush.bankBoxOffset,
-                                            out.begin() + flush.bankBoxOffset + flush.boxListLength,
-                                            out.begin() + flush.liveBoxOffset);
+    const bool bankMatchesLive = std::equal(out.begin() + flush.bankBoxOffset, out.begin() + flush.bankBoxOffset + flush.boxListLength, out.begin() + flush.liveBoxOffset);
     if (diffs && outsideFlush == 0 && bankMatchesLive)
-        std::printf("        (the current box's bank copy was stale; %zu byte(s) flushed from the live copy)\n",
-                    flushedBytes);
-    check(outsideFlush == 0, "an unedited save writes back byte-for-byte identical, save for the current box's flush",
-          outsideFlush ? (std::to_string(outsideFlush) + " bytes differ outside it") : "");
+        std::printf("        (the current box's bank copy was stale; %zu byte(s) flushed from the live copy)\n", flushedBytes);
+    check(outsideFlush == 0, "an unedited save writes back byte-for-byte identical, save for the current box's flush", outsideFlush ? (std::to_string(outsideFlush) + " bytes differ outside it") : "");
     check(bankMatchesLive, "after writing, the current box's bank copy equals its live copy");
 
     // A box list ends at its COUNT. The writer touches the count and one 0xFF cap and leaves every
@@ -663,8 +604,7 @@ void testSave(const char* path) {
                 ++slotChanges;
             }
         }
-    check(slotChanges == 0, "every party and box slot reads back holding what it held before the write",
-          slotChanges ? (std::to_string(slotChanges) + " slot(s) changed") : "");
+    check(slotChanges == 0, "every party and box slot reads back holding what it held before the write", slotChanges ? (std::to_string(slotChanges) + " slot(s) changed") : "");
 }
 
 }

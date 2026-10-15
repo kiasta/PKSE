@@ -66,20 +66,14 @@ namespace Test
             // the symbol fonts the gender signs, the shiny star and the Let's Go heart come out as
             // tofu -- and the name tables deliberately keep PKHeX's punctuation on the strength of
             // those fallbacks being present.
-            context.check(romfsHas("fonts/Nunito.ttf"), "UI font missing from ROMFS",
-                      "path=\"romfs:/fonts/Nunito.ttf\" fix=\"python tools/gen_fonts.py\"");
-            context.check(romfsHas("fonts/NotoSansSymbols.ttf"), "symbol fallback font missing from ROMFS",
-                      "path=\"romfs:/fonts/NotoSansSymbols.ttf\" fix=\"python tools/gen_fonts.py\"");
-            context.check(romfsHas("fonts/NotoSansSymbols2.ttf"), "second symbol fallback font missing from ROMFS",
-                      "path=\"romfs:/fonts/NotoSansSymbols2.ttf\" fix=\"python tools/gen_fonts.py\"");
+            context.check(romfsHas("fonts/Nunito.ttf"), "UI font missing from ROMFS", "path=\"romfs:/fonts/Nunito.ttf\" fix=\"python tools/gen_fonts.py\"");
+            context.check(romfsHas("fonts/NotoSansSymbols.ttf"), "symbol fallback font missing from ROMFS", "path=\"romfs:/fonts/NotoSansSymbols.ttf\" fix=\"python tools/gen_fonts.py\"");
+            context.check(romfsHas("fonts/NotoSansSymbols2.ttf"), "second symbol fallback font missing from ROMFS", "path=\"romfs:/fonts/NotoSansSymbols2.ttf\" fix=\"python tools/gen_fonts.py\"");
 
             // NAME count, not species-type count: Stellar (18) is drawn wherever a Tera type is.
             for (uint8_t typeIndex = 0; typeIndex < Names::getTypeNameCount(); ++typeIndex)
             {
-                context.check(romfsHas("sprites/types/" + std::to_string(typeIndex) + ".png"),
-                              "type icon missing from ROMFS",
-                              "type=" + std::to_string(typeIndex) + " (" + Names::getTypeName(typeIndex) +
-                                  ") fix=\"python tools/gen_typeicons.py\"");
+                context.check(romfsHas("sprites/types/" + std::to_string(typeIndex) + ".png"), "type icon missing from ROMFS", "type=" + std::to_string(typeIndex) + " (" + Names::getTypeName(typeIndex) + ") fix=\"python tools/gen_typeicons.py\"");
             }
 
             // Origin markings. Driven off the enum rather than a second list of filenames, so a
@@ -89,9 +83,7 @@ namespace Test
                 const char *stem = Trainer::originMarkFileStem(static_cast<Trainer::OriginMark>(markIndex));
                 if (stem == nullptr)
                     continue;
-                context.check(romfsHas(std::string("sprites/marks/") + stem + ".png"),
-                          "origin marking missing from ROMFS",
-                          std::string("mark=") + stem + " fix=\"python tools/gen_marks.py\"");
+                context.check(romfsHas(std::string("sprites/marks/") + stem + ".png"), "origin marking missing from ROMFS", std::string("mark=") + stem + " fix=\"python tools/gen_marks.py\"");
             }
         }
 
@@ -101,8 +93,7 @@ namespace Test
             for (uint16_t sIndex = first; sIndex <= last && sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
             {
                 const std::string base = std::to_string(sIndex);
-                context.check(spriteStemExists(base), "species has no base sprite",
-                          sp(sIndex) + " fix=\"python tools/gen_hdsprites.py\"");
+                context.check(spriteStemExists(base), "species has no base sprite", sp(sIndex) + " fix=\"python tools/gen_hdsprites.py\"");
                 // A missing shiny is not always wrong -- the cap Pikachu correctly have none, since
                 // they cannot be shiny -- but for a base species it is nearly always a fetch that
                 // did not finish, so it is worth seeing without being called a failure.
@@ -114,8 +105,7 @@ namespace Test
                     const char *named = Pokemon::getFormSpriteName(sIndex, formIndex);
                     if (named && named[0] != '\0')
                     {
-                        context.check(spriteStemExists(named), "named form sprite stem has no file",
-                                  sp(sIndex) + " form=" + std::to_string(formIndex) + " stem=\"" + named + "\"");
+                        context.check(spriteStemExists(named), "named form sprite stem has no file", sp(sIndex) + " form=" + std::to_string(formIndex) + " stem=\"" + named + "\"");
                         continue;
                     }
                     const uint32_t itemId = Pokemon::getFormSpriteId(sIndex, formIndex);
@@ -125,15 +115,11 @@ namespace Test
                             ++fallbacks;
                         continue;
                     } // no mapping: falls back, by design
-                    context.check(spriteStemExists(std::to_string(itemId)), "mapped form sprite id has no file",
-                                  sp(sIndex) + " form=" + std::to_string(formIndex) +
-                                      " spriteId=" + std::to_string(itemId));
+                    context.check(spriteStemExists(std::to_string(itemId)), "mapped form sprite id has no file", sp(sIndex) + " form=" + std::to_string(formIndex) + " spriteId=" + std::to_string(itemId));
                 }
             }
             if (fallbacks > 0)
-                context.note("forms with no sprite mapping (drawn as the base species)",
-                         "count=" + std::to_string(fallbacks) +
-                             " range=" + std::to_string(first) + ".." + std::to_string(last));
+                context.note("forms with no sprite mapping (drawn as the base species)", "count=" + std::to_string(fallbacks) + " range=" + std::to_string(first) + ".." + std::to_string(last));
         }
     }
 

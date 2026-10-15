@@ -166,9 +166,7 @@ std::map<uint32_t, Sprite *> SpriteManager::originMarkCache;
         // getFormSpriteId() cannot reach them. It returns "" for everything else.
         std::string suffix = isShiny ? "s" : "";
         const char *named = Pokemon::getFormSpriteName(speciesId, formId);
-        std::string spriteStem = (named && named[0] != '\0')
-                              ? std::string(named)
-                              : std::to_string(Pokemon::getFormSpriteId(speciesId, formId));
+        std::string spriteStem = (named && named[0] != '\0') ? std::string(named) : std::to_string(Pokemon::getFormSpriteId(speciesId, formId));
 
         // Prefer the HD render (transparent HOME PNG) for this sprite id, then
         // fall back to the bundled 96px sprite.
@@ -226,10 +224,7 @@ std::map<uint32_t, Sprite *> SpriteManager::originMarkCache;
         if (stem == nullptr)
             return nullptr; // Gen 3/4/5 and anything the games never marked
 
-        const uint32_t key = static_cast<uint32_t>(mark) |
-                             (static_cast<uint32_t>(markColor.red) << 8) |
-                             (static_cast<uint32_t>(markColor.green) << 16) |
-                             (static_cast<uint32_t>(markColor.blue) << 24);
+        const uint32_t key = static_cast<uint32_t>(mark) | (static_cast<uint32_t>(markColor.red) << 8) | (static_cast<uint32_t>(markColor.green) << 16) | (static_cast<uint32_t>(markColor.blue) << 24);
         auto iterator = originMarkCache.find(key);
         if (iterator != originMarkCache.end())
             return iterator->second;

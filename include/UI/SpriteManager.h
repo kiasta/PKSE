@@ -108,8 +108,7 @@ namespace UI
         static uint32_t makeCacheKey(uint16_t speciesId, uint8_t formId, bool isShiny, bool isIcon)
         {
             // Format: bits 0-15: speciesId, bit 16: isShiny, bit 17: isIcon, bits 18-25: formId
-            return speciesId | (isShiny ? (1 << 16) : 0) | (isIcon ? (1 << 17) : 0) |
-                   (static_cast<uint32_t>(formId) << 18);
+            return speciesId | (isShiny ? (1 << 16) : 0) | (isIcon ? (1 << 17) : 0) | (static_cast<uint32_t>(formId) << 18);
         }
 
         // Legacy cache key for base forms

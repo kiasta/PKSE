@@ -34,9 +34,7 @@ namespace Utils {
     // `primaryFile` is the one file a backup must hold; the game's `optionalFiles` beside it are
     // copied when present and passed over in silence when not, because whether they exist at all
     // depends on what the player has done in-game.
-    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char* backupDir,
-                              const std::string& primaryFile,
-                              const std::vector<std::string>& optionalFiles = {});
+    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char* backupDir, const std::string& primaryFile, const std::vector<std::string>& optionalFiles = {});
     std::string getTimestamp();
     std::vector<std::string> listBackupDirectories(const char* gameDirectory);
 }

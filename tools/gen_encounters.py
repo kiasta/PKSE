@@ -2510,12 +2510,9 @@ def emit_cpp(tables, indices, breedable, hatch):
     lines.append('            case ENCOUNTER_LOCATION_SWSH_WILDAREA:')
     lines.append('                return metLocation >= 122 && metLocation <= 154;')
     lines.append('            case ENCOUNTER_LOCATION_SWSH_WILDAREA_ISLE_OF_ARMOR:')
-    lines.append('                return (metLocation >= 122 && metLocation <= 154)')
-    lines.append('                    || (metLocation >= 164 && metLocation <= 194);')
+    lines.append('                return (metLocation >= 122 && metLocation <= 154) || (metLocation >= 164 && metLocation <= 194);')
     lines.append('            case ENCOUNTER_LOCATION_SWSH_WILDAREA_ALL:')
-    lines.append('                return (metLocation >= 122 && metLocation <= 154)')
-    lines.append('                    || (metLocation >= 164 && metLocation <= 194)')
-    lines.append('                    || (metLocation >= 204 && metLocation <= 234 && metLocation != 206);')
+    lines.append('                return (metLocation >= 122 && metLocation <= 154) || (metLocation >= 164 && metLocation <= 194) || (metLocation >= 204 && metLocation <= 234 && metLocation != 206);')
     lines.append('            // A roamer is met where it was cornered. EncounterStatic3 tests one flat')
     lines.append('            // range; EncounterStatic4 tests a bitmask per region, and takes the union')
     lines.append('            // of its grass and water sets here because PKSE does not read GroundTile --')
@@ -2527,10 +2524,8 @@ def emit_cpp(tables, indices, breedable, hatch):
                                           ("ENCOUNTER_LOCATION_ROAMER4_KANTO", ENCOUNTER_LOCATION_ROAMER4_KANTO)):
         first_location, permitted = ROAMER4_RANGES[sentinel_value]
         lines.append('            case %s:' % sentinel_name)
-        lines.append('                return metLocation >= %d && metLocation < %d'
-                     % (first_location, first_location + permitted.bit_length()))
-        lines.append('                    && ((0x%XULL >> (metLocation - %d)) & 1) != 0;'
-                     % (permitted, first_location))
+        lines.append('                return metLocation >= %d && metLocation < %d && ((0x%XULL >> (metLocation - %d)) & 1) != 0;'
+                     % (first_location, first_location + permitted.bit_length(), permitted, first_location))
     lines.append('            case ENCOUNTER_LOCATION_ROAMER5:')
     lines.append('                return metLocation < 32 && ((0x%XU >> metLocation) & 1) != 0;'
                  % ROAMER5_PERMITTED)

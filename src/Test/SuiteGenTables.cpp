@@ -144,12 +144,8 @@ namespace Test
                     ++total;
                     const char *n = Names::getItemNameFor(context.group, itemId);
                     // "???" is getItemNameFor's out-of-range answer, so an id past the table fails.
-                    context.check(named(n) && std::string(n) != "???",
-                              "item offered by a pouch has no name in this generation",
-                              "pouch=" + std::to_string(pIndex) + " item=" + std::to_string(itemId));
-                    context.check(withinPouch.insert(itemId).second, "item listed twice in the same pouch",
-                              "pouch=" + std::to_string(pIndex) + " item=" + std::to_string(itemId) +
-                                  " name=\"" + (n ? n : "") + "\"");
+                    context.check(named(n) && std::string(n) != "???", "item offered by a pouch has no name in this generation", "pouch=" + std::to_string(pIndex) + " item=" + std::to_string(itemId));
+                    context.check(withinPouch.insert(itemId).second, "item listed twice in the same pouch", "pouch=" + std::to_string(pIndex) + " item=" + std::to_string(itemId) + " name=\"" + (n ? n : "") + "\"");
                 }
             }
             context.note("items offered across all pouches", "count=" + std::to_string(total));
@@ -165,12 +161,7 @@ namespace Test
                         continue;
                     const char *viaRouter = Names::getItemNameFor(Enums::GameVersion::RBY, itemId);
                     const char *viaTable = Pokemon::getItemNameGen1((uint8_t)itemId);
-                    context.check(named(viaRouter) && named(viaTable) &&
-                                  std::string(viaRouter) == std::string(viaTable),
-                              "Gen 1 item name router disagrees with the Gen 1 table",
-                              "item=" + std::to_string(itemId) +
-                                  " router=\"" + (viaRouter ? viaRouter : "") +
-                                  "\" table=\"" + (viaTable ? viaTable : "") + "\"");
+                    context.check(named(viaRouter) && named(viaTable) && std::string(viaRouter) == std::string(viaTable), "Gen 1 item name router disagrees with the Gen 1 table", "item=" + std::to_string(itemId) + " router=\"" + (viaRouter ? viaRouter : "") + "\" table=\"" + (viaTable ? viaTable : "") + "\"");
                 }
 
                 // Move PP is the same shape of question, and the same trap. Gen 1 has its own PP
@@ -189,13 +180,9 @@ namespace Test
                         const uint8_t viaRouter = Names::getMoveMaxPP(mIndex, ppUps, Enums::GameVersion::RBY);
                         const uint8_t viaTable = Pokemon::getMovePPGen1WithUps(mIndex, ppUps);
                         if (viaRouter != viaTable)
-                            mismatch = " ppUps=" + std::to_string(ppUps) +
-                                       " router=" + std::to_string(viaRouter) +
-                                       " table=" + std::to_string(viaTable);
+                            mismatch = " ppUps=" + std::to_string(ppUps) + " router=" + std::to_string(viaRouter) + " table=" + std::to_string(viaTable);
                     }
-                    context.check(mismatch.empty(),
-                              "Gen 1 move PP router disagrees with the Gen 1 table",
-                              "move=" + std::to_string(mIndex) + " (" + Names::getMoveName(mIndex) + ")" + mismatch);
+                    context.check(mismatch.empty(), "Gen 1 move PP router disagrees with the Gen 1 table", "move=" + std::to_string(mIndex) + " (" + Names::getMoveName(mIndex) + ")" + mismatch);
                 }
             }
         }
@@ -268,10 +255,7 @@ namespace Test
                 // a game -- a failure, not a note.
                 if (first > 1)
                     return;
-                context.fail("no learnset table for this generation -- move learnability is UNKNOWN "
-                             "here; the move picker highlights nothing and the legality analyzer "
-                             "skips its learnability check",
-                             Enums::getGameVersionName(context.group));
+                context.fail("no learnset table for this generation -- move learnability is UNKNOWN here; the move picker highlights nothing and the legality analyzer skips its learnability check", Enums::getGameVersionName(context.group));
                 return;
             }
             int present = 0, missingMoves = 0;
@@ -303,26 +287,19 @@ namespace Test
                         if (!moveExistsInGame(moveId, context.group))
                         {
                             ++missingMoves;
-                            context.fail("learnset offers a move the game does not have",
-                                     where + " move=" + std::to_string(moveId) +
-                                         " (" + Names::getMoveName(moveId) + ")");
+                            context.fail("learnset offers a move the game does not have", where + " move=" + std::to_string(moveId) + " (" + Names::getMoveName(moveId) + ")");
                         }
                     }
                     // Every form that reaches here is one the presence byte says this game HAS, so
                     // an empty pool is never correct: it is the table saying the Pokemon exists and
                     // can learn nothing.
-                    context.check(pool > 0, "species in this game has an EMPTY move pool "
-                                        "(every move reads as illegal; the transfer sanitizer deletes all four)",
-                              where);
+                    context.check(pool > 0, "species in this game has an EMPTY move pool (every move reads as illegal; the transfer sanitizer deletes all four)", where);
                 }
             }
             // Silent for a range this generation has nothing in: six "count=0" lines per game is
             // noise that pushes the ranges that DID have something off the sample cap.
             if (present > 0)
-                context.note("species checked in this generation's dex",
-                         "count=" + std::to_string(present) +
-                             " range=" + std::to_string(first) + ".." + std::to_string(last) +
-                             " movegaps=" + std::to_string(missingMoves));
+                context.note("species checked in this generation's dex", "count=" + std::to_string(present) + " range=" + std::to_string(first) + ".." + std::to_string(last) + " movegaps=" + std::to_string(missingMoves));
         }
     }
 

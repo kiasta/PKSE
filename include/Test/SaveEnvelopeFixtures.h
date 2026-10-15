@@ -74,8 +74,7 @@ namespace Test
         inline std::vector<uint8_t> desmumeFooter(size_t heldSize)
         {
             std::vector<uint8_t> footerBytes;
-            appendText(footerBytes, "|<--Snip above here to create a raw sav by excluding this DeSmuME "
-                                    "savedata footer:");
+            appendText(footerBytes, "|<--Snip above here to create a raw sav by excluding this DeSmuME savedata footer:");
             const uint32_t saveSize = static_cast<uint32_t>(heldSize);
             for (const uint32_t field : {saveSize, saveSize, 0u, 3u, saveSize, 0u})
                 appendUInt32LittleEndian(footerBytes, field);
@@ -119,8 +118,7 @@ namespace Test
             while (readOffset < savedBytes.size())
             {
                 size_t repeatCount = 1;
-                while (readOffset + repeatCount < savedBytes.size() && repeatCount < 0xFFFF &&
-                       savedBytes[readOffset + repeatCount] == savedBytes[readOffset])
+                while (readOffset + repeatCount < savedBytes.size() && repeatCount < 0xFFFF && savedBytes[readOffset + repeatCount] == savedBytes[readOffset])
                     ++repeatCount;
                 if (repeatCount >= 8)
                 {
@@ -147,10 +145,7 @@ namespace Test
             constexpr size_t codeStart = NOCASH_GBA_HEADER_SIZE + 16; // "SRAM", method, length, unpacked length
             const auto fieldAt = [&](size_t fieldOffset)
             {
-                return static_cast<size_t>(fileBytes[fieldOffset]) |
-                       static_cast<size_t>(fileBytes[fieldOffset + 1]) << 8 |
-                       static_cast<size_t>(fileBytes[fieldOffset + 2]) << 16 |
-                       static_cast<size_t>(fileBytes[fieldOffset + 3]) << 24;
+                return static_cast<size_t>(fileBytes[fieldOffset]) | static_cast<size_t>(fileBytes[fieldOffset + 1]) << 8 | static_cast<size_t>(fileBytes[fieldOffset + 2]) << 16 | static_cast<size_t>(fileBytes[fieldOffset + 3]) << 24;
             };
             if (fileBytes.size() < codeStart || fieldAt(NOCASH_GBA_HEADER_SIZE + 4) != 1)
                 return {};
@@ -294,8 +289,7 @@ namespace Test
         {
             const uint8_t ysMenuFlags[EnvelopeFixture::YSMENU_FLAGS_SIZE] = {0x00, 0x00, 0x0F, 0x00,
                                                                              'N',  'M',  'S',  'Y'};
-            std::copy(std::begin(ysMenuFlags), std::end(ysMenuFlags),
-                      heldBytes.end() - static_cast<std::ptrdiff_t>(EnvelopeFixture::YSMENU_FLAGS_SIZE));
+            std::copy(std::begin(ysMenuFlags), std::end(ysMenuFlags), heldBytes.end() - static_cast<std::ptrdiff_t>(EnvelopeFixture::YSMENU_FLAGS_SIZE));
         }
         return heldBytes;
     }
@@ -304,8 +298,7 @@ namespace Test
     /// writes that envelope lays it out. `alternateLayout` picks the second layout a kind comes in: a
     /// Switch Online header with a clock (a Gen 2 cartridge has one), or a no$gba file stored as it is
     /// rather than run-length coded. Kinds with one layout ignore it.
-    inline std::vector<uint8_t> buildEnvelopedSave(Save::SaveEnvelopeKind kind, const std::vector<uint8_t> &heldBytes,
-                                                   bool alternateLayout = false)
+    inline std::vector<uint8_t> buildEnvelopedSave(Save::SaveEnvelopeKind kind, const std::vector<uint8_t> &heldBytes, bool alternateLayout = false)
     {
         using namespace EnvelopeFixture;
         std::vector<uint8_t> fileBytes;
@@ -315,8 +308,7 @@ namespace Test
             return heldBytes;
         case Save::SaveEnvelopeKind::RtcFooter:
             fileBytes = heldBytes;
-            appendBytes(fileBytes,
-                        filler(heldBytes.size() == GBA_SAVE_SIZE ? MGBA_RTC_FOOTER_SIZE : VBAM_RTC_FOOTER_SIZE));
+            appendBytes(fileBytes, filler(heldBytes.size() == GBA_SAVE_SIZE ? MGBA_RTC_FOOTER_SIZE : VBAM_RTC_FOOTER_SIZE));
             return fileBytes;
         case Save::SaveEnvelopeKind::LibretroGbaSaveRam:
             fileBytes = heldBytes;

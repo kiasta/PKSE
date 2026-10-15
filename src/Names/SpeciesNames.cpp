@@ -9280,8 +9280,7 @@ namespace Names {
         SPECIES_NAMES_ZH_HANS,
         SPECIES_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(SPECIES_NAMES_BY_LANGUAGE) / sizeof(SPECIES_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SPECIES_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(SPECIES_NAMES_BY_LANGUAGE) / sizeof(SPECIES_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SPECIES_NAMES_BY_LANGUAGE must carry one table per language");
 
     // Out of range returns "Unknown", which the legality checker tests for by value
     // as its unknown-species sentinel -- keep the spelling if this is ever reworked.
@@ -9295,8 +9294,7 @@ namespace Names {
     const char* getSpeciesNameLocalized(uint16_t speciesId, size_t languageIndex) {
         constexpr size_t speciesNameCount = sizeof(SPECIES_NAMES_EN) / sizeof(SPECIES_NAMES_EN[0]);
         if (speciesId >= speciesNameCount) return "Unknown";
-        const size_t tableLanguageIndex =
-            languageIndex < LANGUAGE_COUNT ? languageIndex : LANGUAGE_INDEX_ENGLISH;
+        const size_t tableLanguageIndex = languageIndex < LANGUAGE_COUNT ? languageIndex : LANGUAGE_INDEX_ENGLISH;
         return SPECIES_NAMES_BY_LANGUAGE[tableLanguageIndex][speciesId];
     }
 

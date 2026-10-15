@@ -149,14 +149,12 @@ namespace Trainer
         /// their battle-stat tail from the span's LENGTH, so a short span reads plausible garbage
         /// rather than failing. Gen 1 and Gen 2 have two lengths per group; use recordSizeForTag()
         /// when the on-disk tag is what says which.
-        static std::unique_ptr<::Pokemon::Pokemon> makePokemon(Enums::GameVersion group,
-                                                               std::span<const std::byte> record);
+        static std::unique_ptr<::Pokemon::Pokemon> makePokemon(Enums::GameVersion group, std::span<const std::byte> record);
         /// Encrypt one DECRYPTED record into the form `group`'s entity constructors take -- the other
         /// half of makePokemon(), exposed for the same reason. Gens 1 and 2 have no encryption and get
         /// a plain copy. Returns a `new[]` buffer of `decryptedRecord.size()` bytes the caller
         /// releases with `delete[]`, or nullptr for a group with no entity class.
-        static std::byte *encryptRecord(Enums::GameVersion group, std::span<const std::byte> decryptedRecord,
-                                        uint32_t encryptionConstant);
+        static std::byte *encryptRecord(Enums::GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant);
         /// Bytes one entity of `group` occupies -- the PARTY size, since several formats keep level
         /// and the battle stats in a tail the accessors index straight into.
         static size_t recordSizeFor(Enums::GameVersion group);

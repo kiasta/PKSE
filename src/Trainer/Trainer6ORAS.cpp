@@ -52,8 +52,7 @@ namespace Trainer
     }
 
         
-    Trainer6ORAS::Trainer6ORAS(std::vector<uint8_t> raw, std::string path)
-        : saveData(std::move(raw)), savePath(std::move(path))
+    Trainer6ORAS::Trainer6ORAS(std::vector<uint8_t> raw, std::string path) : saveData(std::move(raw)), savePath(std::move(path))
     {
         init();
     }
@@ -113,8 +112,7 @@ namespace Trainer
         for (size_t blockIndex = 0; blockIndex < blockCount(); ++blockIndex)
         {
             const BlockEntry3DS &b = blk(blockIndex);
-            writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)],
-                                    blockCrc(&saveData[b.offset], b.length));
+            writeUInt16LittleEndian(&saveData[blockChecksumOffset3DS(fileSize(), blockIndex)], blockCrc(&saveData[b.offset], b.length));
         }
     }
 
@@ -140,8 +138,7 @@ namespace Trainer
         TID = TID16;
         SID = SID16;
         trainerGender = sourceBytes[ST_GENDER] & 1;
-        money = readUInt32LittleEndian(at(blkMisc()) +
-                                       MISC_MONEY);
+        money = readUInt32LittleEndian(at(blkMisc()) + MISC_MONEY);
         currentBox = at(blkBoxLayout())[BL_CURRENT];
     }
 
@@ -235,8 +232,7 @@ namespace Trainer
         const size_t recordSize = Encryption::SIZE_PARTY6_ORAS;
         const auto blank = Encryption::blankRecord6ORAS(recordSize);
         size_t written = 0;
-        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-             ++partySlotIndex)
+        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
@@ -300,8 +296,7 @@ namespace Trainer
         writeUtf16Field(sourceBytes + otOfs, ST_OT_BYTES / 2, utf8ToUtf16(trainerName), UTF16_TERM_G67, false);
         writeUInt32LittleEndian(sourceBytes + ST_ID32, ID32);
         sourceBytes[ST_GENDER] = trainerGender & 1;
-        writeUInt32LittleEndian(at(blkMisc()) + MISC_MONEY,
-                                money > getMaxMoney() ? getMaxMoney() : money);
+        writeUInt32LittleEndian(at(blkMisc()) + MISC_MONEY, money > getMaxMoney() ? getMaxMoney() : money);
     }
 
     void Trainer6ORAS::updateBoxNameBlock()
@@ -311,8 +306,7 @@ namespace Trainer
         {
             if (!isBoxNameDirty(boxIndex))
                 continue;
-            writeUtf16Field(l + boxIndex * BL_NAME_BYTES, BL_NAME_BYTES / 2,
-                            utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G67, false);
+            writeUtf16Field(l + boxIndex * BL_NAME_BYTES, BL_NAME_BYTES / 2, utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G67, false);
         }
     }
 
@@ -331,10 +325,7 @@ namespace Trainer
             // Gen 6 slots are Gen 4/5's codec exactly -- `u16 id, u16 count` -- so the shared
             // positional writer does the whole job: an item that was in the pouch when it was read
             // goes back to its own slot, everything else takes the lowest free one.
-            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots,
-                                 items[pouchIndex],
-                                 pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex]
-                                                                                  : std::vector<ItemOrigin>{});
+            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots, items[pouchIndex], pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex] : std::vector<ItemOrigin>{});
         }
     }
 

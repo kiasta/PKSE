@@ -128,8 +128,7 @@ namespace Test
         // going wrong as it happens, and Info notes and skips would bury it.
         if (severity == Severity::Fail || severity == Severity::Warn)
         {
-            recentLines.push_back(std::string(severityName(severity)) + "  " + scopeSuite + ": " + what + "  [" + line +
-                                  "]");
+            recentLines.push_back(std::string(severityName(severity)) + "  " + scopeSuite + ": " + what + "  [" + line + "]");
             if ((int)recentLines.size() > RECENT_LINE_COUNT)
                 recentLines.erase(recentLines.begin());
         }
@@ -148,8 +147,7 @@ namespace Test
         fprintf(f, "%s", header.c_str());
         fprintf(f, "========================================================================\n\n");
 
-        fprintf(f, "SUMMARY  checks=%d failures=%d warnings=%d skipped=%d notes=%d\n\n",
-                checkCount, failCount, warnCount, skipCount, infoCount);
+        fprintf(f, "SUMMARY  checks=%d failures=%d warnings=%d skipped=%d notes=%d\n\n", checkCount, failCount, warnCount, skipCount, infoCount);
 
         // anyone has to read a detail line.
         fprintf(f, "------------------------------------------------------------------------\n");
@@ -158,9 +156,7 @@ namespace Test
         fprintf(f, "%-40s %-12s %8s %6s %6s %6s\n", "TARGET", "SUITE", "CHECKS", "FAIL", "WARN", "SKIP");
         for (const auto &t : tallyList)
         {
-            fprintf(f, "%-40s %-12s %8d %6d %6d %6d\n",
-                    (t.target.empty() ? "-" : t.target.c_str()), t.suite.c_str(),
-                    t.checks, t.fails, t.warns, t.skips);
+            fprintf(f, "%-40s %-12s %8d %6d %6d %6d\n", (t.target.empty() ? "-" : t.target.c_str()), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
         }
         fprintf(f, "\n");
 
@@ -176,20 +172,14 @@ namespace Test
                 if (!wroteHeading)
                 {
                     fprintf(f, "------------------------------------------------------------------------\n");
-                    fprintf(f, "%s\n", severity == Severity::Fail   ? "FAILURES"
-                                       : severity == Severity::Warn ? "WARNINGS"
-                                       : severity == Severity::Skip ? "SKIPPED (not checked)"
-                                                                    : "NOTES");
+                    fprintf(f, "%s\n", severity == Severity::Fail ? "FAILURES" : severity == Severity::Warn ? "WARNINGS" : severity == Severity::Skip ? "SKIPPED (not checked)" : "NOTES");
                     fprintf(f, "------------------------------------------------------------------------\n");
                     wroteHeading = true;
                 }
                 if (g.count > (int)g.samples.size())
-                    fprintf(f, "\n[%s] %s: %s   (x%d, first %d shown)\n",
-                            severityName(g.severity), g.suite.c_str(), g.what.c_str(),
-                            g.count, (int)g.samples.size());
+                    fprintf(f, "\n[%s] %s: %s   (x%d, first %d shown)\n", severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count, (int)g.samples.size());
                 else
-                    fprintf(f, "\n[%s] %s: %s   (x%d)\n",
-                            severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
+                    fprintf(f, "\n[%s] %s: %s   (x%d)\n", severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
                 for (const auto &s : g.samples)
                     fprintf(f, "    %s\n", s.c_str());
             }
@@ -208,9 +198,7 @@ namespace Test
             for (const auto &t : traceLines)
                 fprintf(f, "%s\n", t.c_str());
             if (traceTruncated)
-                fprintf(f, "... trace truncated at %d lines; the full one is in "
-                           "sdmc:/PKSE/trace.log when debug logging is on\n",
-                        MAX_TRACE_LINES);
+                fprintf(f, "... trace truncated at %d lines; the full one is in sdmc:/PKSE/trace.log when debug logging is on\n", MAX_TRACE_LINES);
             fprintf(f, "\n");
         }
 

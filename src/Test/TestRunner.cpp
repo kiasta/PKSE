@@ -315,8 +315,7 @@ namespace Test
         {
             /// One candidate file: read it, construct it, and add it if it is a save PKSE handles.
             /// `folderTitle` is the title its directory claims, or Invalid at the top level.
-            auto considerFile = [&out](const std::string &directory, const std::string &name,
-                                       Enums::GameVersion folderTitle)
+            auto considerFile = [&out](const std::string &directory, const std::string &name, Enums::GameVersion folderTitle)
             {
                 // The SAME rule the file browser offers files by -- a 3DS `main` has no extension
                 // at all and is matched by name. Shared rather than restated: these two had already
@@ -340,8 +339,7 @@ namespace Test
                 if (!probe)
                 {
                     if (folderTitle != Enums::GameVersion::Invalid)
-                        gRejectedSaves.emplace_back(folderTitle, name + " is not a save PKSE can read" +
-                                                                     (length == 0 ? " (empty file)" : ""));
+                        gRejectedSaves.emplace_back(folderTitle, name + " is not a save PKSE can read" + (length == 0 ? " (empty file)" : ""));
                     return;
                 }
 
@@ -368,12 +366,8 @@ namespace Test
                     return; // only files inside a title folder are candidates at all
                 if (Enums::getGameGroup(folderTitle) != target.group)
                 {
-                    Utils::logInfoToFile(
-                        "SelfTest: ignoring a save filed under the wrong title",
-                        (path + " is not a " + Enums::getGameVersionName(folderTitle) + " save").c_str());
-                    gRejectedSaves.emplace_back(folderTitle, name + " is a " + Enums::getGameVersionName(target.group) +
-                                                                 " save, not " +
-                                                                 Enums::getGameVersionName(folderTitle));
+                    Utils::logInfoToFile("SelfTest: ignoring a save filed under the wrong title", (path + " is not a " + Enums::getGameVersionName(folderTitle) + " save").c_str());
+                    gRejectedSaves.emplace_back(folderTitle, name + " is a " + Enums::getGameVersionName(target.group) + " save, not " + Enums::getGameVersionName(folderTitle));
                     return;
                 }
                 target.version = folderTitle;
@@ -404,8 +398,7 @@ namespace Test
                     // did not, which is why the folder feature worked on the host harness (its own
                     // SaveTree walks with stat) and not on hardware.
                     const std::string fullPath = scanDir + "/" + name;
-                    const bool entryIsDirectory = (entry->d_type == DT_DIR) ||
-                                                  (entry->d_type == DT_UNKNOWN && dirExists(fullPath));
+                    const bool entryIsDirectory = (entry->d_type == DT_DIR) || (entry->d_type == DT_UNKNOWN && dirExists(fullPath));
                     if (entryIsDirectory)
                     {
                         // Only a directory NAMED after a title is descended into. Everything else
@@ -424,9 +417,8 @@ namespace Test
                             const std::string innerName(innerEntry->d_name);
                             if (innerName == "." || innerName == "..")
                                 continue;
-                            if (innerEntry->d_type == DT_DIR ||
-                                // one level deep only
-                                (innerEntry->d_type == DT_UNKNOWN && dirExists(fullPath + "/" + innerName))) continue;
+                            // one level deep only
+                            if (innerEntry->d_type == DT_DIR || (innerEntry->d_type == DT_UNKNOWN && dirExists(fullPath + "/" + innerName))) continue;
                             considerFile(fullPath, innerName, folderTitle);
                         }
                         closedir(inner);
@@ -579,11 +571,9 @@ namespace Test
             // title is fixed by copying a save onto the card, and saying where is the whole point;
             // an installed title needs the game itself, and there is nothing the user can copy.
             if (comesFromLooseFile(missing))
-                context.skip("title not tested: no save found",
-                         "title=\"" + title + "\" searched=\"" + searched + "\"");
+                context.skip("title not tested: no save found", "title=\"" + title + "\" searched=\"" + searched + "\"");
             else
-                context.skip("title not tested: no save found",
-                         "title=\"" + title + "\" reason=\"the game is not installed on this console\"");
+                context.skip("title not tested: no save found", "title=\"" + title + "\" reason=\"the game is not installed on this console\"");
         }
         for (const auto &t : plan)
         {
@@ -692,8 +682,7 @@ namespace Test
             if (chunkIdx >= chunkCount)
             {
                 if (runReport.checks() == checksAtSuiteStart && runReport.skips() == skipsAtSuiteStart)
-                    context.skip("suite ran but recorded no checks and no skips",
-                                 "chunks=" + std::to_string(chunkCount));
+                    context.skip("suite ran but recorded no checks and no skips", "chunks=" + std::to_string(chunkCount));
                 ++suiteIdx;
                 chunkIdx = 0;
                 chunkCount = -1;
@@ -735,9 +724,7 @@ namespace Test
 
         if (t.titleId != 0)
         {
-            if (!context.check(Utils::copySaveDataTo(t.accountUid, t.titleId, workDir.c_str()),
-                           "could not copy the live save into the test directory",
-                           "titleId=" + std::to_string(t.titleId) + " dest=\"" + workDir + "\""))
+            if (!context.check(Utils::copySaveDataTo(t.accountUid, t.titleId, workDir.c_str()), "could not copy the live save into the test directory", "titleId=" + std::to_string(t.titleId) + " dest=\"" + workDir + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
@@ -751,8 +738,7 @@ namespace Test
             // A loose file: copy it into the scratch tree by name so every write test targets the
             // copy, never the file the user pointed us at.
             const size_t slashPos = t.sourcePath.find_last_of('/');
-            const std::string fileName = (slashPos == std::string::npos) ? t.sourcePath
-                                                                         : t.sourcePath.substr(slashPos + 1);
+            const std::string fileName = (slashPos == std::string::npos) ? t.sourcePath : t.sourcePath.substr(slashPos + 1);
             // Prefixed with the title, because the source names are NOT unique once saves are filed
             // by game: every 3DS save is called `main`, and a Diamond and a Pearl dump usually carry
             // the same name too. Copying both to work/main would have the second silently land on
@@ -760,12 +746,9 @@ namespace Test
             // of collision that only shows up as one game's save producing another game's findings.
             // flattened, because a title name is not a filename: "Black 2" has a space and
             // "Legends: Z-A" a colon, which FAT does not accept.
-            const std::string destination =
-                workDir + "/" + flattenTitleName(Enums::getGameVersionName(t.version)) + "_" + fileName;
+            const std::string destination = workDir + "/" + flattenTitleName(Enums::getGameVersionName(t.version)) + "_" + fileName;
             workSavePath = destination; // the write tests target exactly this file, never a guess
-            if (!context.check(Utils::copyFile(t.sourcePath.c_str(), destination.c_str()),
-                               "could not copy the loose save into the test directory",
-                               "src=\"" + t.sourcePath + "\" dest=\"" + destination + "\""))
+            if (!context.check(Utils::copyFile(t.sourcePath.c_str(), destination.c_str()), "could not copy the loose save into the test directory", "src=\"" + t.sourcePath + "\" dest=\"" + destination + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
@@ -791,10 +774,7 @@ namespace Test
         const bool passed = context.check(trainer != nullptr, "save did not produce a trainer");
         if (passed)
         {
-            context.check(trainer->getGameGroup() == t.group,
-                          "loaded trainer reports a different save-format group than the title says",
-                          "expected=" + Enums::getGameVersionName(t.group) +
-                              " actual=" + Enums::getGameVersionName(trainer->getGameGroup()));
+            context.check(trainer->getGameGroup() == t.group, "loaded trainer reports a different save-format group than the title says", "expected=" + Enums::getGameVersionName(t.group) + " actual=" + Enums::getGameVersionName(trainer->getGameGroup()));
         }
         if (!passed)
         {
@@ -871,9 +851,7 @@ namespace Test
         if (cancelled)
             header += "*** PARTIAL: the run was cancelled before it finished ***\n";
         if (inProgress)
-            header += "*** IN PROGRESS: written after " + std::to_string(targetIdx) + "/" +
-                      std::to_string(plan.size()) + " targets. If the run stopped here, the console "
-                      "crashed or was closed during the next one ***\n";
+            header += "*** IN PROGRESS: written after " + std::to_string(targetIdx) + "/" + std::to_string(plan.size()) + " targets. If the run stopped here, the console crashed or was closed during the next one ***\n";
 
         runReport.write(outPath, header);
         if (!inProgress)
@@ -969,8 +947,7 @@ namespace Test
         runReport.setScope("-", "plan");
         Context context;
         context.rep = &runReport;
-        context.skip("the run was cancelled before it finished, so this report is PARTIAL",
-                     "completedTargets=" + std::to_string(targetIdx) + "/" + std::to_string(plan.size()));
+        context.skip("the run was cancelled before it finished, so this report is PARTIAL", "completedTargets=" + std::to_string(targetIdx) + "/" + std::to_string(plan.size()));
         releaseTarget();
         clearSamples();
         phase = Phase::WriteReport;

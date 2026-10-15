@@ -287,8 +287,7 @@ namespace UI
         nvgStroke(vg);
     }
 
-    void PKSEFramebuffer::drawFilledRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius,
-                                                Color color)
+    void PKSEFramebuffer::drawFilledRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color)
     {
         if (rectWidth <= 0 || rectHeight <= 0 || !ensureFrame())
             return;
@@ -401,8 +400,7 @@ namespace UI
         auto shade = [&](float floatValue) { // f < 1 darkens, f > 1 lightens toward white
             auto shadeChannel = [&](int value)
             {
-                const float offset =
-                    (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
+                const float offset = (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
                 return (unsigned char)std::min(255.0f, std::max(0.0f, offset));
             };
             return nvgRGBA(shadeChannel(color.red), shadeChannel(color.green), shadeChannel(color.blue), color.alpha);
@@ -715,8 +713,7 @@ namespace UI
         auto shade = [&](float floatValue) { // f < 1 darkens, f > 1 lightens toward white
             auto shadeChannel = [&](int value)
             {
-                const float shadedChannel =
-                    (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
+                const float shadedChannel = (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
                 return (unsigned char)std::min(255.0f, std::max(0.0f, shadedChannel));
             };
             return nvgRGBA(shadeChannel(color.red), shadeChannel(color.green), shadeChannel(color.blue), color.alpha);
@@ -769,8 +766,7 @@ namespace UI
         if (shadowWidth <= 0 || shadowHeight <= 0 || !ensureFrame())
             return;
         // Real feathered drop shadow: box gradient in the ring around the element (hole in the middle).
-        NVGpaint shadowPaint =
-            nvgBoxGradient(vg, (float)shadowX, shadowY + 3.0f, (float)shadowWidth, (float)shadowHeight, cornerRadius + 2.0f, 12.0f, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0));
+        NVGpaint shadowPaint = nvgBoxGradient(vg, (float)shadowX, shadowY + 3.0f, (float)shadowWidth, (float)shadowHeight, cornerRadius + 2.0f, 12.0f, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0));
         nvgBeginPath(vg);
         nvgRect(vg, shadowX - 14.0f, shadowY - 14.0f, shadowWidth + 28.0f, shadowHeight + 28.0f);
         nvgRoundedRect(vg, (float)shadowX, (float)shadowY, (float)shadowWidth, (float)shadowHeight, (float)cornerRadius);
@@ -836,8 +832,7 @@ namespace UI
         {
             double value = maxValue > 0.0f ? values[index] / maxValue : 0.0;
             value = std::clamp(value, 0.06, 1.0);
-            float panelX = axisX(axisAngles[index], hexRadius * value),
-                  py = axisY(axisAngles[index], hexRadius * value);
+            float panelX = axisX(axisAngles[index], hexRadius * value), py = axisY(axisAngles[index], hexRadius * value);
             if (index == 0)
                 nvgMoveTo(vg, panelX, py);
             else
@@ -970,8 +965,7 @@ namespace UI
         int image = nvgImageFor(data, imageWidth, imageHeight, channels);
         if (image < 0)
             return;
-        NVGpaint imagePaint =
-            nvgImagePattern(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight, 0.0f, image, 1.0f);
+        NVGpaint imagePaint = nvgImagePattern(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight, 0.0f, image, 1.0f);
         nvgBeginPath(vg);
         nvgRect(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight);
         nvgFillPaint(vg, imagePaint);
@@ -985,8 +979,7 @@ namespace UI
         int image = nvgImageFor(data, imageWidth, imageHeight, channels);
         if (image < 0)
             return;
-        NVGpaint imagePaint =
-            nvgImagePattern(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight, 0.0f, image, 1.0f);
+        NVGpaint imagePaint = nvgImagePattern(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight, 0.0f, image, 1.0f);
         nvgBeginPath(vg);
         nvgRect(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight);
         nvgFillPaint(vg, imagePaint);

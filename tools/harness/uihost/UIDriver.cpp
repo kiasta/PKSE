@@ -43,8 +43,7 @@ namespace UIHost {
     void Driver::setShotDir(std::string dir) { gShotDir = std::move(dir); }
     int  Driver::shotsWritten()              { return gShots; }
 
-    Driver::Driver(Test::Context& c, UI::UIScreen& s, std::string screenName)
-        : context(c), screen(s), name(std::move(screenName)) {}
+    Driver::Driver(Test::Context& c, UI::UIScreen& s, std::string screenName) : context(c), screen(s), name(std::move(screenName)) {}
 
     std::string Driver::where() const {
         std::string w = "screen=" + name;
@@ -134,10 +133,7 @@ namespace UIHost {
         }
         if (offscreen > 0 && worst) {
             std::string what = "drawing landed completely off-screen";
-            std::string det  = where() + " op=" + worst->op +
-                               " x=" + std::to_string(worst->drawX) + " y=" + std::to_string(worst->drawY) +
-                               " w=" + std::to_string(worst->drawWidth) + " h=" + std::to_string(worst->drawHeight) +
-                               " count=" + std::to_string(offscreen);
+            std::string det = where() + " op=" + worst->op + " x=" + std::to_string(worst->drawX) + " y=" + std::to_string(worst->drawY) + " w=" + std::to_string(worst->drawWidth) + " h=" + std::to_string(worst->drawHeight) + " count=" + std::to_string(offscreen);
             if (!worst->text.empty()) det += " text=\"" + worst->text + "\"";
             context.fail(what, det);
         }
@@ -170,15 +166,12 @@ namespace UIHost {
     }
 
     bool Driver::notSee(const std::string& text) {
-        return expect(!frameData().has(text), "text was on screen that should not have been",
-                      "unwanted=\"" + text + "\"");
+        return expect(!frameData().has(text), "text was on screen that should not have been", "unwanted=\"" + text + "\"");
     }
 
     bool Driver::seeCount(const std::string& text, size_t expected) {
         const size_t got = frameData().count(text);
-        return expect(got == expected, "wrong number of matches on screen",
-                      "want=\"" + text + "\" expected=" + std::to_string(expected) +
-                      " got=" + std::to_string(got));
+        return expect(got == expected, "wrong number of matches on screen", "want=\"" + text + "\" expected=" + std::to_string(expected) + " got=" + std::to_string(got));
     }
 
     bool Driver::seeNear(const std::string& text, int x, int y, int tol) {
@@ -186,8 +179,7 @@ namespace UIHost {
             if (std::abs(d->drawX - x) <= tol && std::abs(d->drawY - y) <= tol) return expect(true, "text near");
         }
         const Draw* any = frameData().first(text);
-        std::string det = "want=\"" + text + "\" at=" + std::to_string(x) + "," + std::to_string(y) +
-                          " tol=" + std::to_string(tol);
+        std::string det = "want=\"" + text + "\" at=" + std::to_string(x) + "," + std::to_string(y) + " tol=" + std::to_string(tol);
         if (any) det += " foundAt=" + std::to_string(any->drawX) + "," + std::to_string(any->drawY);
         else     det += " (text not drawn at all)";
         return expect(false, "text was not where it should be", det);
@@ -195,37 +187,27 @@ namespace UIHost {
 
     bool Driver::seeOp(const char* op, size_t atLeast) {
         const size_t got = frameData().ops(op).size();
-        return expect(got >= atLeast, "expected primitive was not drawn",
-                      std::string("op=") + op + " atLeast=" + std::to_string(atLeast) +
-                      " got=" + std::to_string(got));
+        return expect(got >= atLeast, "expected primitive was not drawn", std::string("op=") + op + " atLeast=" + std::to_string(atLeast) + " got=" + std::to_string(got));
     }
 
     bool Driver::seeSprites(size_t atLeast) {
         const size_t got = frameData().sprites();
-        return expect(got >= atLeast, "too few sprites were drawn",
-                      "atLeast=" + std::to_string(atLeast) + " got=" + std::to_string(got));
+        return expect(got >= atLeast, "too few sprites were drawn", "atLeast=" + std::to_string(atLeast) + " got=" + std::to_string(got));
     }
 
     void Driver::screenshot(const std::string& path) const {
         std::FILE* f = std::fopen(path.c_str(), "w");
         if (!f) return;
         const Frame& fr = frameData();
-        std::fprintf(f, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1280\" height=\"720\" "
-                        "viewBox=\"0 0 1280 720\">\n<rect width=\"1280\" height=\"720\" fill=\"#111\"/>\n");
+        std::fprintf(f, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1280\" height=\"720\" viewBox=\"0 0 1280 720\">\n<rect width=\"1280\" height=\"720\" fill=\"#111\"/>\n");
         for (const Draw& d : fr.draws) {
             if (!d.visible) continue;
             if (d.kind == UIHost::Kind::Text) {
-                std::fprintf(f, "<text x=\"%d\" y=\"%d\" font-family=\"sans-serif\" font-size=\"%.1f\" "
-                                "fill=\"%s\" dominant-baseline=\"hanging\">%s</text>\n",
-                             d.drawX, d.drawY, fontPx(d.style), rgba(d.color).c_str(), esc(d.text).c_str());
+                std::fprintf(f, "<text x=\"%d\" y=\"%d\" font-family=\"sans-serif\" font-size=\"%.1f\" fill=\"%s\" dominant-baseline=\"hanging\">%s</text>\n", d.drawX, d.drawY, fontPx(d.style), rgba(d.color).c_str(), esc(d.text).c_str());
             } else if (d.kind == UIHost::Kind::Sprite) {
-                std::fprintf(f,
-                             "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"none\" "
-                             "stroke=\"#6cf\" stroke-dasharray=\"4 3\"/>\n",
-                             d.drawX, d.drawY, d.drawWidth, d.drawHeight);
+                std::fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"none\" stroke=\"#6cf\" stroke-dasharray=\"4 3\"/>\n", d.drawX, d.drawY, d.drawWidth, d.drawHeight);
             } else if (d.drawWidth > 0 && d.drawHeight > 0) {
-                std::fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"%s\"/>\n",
-                             d.drawX, d.drawY, d.drawWidth, d.drawHeight, rgba(d.color).c_str());
+                std::fprintf(f, "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"%s\"/>\n", d.drawX, d.drawY, d.drawWidth, d.drawHeight, rgba(d.color).c_str());
             }
         }
         std::fprintf(f, "</svg>\n");

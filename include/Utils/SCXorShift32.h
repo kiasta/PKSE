@@ -52,10 +52,7 @@ namespace Utils {
 
         uint32_t Next32()
         {
-            return static_cast<uint32_t>(Next()) |
-                (static_cast<uint32_t>(Next()) << 8) |
-                (static_cast<uint32_t>(Next()) << 16) |
-                (static_cast<uint32_t>(Next()) << 24);
+            return static_cast<uint32_t>(Next()) | (static_cast<uint32_t>(Next()) << 8) | (static_cast<uint32_t>(Next()) << 16) | (static_cast<uint32_t>(Next()) << 24);
         }
     };
 }

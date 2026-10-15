@@ -84,8 +84,7 @@ namespace UI
         std::function<void(const std::string &)> textChanged;
         if (timing == FilterTiming::WhileTyping)
             textChanged = followQuery;
-        const Utils::KeyboardResult typed =
-            Utils::promptText("Search " + listName, "Type part of a name", query, 32, textChanged);
+        const Utils::KeyboardResult typed = Utils::promptText("Search " + listName, "Type part of a name", query, 32, textChanged);
         followQuery(typed.accepted ? typed.text : queryBeforeTyping);
         return query != queryBeforeTyping;
     }
@@ -97,8 +96,7 @@ namespace UI
         const int boxHeight = listSearchBoxHeight() - 6;
         const bool filtering = search.isFiltering();
         framebuffer.drawFilledRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, Colors::PanelAlt);
-        framebuffer.drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 8,
-                                    filtering ? Colors::Accent : Colors::Border, filtering ? 2 : 1);
+        framebuffer.drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, filtering ? Colors::Accent : Colors::Border, filtering ? 2 : 1);
 
         // The magnifier. Drawn rather than set in text -- the UI font has no such glyph -- and sized off
         // the box so the two cannot drift apart. See PKSEFramebuffer::drawSearchIcon for why it is a whole

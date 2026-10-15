@@ -44,13 +44,11 @@ namespace Trainer
         /// are promoted to the Bank's party-sized record where required, with the party tail
         /// recalculated from the stored data. Gen 1/2 locale-sized records and Gen 3's existing
         /// short-record Bank path remain byte-preserving.
-        std::unique_ptr<Pokemon::Pokemon> prepareForBank(const Pokemon::Pokemon &pokemon,
-                                                         std::string *error = nullptr);
+        std::unique_ptr<Pokemon::Pokemon> prepareForBank(const Pokemon::Pokemon &pokemon, std::string *error = nullptr);
 
         /// Read, validate and place one native Pokemon entity into the first free Bank slot.
         /// Nothing is persisted here: the existing Bank Save/Discard flow owns that decision.
-        bool importIntoBank(Bank &bank, const std::string &path, size_t *outBox = nullptr,
-                            size_t *outSlot = nullptr, std::string *error = nullptr);
+        bool importIntoBank(Bank &bank, const std::string &path, size_t *outBox = nullptr, size_t *outSlot = nullptr, std::string *error = nullptr);
 
         /// Serialize a Pokemon to PKHeX-compatible decrypted native bytes. The source object
         /// is never mutated: checksum refresh happens on a clone, then the emitted bytes are reparsed and

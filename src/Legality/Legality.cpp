@@ -109,9 +109,7 @@ namespace Legality
                         which += ", ";
                     which += std::string(statName(index)) + " " + std::to_string(evValue[index]);
                 }
-                add(report, Severity::Warning,
-                    "Let's Go has no EVs, but this Pokemon carries " + which +
-                        " -- Awakening Values are its stat training, and these bytes affect nothing");
+                add(report, Severity::Warning, "Let's Go has no EVs, but this Pokemon carries " + which + " -- Awakening Values are its stat training, and these bytes affect nothing");
             }
         }
         else if (pokemon.maxEV() > 255)
@@ -132,8 +130,7 @@ namespace Legality
             for (int index = 0; index < 6; ++index)
             {
                 if (evValue[index] > 252)
-                    add(report, Severity::Invalid,
-                        std::string(statName(index)) + " EV over 252 (" + std::to_string(evValue[index]) + ")");
+                    add(report, Severity::Invalid, std::string(statName(index)) + " EV over 252 (" + std::to_string(evValue[index]) + ")");
             }
             if (evTotal > 510)
                 add(report, Severity::Invalid, "EV total over 510 (" + std::to_string(evTotal) + ")");
@@ -145,8 +142,7 @@ namespace Legality
                                                 pokemon.avSPE(), pokemon.avSPA(), pokemon.avSPD()};
             for (int index = 0; index < 6; ++index)
                 if (awakeningValues[index] > 200)
-                    add(report, Severity::Invalid,
-                        std::string(statName(index)) + " AV over 200 (" + std::to_string(awakeningValues[index]) + ")");
+                    add(report, Severity::Invalid, std::string(statName(index)) + " AV over 200 (" + std::to_string(awakeningValues[index]) + ")");
         }
 
         // Skipped entirely for a format with no abilities. Gen 1 predates them: ability() and
@@ -176,8 +172,7 @@ namespace Legality
                 for (int otherMoveIndex = moveIndex + 1; otherMoveIndex < 4; ++otherMoveIndex)
                     if (moveIds[moveIndex] != 0 && moveIds[moveIndex] == moveIds[otherMoveIndex])
                     {
-                        add(report, Severity::Invalid,
-                            "Duplicate move: " + std::string(Names::getMoveName(moveIds[moveIndex])));
+                        add(report, Severity::Invalid, "Duplicate move: " + std::string(Names::getMoveName(moveIds[moveIndex])));
                         break; // report each duplicated move once
                     }
         }
@@ -196,12 +191,8 @@ namespace Legality
         // every TM taught after it arrived. The origin byte is what says so, and it is trustworthy
         // here -- nothing but a transfer writes a Gen 1/2 version into a modern record.
         const uint8_t originVersion = pokemon.hasOriginGame() ? pokemon.originGame() : 0;
-        const Enums::GameVersion transferGroup =
-            (originVersion >= 35 && originVersion <= 38)    ? Enums::GameVersion::RBY
-            : (originVersion >= 39 && originVersion <= 41)  ? Enums::GameVersion::GSC
-                                                            : originGroup;
-        const bool transferPool = transferGroup != originGroup &&
-                                  Pokemon::getLearnableBits(species, pokemon.form(), transferGroup) != nullptr;
+        const Enums::GameVersion transferGroup = (originVersion >= 35 && originVersion <= 38) ? Enums::GameVersion::RBY : (originVersion >= 39 && originVersion <= 41) ? Enums::GameVersion::GSC : originGroup;
+        const bool transferPool = transferGroup != originGroup && Pokemon::getLearnableBits(species, pokemon.form(), transferGroup) != nullptr;
         if (Pokemon::getLearnableBits(species, pokemon.form(), originGroup) != nullptr)
         {
             for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
@@ -219,8 +210,7 @@ namespace Legality
         // the modern table would either name the wrong item or be reported "unknown" when it is fine.
         if (pokemon.heldItem() != 0)
         {
-            const char *heldName = Enums::isGen3Group(originGroup) ? Names::getItemNameG3(pokemon.heldItem())
-                                                                   : Trainer::getItemName(pokemon.heldItem());
+            const char *heldName = Enums::isGen3Group(originGroup) ? Names::getItemNameG3(pokemon.heldItem()) : Trainer::getItemName(pokemon.heldItem());
             if (std::string(heldName) == "???")
                 add(report, Severity::Warning, "Unknown held item id " + std::to_string(pokemon.heldItem()));
         }
@@ -234,16 +224,12 @@ namespace Legality
         if (expLevel < 1 || expLevel > 100)
             add(report, Severity::Invalid, "EXP maps to invalid level (" + std::to_string(expLevel) + ")");
         if (pokemon.level() != 0 && pokemon.level() != expLevel)
-            add(report, Severity::Invalid,
-                "Level " + std::to_string(pokemon.level()) + " does not match EXP (expected " +
-                    std::to_string(expLevel) + ")");
+            add(report, Severity::Invalid, "Level " + std::to_string(pokemon.level()) + " does not match EXP (expected " + std::to_string(expLevel) + ")");
 
         {
             const uint8_t effLevel = pokemon.level() != 0 ? pokemon.level() : expLevel;
             if (pokemon.metLevel() != 0 && pokemon.metLevel() > effLevel)
-                add(report, Severity::Invalid,
-                    "Met level " + std::to_string(pokemon.metLevel()) + " above current level " +
-                        std::to_string(effLevel));
+                add(report, Severity::Invalid, "Met level " + std::to_string(pokemon.metLevel()) + " above current level " + std::to_string(effLevel));
         }
 
         {
@@ -260,10 +246,7 @@ namespace Legality
                 if (genderValue > 1)
                     add(report, Severity::Invalid, "Gendered species marked genderless");
                 else if ((pokemon.form() & 1) != genderValue)
-                    add(report, Severity::Invalid,
-                        "Form " + std::to_string(pokemon.form()) + " is the " +
-                            ((pokemon.form() & 1) ? "female" : "male") + " form but the gender is " +
-                            (genderValue ? "female" : "male"));
+                    add(report, Severity::Invalid, "Form " + std::to_string(pokemon.form()) + " is the " + ((pokemon.form() & 1) ? "female" : "male") + " form but the gender is " + (genderValue ? "female" : "male"));
             }
             else if (pi.genderRatio == 255)
             {

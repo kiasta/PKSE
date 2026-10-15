@@ -52,8 +52,7 @@ namespace Pokemon
 
         std::unique_ptr<Pokemon> clone() const override
         {
-            std::byte *encryptedRecord =
-                Encryption::encryptArray3RSE(std::span<const std::byte>(data.data(), dataSize));
+            std::byte *encryptedRecord = Encryption::encryptArray3RSE(std::span<const std::byte>(data.data(), dataSize));
             auto copiedPokemon = std::make_unique<Pokemon3RSE>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;

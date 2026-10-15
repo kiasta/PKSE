@@ -110,8 +110,7 @@ namespace Trainer::PokemonFile
                 return {};
 
             std::string extension = path.substr(dot);
-            std::transform(extension.begin(), extension.end(), extension.begin(),
-                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
             return extension;
         }
 
@@ -148,8 +147,7 @@ namespace Trainer::PokemonFile
 
         uint32_t readUInt32At(std::span<const std::byte> record, size_t offset)
         {
-            return static_cast<uint32_t>(readUInt16At(record, offset)) |
-                   (static_cast<uint32_t>(readUInt16At(record, offset + 2)) << 16);
+            return static_cast<uint32_t>(readUInt16At(record, offset)) | (static_cast<uint32_t>(readUInt16At(record, offset + 2)) << 16);
         }
 
         bool anyByteSet(std::span<const std::byte> record, size_t firstOffset, size_t endOffset)
@@ -212,8 +210,7 @@ namespace Trainer::PokemonFile
             const uint8_t originGame = byteAt(record, 0xDF);
             if (originGame > static_cast<uint8_t>(GameVersion::OR))
             {
-                if (originGame == static_cast<uint8_t>(GameVersion::GP) ||
-                    originGame == static_cast<uint8_t>(GameVersion::GE) || originGame == ORIGIN_GAME_GO)
+                if (originGame == static_cast<uint8_t>(GameVersion::GP) || originGame == static_cast<uint8_t>(GameVersion::GE) || originGame == ORIGIN_GAME_GO)
                     return {".pb7"};
                 return {".pk7"};
             }
@@ -235,15 +232,10 @@ namespace Trainer::PokemonFile
             const uint8_t groundTile = byteAt(record, 0xDE);
             if (groundTile != 0)
             {
-                const uint8_t currentLevel =
-                    Pokemon::getLevelFromExp(readUInt32At(record, 0x10), Pokemon::getGrowthRate(species));
+                const uint8_t currentLevel = Pokemon::getLevelFromExp(readUInt32At(record, 0x10), Pokemon::getGrowthRate(species));
                 if (currentLevel < 100)
                     return {".pk6"};
-                const bool fromGen4 = originGame == static_cast<uint8_t>(GameVersion::HG) ||
-                                      originGame == static_cast<uint8_t>(GameVersion::SS) ||
-                                      originGame == static_cast<uint8_t>(GameVersion::D) ||
-                                      originGame == static_cast<uint8_t>(GameVersion::P) ||
-                                      originGame == static_cast<uint8_t>(GameVersion::Pt);
+                const bool fromGen4 = originGame == static_cast<uint8_t>(GameVersion::HG) || originGame == static_cast<uint8_t>(GameVersion::SS) || originGame == static_cast<uint8_t>(GameVersion::D) || originGame == static_cast<uint8_t>(GameVersion::P) || originGame == static_cast<uint8_t>(GameVersion::Pt);
                 constexpr uint8_t GROUND_TILE_MAX_PLATINUM = 24;
                 if (!fromGen4 || groundTile > GROUND_TILE_MAX_PLATINUM)
                     return {".pk7"};
@@ -320,33 +312,27 @@ namespace Trainer::PokemonFile
             else
                 return {};
 
-            if (std::find(consistentExtensions.begin(), consistentExtensions.end(), extension) !=
-                consistentExtensions.end())
+            if (std::find(consistentExtensions.begin(), consistentExtensions.end(), extension) != consistentExtensions.end())
                 return {};
             if (consistentExtensions.empty())
                 return "the contents of this " + extension + " file are not a format PKSE can read";
-            return "this file is named " + extension + " but its contents are a " + consistentExtensions.front() +
-                   " Pokemon (rename it to " + consistentExtensions.front() + ")";
+            return "this file is named " + extension + " but its contents are a " + consistentExtensions.front() + " Pokemon (rename it to " + consistentExtensions.front() + ")";
         }
 
-        std::unique_ptr<Pokemon::Pokemon> parseUnchecked(std::span<const std::byte> bytes,
-                                                         const std::string &fileName,
-                                                         std::string *error)
+        std::unique_ptr<Pokemon::Pokemon> parseUnchecked(std::span<const std::byte> bytes, const std::string &fileName, std::string *error)
         {
             const std::string namedExtension = lowerExtension(fileName);
             const FormatSpec *formatSpec = specForExtension(namedExtension);
             if (!formatSpec)
             {
-                reportFailure(error, namedExtension.empty() ? "Pokemon file has no supported extension"
-                                                            : "unsupported Pokemon file extension: " + namedExtension);
+                reportFailure(error, namedExtension.empty() ? "Pokemon file has no supported extension" : "unsupported Pokemon file extension: " + namedExtension);
                 return nullptr;
             }
             const std::string extension = formatSpec->extension; // the plain name, for an .ekX too
             const bool namedEncrypted = namedExtension != extension;
             if (!sizeAllowed(*formatSpec, bytes.size()))
             {
-                std::string sizeMessage = "wrong byte size for " + extension + ": expected " +
-                                          std::to_string(formatSpec->shortSize);
+                std::string sizeMessage = "wrong byte size for " + extension + ": expected " + std::to_string(formatSpec->shortSize);
                 if (formatSpec->longSize != formatSpec->shortSize)
                     sizeMessage += " or " + std::to_string(formatSpec->longSize);
                 reportFailure(error, sizeMessage + ", got " + std::to_string(bytes.size()));
@@ -362,10 +348,7 @@ namespace Trainer::PokemonFile
 
             auto structurallyValid = [&](const std::unique_ptr<Pokemon::Pokemon> &candidate)
             {
-                return candidate && candidate->speciesID() != 0 && candidate->isStructurallyValid() &&
-                       (candidate->getDataSize() == bytes.size() ||
-                        (formatSpec->group == GameVersion::PLA && bytes.size() == formatSpec->shortSize &&
-                         candidate->getDataSize() == formatSpec->longSize));
+                return candidate && candidate->speciesID() != 0 && candidate->isStructurallyValid() && (candidate->getDataSize() == bytes.size() || (formatSpec->group == GameVersion::PLA && bytes.size() == formatSpec->shortSize && candidate->getDataSize() == formatSpec->longSize));
             };
 
             // Standard PKHeX/PKSM .pk* files are DECRYPTED, so that reading is tried first; the
@@ -380,8 +363,7 @@ namespace Trainer::PokemonFile
                 std::byte *encrypted = Bank::encryptRecord(formatSpec->group, bytes, readUInt32At(bytes, 0));
                 if (!encrypted)
                     return std::unique_ptr<Pokemon::Pokemon>();
-                auto candidate =
-                    Bank::makePokemon(formatSpec->group, std::span<const std::byte>(encrypted, bytes.size()));
+                auto candidate = Bank::makePokemon(formatSpec->group, std::span<const std::byte>(encrypted, bytes.size()));
                 delete[] encrypted;
                 return candidate;
             };
@@ -403,8 +385,7 @@ namespace Trainer::PokemonFile
                 return nullptr;
             }
 
-            const std::string contentError =
-                contentMismatch(pokemon->getData().first(bytes.size()), extension);
+            const std::string contentError = contentMismatch(pokemon->getData().first(bytes.size()), extension);
             if (!contentError.empty())
             {
                 reportFailure(error, contentError);
@@ -493,8 +474,7 @@ namespace Trainer::PokemonFile
             return {nullptr, std::move(error)};
         }
         struct stat fileStatus{};
-        if (stat(path.c_str(), &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode) || fileStatus.st_size < 0 ||
-            !sizeAllowed(*fileFormat, static_cast<size_t>(fileStatus.st_size)))
+        if (stat(path.c_str(), &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode) || fileStatus.st_size < 0 || !sizeAllowed(*fileFormat, static_cast<size_t>(fileStatus.st_size)))
         {
             reportFailure(&error, "Pokemon file has an unexpected size");
             return {nullptr, std::move(error)};
@@ -507,8 +487,7 @@ namespace Trainer::PokemonFile
             return {nullptr, std::move(error)};
         }
 
-        const auto bytes =
-            std::span<const std::byte>(reinterpret_cast<const std::byte *>(fileContents), byteCount);
+        const auto bytes = std::span<const std::byte>(reinterpret_cast<const std::byte *>(fileContents), byteCount);
         LoadResult loadResult = parse(bytes, path);
         delete[] fileContents;
         return loadResult;
@@ -581,11 +560,8 @@ namespace Trainer::PokemonFile
         std::memcpy(partyRecord.data(), storedBytes.data(), storedBytes.size());
         // Modern formats keep the battle level in a party-only byte. Leaving it zero
         // makes recalculateStats() return early, giving a Level 0 / 0 HP import.
-        const auto levelFromExp = static_cast<std::byte>(
-            Pokemon::getLevelFromExp(pokemon.exp(), Pokemon::getGrowthRate(pokemon.speciesID())));
-        if ((bankGroup == GameVersion::SWSH || bankGroup == GameVersion::BDSP || bankGroup == GameVersion::SV ||
-             bankGroup == GameVersion::ZA) &&
-            bankSize > 0x148)
+        const auto levelFromExp = static_cast<std::byte>(Pokemon::getLevelFromExp(pokemon.exp(), Pokemon::getGrowthRate(pokemon.speciesID())));
+        if ((bankGroup == GameVersion::SWSH || bankGroup == GameVersion::BDSP || bankGroup == GameVersion::SV || bankGroup == GameVersion::ZA) && bankSize > 0x148)
             partyRecord[0x148] = levelFromExp;
         if (bankGroup == GameVersion::PLA && bankSize > 0x168)
             partyRecord[0x168] = levelFromExp;
@@ -663,8 +639,7 @@ namespace Trainer::PokemonFile
             reportFailure(error, "export verification failed: " + verifyError);
             return {};
         }
-        if (roundTripped->getDataSize() != exportCopy->getDataSize() ||
-            std::memcmp(roundTripped->getData().data(), decryptedBytes.data(), decryptedBytes.size()) != 0)
+        if (roundTripped->getDataSize() != exportCopy->getDataSize() || std::memcmp(roundTripped->getData().data(), decryptedBytes.data(), decryptedBytes.size()) != 0)
         {
             reportFailure(error, "export verification changed Pokemon bytes after native reparse");
             return {};
@@ -690,8 +665,7 @@ namespace Trainer::PokemonFile
         const uint32_t identityValue = pokemon.hasPID() ? pokemon.pid() : pokemon.id32();
         std::snprintf(identity, sizeof(identity), "%08X", static_cast<unsigned int>(identityValue));
 
-        const std::string stem = POKEMON_EXPORT_DIRECTORY + "/" + std::to_string(pokemon.speciesID()) + "-" +
-                                 safeSpeciesName(pokemon) + "-" + identity;
+        const std::string stem = POKEMON_EXPORT_DIRECTORY + "/" + std::to_string(pokemon.speciesID()) + "-" + safeSpeciesName(pokemon) + "-" + identity;
         std::string path = stem + extension;
         for (unsigned int suffix = 2; fileExists(path) && suffix < 10000; ++suffix)
             path = stem + "-" + std::to_string(suffix) + extension;
@@ -739,8 +713,7 @@ namespace Trainer::PokemonFile
         // Verify the actual bytes that reached the SD card before the temporary file is promoted.
         size_t verifySize = 0;
         uint8_t *verifyContents = Utils::readAllBytes(temporaryPath.c_str(), &verifySize);
-        const bool verified = verifyContents && verifySize == fileBytes.size() &&
-                              std::memcmp(verifyContents, fileBytes.data(), fileBytes.size()) == 0;
+        const bool verified = verifyContents && verifySize == fileBytes.size() && std::memcmp(verifyContents, fileBytes.data(), fileBytes.size()) == 0;
         delete[] verifyContents;
         if (!verified)
         {

@@ -76,8 +76,7 @@ namespace Save
     inline std::string titleIdHint(uint64_t titleId)
     {
         char buffer[16];
-        snprintf(buffer, sizeof(buffer), "#%05llX",
-                 static_cast<unsigned long long>((titleId >> 12) & 0xFFFFFull));
+        snprintf(buffer, sizeof(buffer), "#%05llX", static_cast<unsigned long long>((titleId >> 12) & 0xFFFFFull));
         return buffer;
     }
 
@@ -126,8 +125,7 @@ namespace Save
      */
     inline std::string titleFolderName(uint64_t titleId, Enums::GameVersion gameVersion)
     {
-        return "Pokemon " + directorySafeName(Enums::getGameVersionName(gameVersion)) + " " +
-               titleIdText(titleId);
+        return "Pokemon " + directorySafeName(Enums::getGameVersionName(gameVersion)) + " " + titleIdText(titleId);
     }
 
     /**
@@ -165,8 +163,7 @@ namespace Save
      * Kept here, pure and away from the filesystem, so it can be tested off-console -- the same
      * reason Save/RtcFooter.h is its own header.
      */
-    inline bool legacyFolderIsAmbiguous(const InstalledTitle &title,
-                                        const std::vector<InstalledTitle> &installed)
+    inline bool legacyFolderIsAmbiguous(const InstalledTitle &title, const std::vector<InstalledTitle> &installed)
     {
         const std::string legacyName = legacyTitleFolderName(title.gameVersion);
         int couldHaveProducedIt = 0;

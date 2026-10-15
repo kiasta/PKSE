@@ -294,8 +294,7 @@ namespace Names
 
         std::vector<std::string> collectG3(const uint8_t *data)
         {
-            const uint32_t rib = static_cast<uint32_t>(data[0x4C]) | (static_cast<uint32_t>(data[0x4D]) << 8) |
-                                 (static_cast<uint32_t>(data[0x4E]) << 16) | (static_cast<uint32_t>(data[0x4F]) << 24);
+            const uint32_t rib = static_cast<uint32_t>(data[0x4C]) | (static_cast<uint32_t>(data[0x4D]) << 8) | (static_cast<uint32_t>(data[0x4E]) << 16) | (static_cast<uint32_t>(data[0x4F]) << 24);
             std::vector<std::string> out;
             for (int i = 0; i < 5; ++i)
             {
@@ -304,8 +303,7 @@ namespace Names
                 if (lvl == 0 || lvl > 4) continue;
                 out.emplace_back(localize(std::string(G3_CONTEST[i]) + " Ribbon" + G3_CONTEST_RANK[lvl]));
             }
-            const std::vector<std::string> flags =
-                collect(data, FRLG_RIBBONS, sizeof(FRLG_RIBBONS) / sizeof(FRLG_RIBBONS[0]));
+            const std::vector<std::string> flags = collect(data, FRLG_RIBBONS, sizeof(FRLG_RIBBONS) / sizeof(FRLG_RIBBONS[0]));
             out.insert(out.end(), flags.begin(), flags.end());
             return out;
         }
@@ -330,8 +328,7 @@ namespace Names
         case GV::GP:
         case GV::GE:
         case GV::GG:
-            return collect(entityData, GG_RIBBONS,
-                           sizeof(GG_RIBBONS) / sizeof(GG_RIBBONS[0]));
+            return collect(entityData, GG_RIBBONS, sizeof(GG_RIBBONS) / sizeof(GG_RIBBONS[0]));
 
         // Every Gen 8/9 HOME-format game shares the same 0x34..0x45 block.
         case GV::SW:
@@ -345,8 +342,7 @@ namespace Names
         case GV::VL:  // Violet
         case GV::SV:
         case GV::ZA: // Legends: Z-A
-            return collect(entityData, GEN89_RIBBONS,
-                           sizeof(GEN89_RIBBONS) / sizeof(GEN89_RIBBONS[0]));
+            return collect(entityData, GEN89_RIBBONS, sizeof(GEN89_RIBBONS) / sizeof(GEN89_RIBBONS[0]));
 
         default:
             return {};

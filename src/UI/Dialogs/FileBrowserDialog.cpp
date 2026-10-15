@@ -30,8 +30,7 @@ namespace UI
 
             bool endsWith(const std::string &text, const std::string &suffix)
             {
-                return text.size() >= suffix.size() &&
-                       text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+                return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
             }
 
             /// Case-insensitive compare, so "Zelda" doesn't sort above "apple" the way ASCII would.
@@ -95,11 +94,7 @@ namespace UI
             return directory == SD_ROOT || directory.empty();
         }
 
-        void FileBrowserState::open(const std::string &windowTitle,
-                                    const std::string &filterLabel,
-                                    const std::vector<std::string> &startDirs,
-                                    const std::vector<std::string> &exts,
-                                    const std::vector<std::string> &wholeFileNames)
+        void FileBrowserState::open(const std::string &windowTitle, const std::string &filterLabel, const std::vector<std::string> &startDirs, const std::vector<std::string> &exts, const std::vector<std::string> &wholeFileNames)
         {
             title = windowTitle;
             this->filterLabel = filterLabel;
@@ -331,8 +326,7 @@ namespace UI
             return true;
         }
 
-        void drawFileBrowser(FileBrowserState &entryStatus, PKSEFramebuffer &framebuffer,
-                             std::vector<TouchButton> &taps)
+        void drawFileBrowser(FileBrowserState &entryStatus, PKSEFramebuffer &framebuffer, std::vector<TouchButton> &taps)
         {
 
             constexpr int rowH = TouchTargetMin;
@@ -349,31 +343,23 @@ namespace UI
 
             framebuffer.drawFilledRect(0, 0, framebuffer.getWidth(), framebuffer.getHeight(), Color(0, 0, 0, 150));
             framebuffer.drawSoftShadow(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS);
-            framebuffer.drawFilledRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS,
-                                              Colors::Panel);
-            framebuffer.drawRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS,
-                                        Colors::Border, 1);
+            framebuffer.drawFilledRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS, Colors::Panel);
+            framebuffer.drawRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS, Colors::Border, 1);
             framebuffer.drawText(dialogX + 24, dialogY + 14, entryStatus.title, Colors::Text, TextStyle::Heading);
 
             // Current path, trimmed from the left so the deepest folder stays readable.
-            framebuffer.drawText(dialogX + 24, dialogY + 54,
-                                 fitPathFromLeft(framebuffer, entryStatus.directory, dialogWidth - 220),
-                                 Colors::TextDim, TextStyle::Caption);
+            framebuffer.drawText(dialogX + 24, dialogY + 54, fitPathFromLeft(framebuffer, entryStatus.directory, dialogWidth - 220), Colors::TextDim, TextStyle::Caption);
             {
                 const std::string mode = entryStatus.showAllFiles ? "All files" : entryStatus.filterLabel;
                 int messageWidth, mh;
                 framebuffer.measureText(mode, messageWidth, mh, TextStyle::Caption);
                 const int panelWidth = messageWidth + 26, ph = 26;
-                framebuffer.drawPill(dialogX + dialogWidth - 24 - panelWidth, dialogY + 50, panelWidth, ph,
-                                     entryStatus.showAllFiles ? Colors::PanelAlt : Colors::AccentDim);
-                framebuffer.drawText(dialogX + dialogWidth - 24 - panelWidth + 13, dialogY + 50 + (ph - mh) / 2, mode,
-                                     Colors::Text, TextStyle::Caption);
+                framebuffer.drawPill(dialogX + dialogWidth - 24 - panelWidth, dialogY + 50, panelWidth, ph, entryStatus.showAllFiles ? Colors::PanelAlt : Colors::AccentDim);
+                framebuffer.drawText(dialogX + dialogWidth - 24 - panelWidth + 13, dialogY + 50 + (ph - mh) / 2, mode, Colors::Text, TextStyle::Caption);
             }
-            framebuffer.drawFilledRect(dialogX + DIALOG_CORNER_RADIUS, dialogY + 84,
-                                       dialogWidth - DIALOG_CORNER_RADIUS * 2, 2, Colors::Accent);
+            framebuffer.drawFilledRect(dialogX + DIALOG_CORNER_RADIUS, dialogY + 84, dialogWidth - DIALOG_CORNER_RADIUS * 2, 2, Colors::Accent);
 
-            drawListSearchBox(framebuffer, dialogX + 24, dialogY + 92, dialogWidth - 48, entryStatus.search,
-                              static_cast<int>(entryStatus.entries.size()), entryStatus.entriesBeforeSearch);
+            drawListSearchBox(framebuffer, dialogX + 24, dialogY + 92, dialogWidth - 48, entryStatus.search, static_cast<int>(entryStatus.entries.size()), entryStatus.entriesBeforeSearch);
 
             taps.clear();
 
@@ -387,27 +373,19 @@ namespace UI
                 const int messageY = listY + (hasParentRow ? rowH : 0);
                 if (entryStatus.search.isFiltering())
                 {
-                    framebuffer.drawText(dialogX + 32, messageY + 14, "Nothing here matches that search.",
-                                         Colors::TextDim);
-                    framebuffer.drawText(dialogX + 32, messageY + 14 + framebuffer.lineHeight(TextStyle::Body) + 4,
-                                "Y: change it, or clear it to see the whole folder.", Colors::TextDim,
-                                TextStyle::Caption);
+                    framebuffer.drawText(dialogX + 32, messageY + 14, "Nothing here matches that search.", Colors::TextDim);
+                    framebuffer.drawText(dialogX + 32, messageY + 14 + framebuffer.lineHeight(TextStyle::Body) + 4, "Y: change it, or clear it to see the whole folder.", Colors::TextDim, TextStyle::Caption);
                 }
                 else
                 {
-                    const char *message = entryStatus.status.empty()
-                                          ? (entryStatus.showAllFiles ? "This folder is empty."
-                                                             : entryStatus.noFilteredFilesMessage.c_str())
-                                          : entryStatus.status.c_str();
+                    const char *message = entryStatus.status.empty() ? (entryStatus.showAllFiles ? "This folder is empty." : entryStatus.noFilteredFilesMessage.c_str()) : entryStatus.status.c_str();
                     framebuffer.drawText(dialogX + 32, messageY + 16, message, Colors::TextDim, TextStyle::Body);
                 }
             }
             else if (!entryStatus.status.empty())
             {
                 // Under the last row, in the strip the footer leaves free, so nothing moves and no row is covered.
-                framebuffer.drawText(dialogX + 24, listY + FileBrowserState::VISIBLE_ROWS * rowH + 4,
-                                     fitPathFromLeft(framebuffer, entryStatus.status, dialogWidth - 48),
-                                     Colors::Warning, TextStyle::Caption);
+                framebuffer.drawText(dialogX + 24, listY + FileBrowserState::VISIBLE_ROWS * rowH + 4, fitPathFromLeft(framebuffer, entryStatus.status, dialogWidth - 48), Colors::Warning, TextStyle::Caption);
             }
 
             const int last = std::min(count, entryStatus.scroll + FileBrowserState::VISIBLE_ROWS);
@@ -433,29 +411,23 @@ namespace UI
                 int textWidth, th;
                 const std::string label = e.isParent ? "..  (up one folder)" : e.name;
                 framebuffer.measureText(label, textWidth, th, TextStyle::Body);
-                framebuffer.drawText(dialogX + 62, rectY + (rowH - th) / 2, label,
-                            selected ? Colors::Text : (e.isDir ? Colors::Text : Colors::TextDim), TextStyle::Body);
+                framebuffer.drawText(dialogX + 62, rectY + (rowH - th) / 2, label, selected ? Colors::Text : (e.isDir ? Colors::Text : Colors::TextDim), TextStyle::Body);
 
                 if (!e.isDir)
                 {
                     const std::string sizeText = humanSize(e.size);
                     int sizeTextWidth, sh;
                     framebuffer.measureText(sizeText, sizeTextWidth, sh, TextStyle::Caption);
-                    framebuffer.drawText(dialogX + dialogWidth - 32 - sizeTextWidth, rectY + (rowH - sh) / 2, sizeText,
-                                         Colors::TextDim, TextStyle::Caption);
+                    framebuffer.drawText(dialogX + dialogWidth - 32 - sizeTextWidth, rectY + (rowH - sh) / 2, sizeText, Colors::TextDim, TextStyle::Caption);
                 }
                 taps.push_back({index, dialogX + 12, rectY, dialogWidth - 24, rowH});
             }
 
-            drawScrollbar(framebuffer, dialogX + dialogWidth - 14, listY, FileBrowserState::VISIBLE_ROWS * rowH,
-                          count * rowH, entryStatus.scroll);
+            drawScrollbar(framebuffer, dialogX + dialogWidth - 14, listY, FileBrowserState::VISIBLE_ROWS * rowH, count * rowH, entryStatus.scroll);
 
             if (entryStatus.truncated)
             {
-                framebuffer.drawText(dialogX + 24, dialogY + dialogHeight - footerH - 24,
-                            "Folder has more than " + std::to_string(FileBrowserState::MAX_DIRECTORY_ENTRIES) +
-                                " entries; the rest are not listed.",
-                            Colors::Warning, TextStyle::Caption);
+                framebuffer.drawText(dialogX + 24, dialogY + dialogHeight - footerH - 24, "Folder has more than " + std::to_string(FileBrowserState::MAX_DIRECTORY_ENTRIES) + " entries; the rest are not listed.", Colors::Warning, TextStyle::Caption);
             }
 
         }

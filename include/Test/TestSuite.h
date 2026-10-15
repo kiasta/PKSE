@@ -154,8 +154,7 @@ namespace Test
 
     inline void clearSamples() { sampleStore().clear(); }
 
-    inline void addSample(Enums::GameVersion version, Enums::GameVersion group, const std::string &origin,
-                          std::unique_ptr<Pokemon::Pokemon> pokemon)
+    inline void addSample(Enums::GameVersion version, Enums::GameVersion group, const std::string &origin, std::unique_ptr<Pokemon::Pokemon> pokemon)
     {
         if (!pokemon)
             return;

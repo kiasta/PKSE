@@ -94,13 +94,7 @@ namespace Conversion {
     /// by the Gen 1/2 (Poke Transporter) route, which has to stamp a handling trainer the source
     /// record cannot supply; nullptr means "not known" and leaves the pokemon unhandled. See
     /// ReceivingTrainer above.
-    std::unique_ptr<Pokemon::Pokemon> convert(
-        const Pokemon::Pokemon& source,
-        Enums::GameVersion destGroup,
-        Result& result,
-        uint8_t destOriginVersion = 0,
-        const ReceivingTrainer* receivingTrainer = nullptr
-    );
+    std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon& source, Enums::GameVersion destGroup, Result& result, uint8_t destOriginVersion = 0, const ReceivingTrainer* receivingTrainer = nullptr);
 
     /// True if `destGroup` can accept `source` (same group, or a supported+allowed conversion). Pure check
     /// (no allocation) for gating UI without performing the conversion.

@@ -15,8 +15,7 @@ namespace Utils
         size_t readIndex = 0;
         for (; readIndex < data_size; readIndex += 2)
         {
-            uint16_t value =
-                readUInt16LittleEndian(&data[readIndex]); // one 2-byte UTF-16 unit (matches i += 2); a UInt32 read here
+            uint16_t value = readUInt16LittleEndian(&data[readIndex]); // one 2-byte UTF-16 unit (matches i += 2); a UInt32 read here
                                                           // over-ran the buffer by 2 bytes on the final unit
             if (value == TerminatorNull)
             {
@@ -228,8 +227,7 @@ namespace Utils
                 out += static_cast<char16_t>(character - u'a' + u'A');
                 continue;
             }
-            if ((character >= u'A' && character <= u'Z') || (character >= u'0' && character <= u'9') ||
-                character == u'\u2640' || character == u'\u2642')
+            if ((character >= u'A' && character <= u'Z') || (character >= u'0' && character <= u'9') || character == u'\u2640' || character == u'\u2642')
             {
                 out += character;
             }

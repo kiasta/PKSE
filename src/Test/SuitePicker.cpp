@@ -68,8 +68,7 @@ namespace Test
         }
 
         if (context.rep)
-            context.rep->addTrace("[picker] driving the save picker (" +
-                              std::to_string(installed) + " installed saves)");
+            context.rep->addTrace("[picker] driving the save picker (" + std::to_string(installed) + " installed saves)");
 
         // 1. It opens, renders, and offers something.
         {
@@ -82,8 +81,7 @@ namespace Test
 
         // 2. A selects a title, and it is one the console actually has.
         const uint64_t first = pickAfter(context, "picker-select", nullptr, 0);
-        if (!context.check(first != 0, "pressing A on the save picker did not select a title",
-                       "installed=" + std::to_string(installed)))
+        if (!context.check(first != 0, "pressing A on the save picker did not select a title", "installed=" + std::to_string(installed)))
             return;
 
         bool known = false;
@@ -93,8 +91,7 @@ namespace Test
                 known = true;
                 break;
             }
-        context.check(known, "the save picker selected a title id the runner never found",
-                  hex("titleId", first, 16));
+        context.check(known, "the save picker selected a title id the runner never found", hex("titleId", first, 16));
 
         // 3. The cursor actually moves -- only decidable when there is more than one title.
         if (installed > 1)
@@ -102,13 +99,11 @@ namespace Test
             const u64 right[] = {Btn::Right};
             const uint64_t second = pickAfter(context, "picker-move", right, 1);
             context.check(second != 0, "pressing A after moving right did not select a title");
-            context.check(second != first, "Right did not move the save picker's cursor",
-                      hex("both", first, 16));
+            context.check(second != first, "Right did not move the save picker's cursor", hex("both", first, 16));
         }
         else
         {
-            context.note("only one installed save, so save-picker cursor movement was not tested",
-                     "installed=1");
+            context.note("only one installed save, so save-picker cursor movement was not tested", "installed=1");
         }
 
         // 4. The file browser -- the Gen 1 entry point -- opens and closes again.

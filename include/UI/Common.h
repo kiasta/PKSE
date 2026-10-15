@@ -85,9 +85,7 @@ namespace UI
     {
         uint8_t red, green, blue, alpha;
 
-        constexpr Color(uint8_t redValue, uint8_t greenValue, uint8_t blueValue,
-                        uint8_t alphaValue = 255)
-            : red(redValue), green(greenValue), blue(blueValue), alpha(alphaValue) {}
+        constexpr Color(uint8_t redValue, uint8_t greenValue, uint8_t blueValue, uint8_t alphaValue = 255) : red(redValue), green(greenValue), blue(blueValue), alpha(alphaValue) {}
 
         uint32_t toRGBA8() const
         {
@@ -133,6 +131,9 @@ namespace UI
         constexpr Color EvolveText(10, 36, 18);
         constexpr Color LegalityClean(120, 205, 140);
         constexpr Color LegalityProblem(235, 100, 100);
+        // Laid over a box slot that does not match the storage search. Black at partial alpha darkens
+        // either theme's disc and sprite alike.
+        constexpr Color SearchMissShade(0, 0, 0, 140);
 
         // Semantic theme colors (runtime-swappable by applyTheme())
         // These are mutable so a dark/light toggle can restyle the whole UI without

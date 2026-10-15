@@ -91,8 +91,7 @@ namespace Pokemon {
      * is returned whether or not the Pokemon is holding the item. Deciding that is the caller's,
      * so that a button can be shown and disabled rather than hidden.
      */
-    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId,
-                           TradeEvolution *outEvolutions, int maxEvolutions);
+    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId, TradeEvolution *outEvolutions, int maxEvolutions);
 }
 
 #endif  // PKM_EVOLUTION_TABLE_H

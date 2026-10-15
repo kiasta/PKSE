@@ -94,8 +94,7 @@ namespace SaveTree {
         const std::vector<std::string> files = filesIn(folderFor(root, title));
         if (files.empty()) return std::string();
         if (files.size() > 1)
-            std::printf("      note: %s/ holds %zu files; using %s\n",
-                        title.c_str(), files.size(), files.front().c_str());
+            std::printf("      note: %s/ holds %zu files; using %s\n", title.c_str(), files.size(), files.front().c_str());
         return files.front();
     }
 
@@ -104,15 +103,13 @@ namespace SaveTree {
     /// The fallback is kept so a save tree laid out the old way still runs rather than reporting
     /// every generation as missing -- but it is a fallback, and it prints, so a tree still on the
     /// old layout says so once per save instead of looking identical to one that is not.
-    inline std::string resolve(const std::string& root, const std::string& title,
-                               std::initializer_list<const char*> legacyPaths) {
+    inline std::string resolve(const std::string& root, const std::string& title, std::initializer_list<const char*> legacyPaths) {
         const std::string byTitle = forTitle(root, title);
         if (!byTitle.empty()) return byTitle;
         for (const char* relative : legacyPaths) {
             const std::string path = root + "/" + relative;
             if (isFile(path)) {
-                std::printf("      note: %s found at the old path %s -- move it to %s/ so the title is explicit\n",
-                            title.c_str(), relative, title.c_str());
+                std::printf("      note: %s found at the old path %s -- move it to %s/ so the title is explicit\n", title.c_str(), relative, title.c_str());
                 return path;
             }
         }

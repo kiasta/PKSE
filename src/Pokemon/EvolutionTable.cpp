@@ -2443,8 +2443,7 @@ namespace Pokemon {
         }
     }
 
-    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId,
-                           TradeEvolution* outEvolutions, int maxEvolutions) {
+    int getTradeEvolutions(Enums::GameVersion group, uint16_t speciesId, uint8_t formId, TradeEvolution* outEvolutions, int maxEvolutions) {
         TradeEvolutionTable table{};
         if (outEvolutions == nullptr || maxEvolutions <= 0 || !lookupTradeTable(group, table)) {
             return 0;

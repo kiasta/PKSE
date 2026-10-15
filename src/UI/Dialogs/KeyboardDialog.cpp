@@ -40,13 +40,9 @@ namespace UI
             constexpr int REPEAT_DELAY_FRAMES = 24;
             constexpr int REPEAT_INTERVAL_FRAMES = 4;
 
-            constexpr u64 DIRECTION_BUTTONS =
-                HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
-            constexpr u64 REPEATABLE_BUTTONS =
-                HidNpadButton_A | HidNpadButton_B | HidNpadButton_L | HidNpadButton_R | DIRECTION_BUTTONS;
-            constexpr u64 ANSWER_BUTTONS = HidNpadButton_A | HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y |
-                                           HidNpadButton_L | HidNpadButton_R | HidNpadButton_ZL | HidNpadButton_ZR |
-                                           HidNpadButton_Plus | HidNpadButton_Minus | DIRECTION_BUTTONS;
+            constexpr u64 DIRECTION_BUTTONS = HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
+            constexpr u64 REPEATABLE_BUTTONS = HidNpadButton_A | HidNpadButton_B | HidNpadButton_L | HidNpadButton_R | DIRECTION_BUTTONS;
+            constexpr u64 ANSWER_BUTTONS = HidNpadButton_A | HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y | HidNpadButton_L | HidNpadButton_R | HidNpadButton_ZL | HidNpadButton_ZR | HidNpadButton_Plus | HidNpadButton_Minus | DIRECTION_BUTTONS;
 
             const KeyboardState *g_activeKeyboard = nullptr;
 
@@ -87,16 +83,14 @@ namespace UI
                 int widthInHalfKeys;
             };
 
-            void addKey(std::vector<KeyPlan> &plans, int rowIndex, KeyboardKeyAction action, const std::string &label,
-                        int widthInHalfKeys = STANDARD_KEY_HALVES)
+            void addKey(std::vector<KeyPlan> &plans, int rowIndex, KeyboardKeyAction action, const std::string &label, int widthInHalfKeys = STANDARD_KEY_HALVES)
             {
                 plans.push_back({action, label, label, rowIndex, widthInHalfKeys});
             }
 
             /// One Type key per character, pairing each with the character at the same position in
             /// `upperCharacters` -- which is the lower-case string again for a row with no case.
-            void addTypeKeys(std::vector<KeyPlan> &plans, int rowIndex, const std::string &lowerCharacters,
-                             const std::string &upperCharacters, int widthInHalfKeys = STANDARD_KEY_HALVES)
+            void addTypeKeys(std::vector<KeyPlan> &plans, int rowIndex, const std::string &lowerCharacters, const std::string &upperCharacters, int widthInHalfKeys = STANDARD_KEY_HALVES)
             {
                 size_t lowerStart = 0;
                 size_t upperStart = 0;
@@ -114,9 +108,7 @@ namespace UI
 
             /// The text pages share their bottom row: the two OTHER pages, the console keyboard,
             /// space and OK. Twenty-two halves, the width of every row above it.
-            void addTextBottomRow(std::vector<KeyPlan> &plans, KeyboardKeyAction firstPage,
-                                  const std::string &firstPageLabel, KeyboardKeyAction secondPage,
-                                  const std::string &secondPageLabel)
+            void addTextBottomRow(std::vector<KeyPlan> &plans, KeyboardKeyAction firstPage, const std::string &firstPageLabel, KeyboardKeyAction secondPage, const std::string &secondPageLabel)
             {
                 constexpr int bottomRow = KEY_ROW_COUNT - 1;
                 addKey(plans, bottomRow, firstPage, firstPageLabel, 3);
@@ -140,8 +132,7 @@ namespace UI
                     addTypeKeys(plans, 1, "asdfghjkl'-", "ASDFGHJKL'-");
                     addKey(plans, 2, KeyboardKeyAction::Shift, "");
                     addTypeKeys(plans, 2, "zxcvbnm,.?", "ZXCVBNM,.?");
-                    addTextBottomRow(plans, KeyboardKeyAction::ShowSymbols, "?123", KeyboardKeyAction::ShowAccents,
-                                     "àé");
+                    addTextBottomRow(plans, KeyboardKeyAction::ShowSymbols, "?123", KeyboardKeyAction::ShowAccents, "àé");
                     break;
                 case KeyboardPage::Symbols:
                     addTypeKeys(plans, 0, "1234567890", "1234567890");
@@ -150,8 +141,7 @@ namespace UI
                     // The gender signs, the ellipsis and the multiplication sign are in the games'
                     // own character sets, which is why they are here rather than further out.
                     addTypeKeys(plans, 2, "♂♀…×~*+=%_$", "♂♀…×~*+=%_$");
-                    addTextBottomRow(plans, KeyboardKeyAction::ShowLetters, "ABC", KeyboardKeyAction::ShowAccents,
-                                     "àé");
+                    addTextBottomRow(plans, KeyboardKeyAction::ShowLetters, "ABC", KeyboardKeyAction::ShowAccents, "àé");
                     break;
                 case KeyboardPage::Accents:
                     addTypeKeys(plans, 0, "àáâäãåæçèé", "ÀÁÂÄÃÅÆÇÈÉ");
@@ -159,8 +149,7 @@ namespace UI
                     addTypeKeys(plans, 1, "êëìíîïñòóôö", "ÊËÌÍÎÏÑÒÓÔÖ");
                     addKey(plans, 2, KeyboardKeyAction::Shift, "");
                     addTypeKeys(plans, 2, "õøœùúûüýÿß", "ÕØŒÙÚÛÜÝŸß");
-                    addTextBottomRow(plans, KeyboardKeyAction::ShowLetters, "ABC", KeyboardKeyAction::ShowSymbols,
-                                     "?123");
+                    addTextBottomRow(plans, KeyboardKeyAction::ShowLetters, "ABC", KeyboardKeyAction::ShowSymbols, "?123");
                     break;
                 case KeyboardPage::Digits:
                     addTypeKeys(plans, 0, "123", "123", 3);
@@ -193,8 +182,7 @@ namespace UI
             /// Keys that make sense to hold A on. Holding A on Shift or a page key would flicker it.
             bool repeatsWhenHeld(KeyboardKeyAction action)
             {
-                return action == KeyboardKeyAction::Type || action == KeyboardKeyAction::Backspace ||
-                       action == KeyboardKeyAction::Space;
+                return action == KeyboardKeyAction::Type || action == KeyboardKeyAction::Backspace || action == KeyboardKeyAction::Space;
             }
         }
 
@@ -234,11 +222,9 @@ namespace UI
         void KeyboardState::buildPage(KeyboardPage newPage)
         {
             // A page change keeps the cursor on the same row, as near as the new keys allow.
-            const bool keepSelection =
-                !keys.empty() && selectedKeyIndex >= 0 && selectedKeyIndex < static_cast<int>(keys.size());
+            const bool keepSelection = !keys.empty() && selectedKeyIndex >= 0 && selectedKeyIndex < static_cast<int>(keys.size());
             const int selectedRow = keepSelection ? keys[selectedKeyIndex].rowIndex : 0;
-            const int selectedCenterX =
-                keepSelection ? keys[selectedKeyIndex].keyX + keys[selectedKeyIndex].keyWidth / 2 : 0;
+            const int selectedCenterX = keepSelection ? keys[selectedKeyIndex].keyX + keys[selectedKeyIndex].keyWidth / 2 : 0;
 
             page = newPage;
             const std::vector<KeyPlan> plans = planPage(newPage, request.allowNegative);
@@ -257,8 +243,7 @@ namespace UI
             const int keyBlockWidth = widestRowHalves * HALF_KEY_PITCH - KEY_GAP;
 
             cardWidth = keyBlockWidth + 2 * CARD_PADDING;
-            cardHeight = CARD_PADDING + FIELD_HEIGHT + FIELD_KEY_GAP + KEY_ROW_COUNT * KEY_HEIGHT +
-                         (KEY_ROW_COUNT - 1) * KEY_GAP + CARD_PADDING;
+            cardHeight = CARD_PADDING + FIELD_HEIGHT + FIELD_KEY_GAP + KEY_ROW_COUNT * KEY_HEIGHT + (KEY_ROW_COUNT - 1) * KEY_GAP + CARD_PADDING;
             cardX = (screenWidth - cardWidth) / 2;
             cardY = screenHeight - NAV_BAR_HEIGHT - CARD_NAV_BAR_GAP - cardHeight;
             fieldX = cardX + CARD_PADDING;
@@ -344,8 +329,7 @@ namespace UI
             // Sampled every frame, so a stick push made while a wait below is running is seen as held
             // rather than arriving later as a fresh press.
             const HidAnalogStickState stick = padGetStickPos(&pad, 0);
-            const AnalogNavigationSample analog = analogNavigation.sample(
-                stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right);
+            const AnalogNavigationSample analog = analogNavigation.sample(stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right);
             const u64 pressedButtons = padGetButtonsDown(&pad) | analog.down;
             const u64 heldButtons = padGetButtons(&pad) | analog.held;
 
@@ -487,9 +471,7 @@ namespace UI
                 deleteBeforeCaret();
                 break;
             case KeyboardKeyAction::Shift:
-                shift = shift == ShiftMode::Off    ? ShiftMode::Once
-                        : shift == ShiftMode::Once ? ShiftMode::Locked
-                                                   : ShiftMode::Off;
+                shift = shift == ShiftMode::Off ? ShiftMode::Once : shift == ShiftMode::Once ? ShiftMode::Locked : ShiftMode::Off;
                 break;
             case KeyboardKeyAction::Space:
                 insertText(" ");
@@ -536,8 +518,7 @@ namespace UI
                 while (rowFirstIndex > 0 && keys[rowFirstIndex - 1].rowIndex == selectedKey.rowIndex)
                     --rowFirstIndex;
                 int rowLastIndex = selectedKeyIndex;
-                while (rowLastIndex + 1 < static_cast<int>(keys.size()) &&
-                       keys[rowLastIndex + 1].rowIndex == selectedKey.rowIndex)
+                while (rowLastIndex + 1 < static_cast<int>(keys.size()) && keys[rowLastIndex + 1].rowIndex == selectedKey.rowIndex)
                     ++rowLastIndex;
                 int targetIndex = selectedKeyIndex + columnStep;
                 if (targetIndex < rowFirstIndex)
@@ -616,8 +597,7 @@ namespace UI
             }
             else
             {
-                caretOffset = characterStep < 0 ? previousCharacterStart(text, caretOffset)
-                                                : nextCharacterEnd(text, caretOffset);
+                caretOffset = characterStep < 0 ? previousCharacterStart(text, caretOffset) : nextCharacterEnd(text, caretOffset);
             }
             caretBlinkFrames = 0;
         }
@@ -653,8 +633,7 @@ namespace UI
 
         void KeyboardState::handOffToSystemKeyboard()
         {
-            const Utils::KeyboardResult typed =
-                Utils::promptSystemText(request.header, request.guide, text, request.maxChars);
+            const Utils::KeyboardResult typed = Utils::promptSystemText(request.header, request.guide, text, request.maxChars);
             // The buttons that answered the console's keyboard can still be down when it returns.
             // They were meant for it, and must not arrive here as fresh presses.
             waitingForRelease = true;
@@ -689,43 +668,32 @@ namespace UI
             if (page == KeyboardPage::Digits)
                 return "Arrows: Move  |  A: Type  |  B: Delete  |  L/R: Cursor  |  +: OK  |  -: Cancel";
             if (page == KeyboardPage::Symbols)
-                return "Arrows: Move  |  A: Type  |  B: Delete  |  Y: Space  |  L/R: Cursor  |  ZL/ZR: Layout  |  "
-                       "+: OK  |  -: Cancel";
-            return "Arrows: Move  |  A: Type  |  B: Delete  |  Y: Space  |  X: Shift  |  L/R: Cursor  |  "
-                   "ZL/ZR: Layout  |  +: OK  |  -: Cancel";
+                return "Arrows: Move  |  A: Type  |  B: Delete  |  Y: Space  |  L/R: Cursor  |  ZL/ZR: Layout  |  +: OK  |  -: Cancel";
+            return "Arrows: Move  |  A: Type  |  B: Delete  |  Y: Space  |  X: Shift  |  L/R: Cursor  |  ZL/ZR: Layout  |  +: OK  |  -: Cancel";
         }
 
         namespace
         {
             void drawField(KeyboardState &keyboard, PKSEFramebuffer &framebuffer)
             {
-                framebuffer.drawFilledRoundedRect(keyboard.fieldX, keyboard.fieldY, keyboard.fieldWidth,
-                                                  keyboard.fieldHeight, FIELD_CORNER_RADIUS, Colors::PanelAlt);
-                framebuffer.drawRoundedRect(keyboard.fieldX, keyboard.fieldY, keyboard.fieldWidth, keyboard.fieldHeight,
-                                            FIELD_CORNER_RADIUS, Colors::Accent, 2);
+                framebuffer.drawFilledRoundedRect(keyboard.fieldX, keyboard.fieldY, keyboard.fieldWidth, keyboard.fieldHeight, FIELD_CORNER_RADIUS, Colors::PanelAlt);
+                framebuffer.drawRoundedRect(keyboard.fieldX, keyboard.fieldY, keyboard.fieldWidth, keyboard.fieldHeight, FIELD_CORNER_RADIUS, Colors::Accent, 2);
                 const int fieldCenterY = keyboard.fieldY + keyboard.fieldHeight / 2;
 
                 int headerWidth = 0, headerHeight = 0;
                 framebuffer.measureText(keyboard.request.header, headerWidth, headerHeight, TextStyle::Caption);
                 const int headerX = keyboard.fieldX + FIELD_INSET;
-                framebuffer.drawText(headerX, framebuffer.textYCenteredOn(fieldCenterY, TextStyle::Caption),
-                                     keyboard.request.header, Colors::Accent, TextStyle::Caption);
+                framebuffer.drawText(headerX, framebuffer.textYCenteredOn(fieldCenterY, TextStyle::Caption), keyboard.request.header, Colors::Accent, TextStyle::Caption);
                 const int dividerX = headerX + headerWidth + 14;
-                framebuffer.drawFilledRect(dividerX, keyboard.fieldY + 10, 1, keyboard.fieldHeight - 20,
-                                           Colors::Border);
+                framebuffer.drawFilledRect(dividerX, keyboard.fieldY + 10, 1, keyboard.fieldHeight - 20, Colors::Border);
 
                 // Right-aligned: how full the field is -- or, for a number, the range it must fall in,
                 // since a count of digits says nothing useful there.
-                const std::string tally = keyboard.request.digitsOnly
-                                              ? keyboard.request.guide
-                                              : std::to_string(characterCount(keyboard.text)) + " / " +
-                                                    std::to_string(keyboard.request.maxChars);
+                const std::string tally = keyboard.request.digitsOnly ? keyboard.request.guide : std::to_string(characterCount(keyboard.text)) + " / " + std::to_string(keyboard.request.maxChars);
                 int tallyWidth = 0, tallyHeight = 0;
                 framebuffer.measureText(tally, tallyWidth, tallyHeight, TextStyle::Caption);
                 const int tallyX = keyboard.fieldX + keyboard.fieldWidth - FIELD_INSET - tallyWidth;
-                framebuffer.drawText(tallyX, framebuffer.textYCenteredOn(fieldCenterY, TextStyle::Caption), tally,
-                                     keyboard.refusedFrames > 0 ? Colors::ShinyStar : Colors::TextDim,
-                                     TextStyle::Caption);
+                framebuffer.drawText(tallyX, framebuffer.textYCenteredOn(fieldCenterY, TextStyle::Caption), tally, keyboard.refusedFrames > 0 ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
 
                 const int textLeft = dividerX + 14;
                 const int textAreaWidth = std::max(0, tallyX - 16 - textLeft);
@@ -740,8 +708,7 @@ namespace UI
                     {
                         int prefixWidth = 0, prefixHeight = 0;
                         if (stopOffset > 0)
-                            framebuffer.measureText(keyboard.text.substr(0, stopOffset), prefixWidth, prefixHeight,
-                                                    TextStyle::Body);
+                            framebuffer.measureText(keyboard.text.substr(0, stopOffset), prefixWidth, prefixHeight, TextStyle::Body);
                         keyboard.caretStopX.push_back(prefixWidth);
                         keyboard.caretStopOffsets.push_back(stopOffset);
                         if (stopOffset >= keyboard.text.size())
@@ -776,16 +743,14 @@ namespace UI
                 else
                 {
                     if (keyboard.textSelected)
-                        framebuffer.drawFilledRoundedRect(keyboard.textOriginX - 4, fieldCenterY - lineHeight / 2 - 3,
-                                                          textWidth + 8, lineHeight + 6, 6, Colors::Selected);
+                        framebuffer.drawFilledRoundedRect(keyboard.textOriginX - 4, fieldCenterY - lineHeight / 2 - 3, textWidth + 8, lineHeight + 6, 6, Colors::Selected);
                     framebuffer.drawText(keyboard.textOriginX, textY, keyboard.text, Colors::Text);
                 }
                 // Solid for a beat after every edit or move, then blinking -- so a caret that has just
                 // moved is never caught invisible.
                 const bool caretShown = (keyboard.caretBlinkFrames / CARET_BLINK_FRAMES) % 2 == 0;
                 if (caretShown && !keyboard.textSelected)
-                    framebuffer.drawFilledRect(keyboard.textOriginX + caretTextX - 1,
-                                               fieldCenterY - lineHeight / 2 - 2, 2, lineHeight + 4, Colors::Accent);
+                    framebuffer.drawFilledRect(keyboard.textOriginX + caretTextX - 1, fieldCenterY - lineHeight / 2 - 2, 2, lineHeight + 4, Colors::Accent);
                 framebuffer.clearClip();
             }
 
@@ -840,63 +805,51 @@ namespace UI
                 if (selected && !fillShowsState)
                     fillColor = Colors::Selected;
 
-                framebuffer.drawFilledRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS,
-                                                  fillColor);
+                framebuffer.drawFilledRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS, fillColor);
                 if (pressed)
                 {
                     Color pressTint = Colors::Primary;
                     pressTint.alpha = 110;
-                    framebuffer.drawFilledRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight,
-                                                      KEY_CORNER_RADIUS, pressTint);
-                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS,
-                                                Colors::Primary, 3);
+                    framebuffer.drawFilledRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS, pressTint);
+                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS, Colors::Primary, 3);
                 }
                 else if (selected)
                 {
-                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS,
-                                                Colors::Accent, 3);
+                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS, Colors::Accent, 3);
                 }
                 else
                 {
-                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS,
-                                                Colors::Border, 1);
+                    framebuffer.drawRoundedRect(key.keyX, key.keyY, key.keyWidth, key.keyHeight, KEY_CORNER_RADIUS, Colors::Border, 1);
                 }
 
                 const int keyCenterX = key.keyX + key.keyWidth / 2;
                 const int keyCenterY = key.keyY + key.keyHeight / 2;
                 if (key.action == KeyboardKeyAction::Backspace)
                 {
-                    framebuffer.drawBackspaceIcon(keyCenterX - KEY_ICON_SIZE / 2, keyCenterY - KEY_ICON_SIZE / 2,
-                                                  KEY_ICON_SIZE, labelColor);
+                    framebuffer.drawBackspaceIcon(keyCenterX - KEY_ICON_SIZE / 2, keyCenterY - KEY_ICON_SIZE / 2, KEY_ICON_SIZE, labelColor);
                     return;
                 }
                 if (key.action == KeyboardKeyAction::Shift)
                 {
-                    framebuffer.drawShiftIcon(keyCenterX - KEY_ICON_SIZE / 2, keyCenterY - KEY_ICON_SIZE / 2,
-                                              KEY_ICON_SIZE, labelColor, keyboard.shift != ShiftMode::Off);
+                    framebuffer.drawShiftIcon(keyCenterX - KEY_ICON_SIZE / 2, keyCenterY - KEY_ICON_SIZE / 2, KEY_ICON_SIZE, labelColor, keyboard.shift != ShiftMode::Off);
                     // Caps lock underlines the arrow, the mark the console's own keyboard uses.
                     if (keyboard.shift == ShiftMode::Locked)
-                        framebuffer.drawFilledRoundedRect(keyCenterX - 8, keyCenterY + KEY_ICON_SIZE / 2 + 2, 16, 3, 1,
-                                                          labelColor);
+                        framebuffer.drawFilledRoundedRect(keyCenterX - 8, keyCenterY + KEY_ICON_SIZE / 2 + 2, 16, 3, 1, labelColor);
                     return;
                 }
                 const bool shifted = keyboard.shift != ShiftMode::Off;
                 const std::string &label = shifted ? key.upperLabel : key.lowerLabel;
                 int labelWidth = 0, labelHeight = 0;
                 framebuffer.measureText(label, labelWidth, labelHeight, labelStyle);
-                framebuffer.drawText(keyCenterX - labelWidth / 2, framebuffer.textYCenteredOn(keyCenterY, labelStyle),
-                                     label, labelColor, labelStyle);
+                framebuffer.drawText(keyCenterX - labelWidth / 2, framebuffer.textYCenteredOn(keyCenterY, labelStyle), label, labelColor, labelStyle);
             }
         }
 
         void drawKeyboard(KeyboardState &keyboard, PKSEFramebuffer &framebuffer)
         {
-            framebuffer.drawSoftShadow(keyboard.cardX, keyboard.cardY, keyboard.cardWidth, keyboard.cardHeight,
-                                       CHROME_CORNER_RADIUS);
-            framebuffer.drawFilledRoundedRect(keyboard.cardX, keyboard.cardY, keyboard.cardWidth,
-                                              keyboard.cardHeight, CHROME_CORNER_RADIUS, Colors::Panel);
-            framebuffer.drawRoundedRect(keyboard.cardX, keyboard.cardY, keyboard.cardWidth, keyboard.cardHeight,
-                                        CHROME_CORNER_RADIUS, Colors::Border, 1);
+            framebuffer.drawSoftShadow(keyboard.cardX, keyboard.cardY, keyboard.cardWidth, keyboard.cardHeight, CHROME_CORNER_RADIUS);
+            framebuffer.drawFilledRoundedRect(keyboard.cardX, keyboard.cardY, keyboard.cardWidth, keyboard.cardHeight, CHROME_CORNER_RADIUS, Colors::Panel);
+            framebuffer.drawRoundedRect(keyboard.cardX, keyboard.cardY, keyboard.cardWidth, keyboard.cardHeight, CHROME_CORNER_RADIUS, Colors::Border, 1);
             drawField(keyboard, framebuffer);
             for (int keyIndex = 0; keyIndex < static_cast<int>(keyboard.keys.size()); ++keyIndex)
                 drawKey(keyboard, framebuffer, keyIndex);

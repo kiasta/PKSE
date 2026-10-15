@@ -138,8 +138,7 @@ namespace Pokemon
     // when the name is short. Unrepresentable chars end the name; bytes past the terminator are left
     // untouched. Without these setters a created pokemon's OT name + nickname were BLANK, so Gen 3 read the
     // pokemon as traded-in ("Apparently met") and showed no name.
-    static void g3EncodeName(std::byte *destination, size_t offset, const std::u16string &value, size_t maxChars,
-                             uint8_t languageId)
+    static void g3EncodeName(std::byte *destination, size_t offset, const std::u16string &value, size_t maxChars, uint8_t languageId)
     {
         size_t byteCount = 0;
         for (const char16_t character : value)
@@ -237,8 +236,7 @@ namespace Pokemon
         // 0x56 sits past the checksummed region (0x20..0x4F), so no refreshChecksum() is needed.
     }
 
-    uint16_t Pokemon3RSE::carryCurrentHP(uint16_t storedCur, uint16_t storedMax,
-                                          uint16_t newMax) noexcept
+    uint16_t Pokemon3RSE::carryCurrentHP(uint16_t storedCur, uint16_t storedMax, uint16_t newMax) noexcept
     {
         // max moved (or was never set) -> refill
         if (storedMax != newMax) return newMax;
@@ -313,8 +311,7 @@ namespace Pokemon
             // Stamp in a letter-preserving bit pattern before ANY test -- every constraint below reads
             // the whole PID, so this has to happen first or they would be judging a PID we won't store.
             if (letterPatternCount > 0)
-                pidValue = withUnownFormValue(pidValue,
-                                              letterPatterns[(walk >> 2) % static_cast<uint32_t>(letterPatternCount)]);
+                pidValue = withUnownFormValue(pidValue, letterPatterns[(walk >> 2) % static_cast<uint32_t>(letterPatternCount)]);
             // Cheapest reject first: this LCG's low bit flips every step, so half the walk is
             // discarded by an AND before the nature modulo runs.
             if (wantAbilityBit >= 0 && static_cast<int>(pidValue & 1u) != wantAbilityBit)
@@ -323,9 +320,7 @@ namespace Pokemon
                 continue;
             if (wantGender >= 0)
             {
-                const int genderValue = (genderRatio == 255) ? 2 : (genderRatio == 254) ? 1
-                                            : (genderRatio == 0)     ? 0
-                                                            : ((pidValue & 0xFF) < genderRatio ? 1 : 0);
+                const int genderValue = (genderRatio == 255) ? 2 : (genderRatio == 254) ? 1 : (genderRatio == 0) ? 0 : ((pidValue & 0xFF) < genderRatio ? 1 : 0);
                 if (genderValue != wantGender)
                     continue;
             }

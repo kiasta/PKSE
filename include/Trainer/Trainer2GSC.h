@@ -171,8 +171,7 @@ namespace Trainer
         void parseItems();
         void parseBoxNames();
 
-        void readList(size_t offset, size_t capacity, size_t bodySize,
-                      std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const;
+        void readList(size_t offset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const;
         void writeList(size_t offset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &in);
         void writeChecksums() noexcept;
         void writeMirrors() noexcept;

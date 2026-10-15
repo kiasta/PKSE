@@ -62,9 +62,7 @@ namespace Utils
     {
         if (itemId == 0)
             return std::string();
-        return Enums::isGen3Group(gameGroup)
-                   ? safeName(Names::getItemNameG3(itemId))
-                   : safeName(Names::getItemName(itemId));
+        return Enums::isGen3Group(gameGroup) ? safeName(Names::getItemNameG3(itemId)) : safeName(Names::getItemName(itemId));
     }
 
     std::string logField(const char *key, const std::string &value)
@@ -76,8 +74,7 @@ namespace Utils
     {
         // 1-based box/slot to match the UI. Pane is named, not numbered: "1" would be meaningless in
         // a log read six months later, and the save/bank distinction is the whole point of the field.
-        return std::string(key) + "=" + (pane == 0 ? "save" : "bank") + "/box" +
-               numberText(static_cast<uint32_t>(box + 1)) + "/slot" + numberText(static_cast<uint32_t>(slot + 1));
+        return std::string(key) + "=" + (pane == 0 ? "save" : "bank") + "/box" + numberText(static_cast<uint32_t>(box + 1)) + "/slot" + numberText(static_cast<uint32_t>(slot + 1));
     }
 
     PokemonOrigin classifyMonOrigin(const Pokemon::Pokemon &pokemon, const Trainer::Trainer &save)
@@ -112,10 +109,8 @@ namespace Utils
 
     std::string briefPokemon(const Pokemon::Pokemon &pokemon)
     {
-        const std::string species = Names::getDisplayName(pokemon.speciesID(), pokemon.form(),
-                                                          Trainer::getSpeciesName(pokemon.speciesID()));
-        std::string out = logField("species", species) + " form=" + numberText(pokemon.formID()) +
-                          " lv=" + numberText(pokemon.level());
+        const std::string species = Names::getDisplayName(pokemon.speciesID(), pokemon.form(), Trainer::getSpeciesName(pokemon.speciesID()));
+        std::string out = logField("species", species) + " form=" + numberText(pokemon.formID()) + " lv=" + numberText(pokemon.level());
 
         const std::string nick = utf16ToUtf8(pokemon.nickname());
         if (!nick.empty() && nick != species)
@@ -145,8 +140,7 @@ namespace Utils
             // Both spellings of the ID. The six-digit form is what the game and the user see; the
             // raw id32 is what the code compares, and a report where those disagree is the bug.
             const uint8_t ver = pokemon.originGame();
-            const bool sixDigit = (ver != 0) ? Enums::usesSixDigitTrainerID(ver)
-                                             : !Enums::isGen3Group(pokemon.getGameGroup());
+            const bool sixDigit = (ver != 0) ? Enums::usesSixDigitTrainerID(ver) : !Enums::isGen3Group(pokemon.getGameGroup());
             out += " otid=" + numberText(sixDigit ? (pokemon.id32() % 1000000u) : (pokemon.id32() & 0xFFFFu));
             out += " otid32=" + hex32(pokemon.id32());
         }
@@ -181,17 +175,14 @@ namespace Utils
         if (pokemon.hasMetData())
         {
             const uint8_t fmtVer = Enums::getGroupRepVersion(pokemon.getGameGroup());
-            const std::string met = safeName(
-                Names::getMetLocationName(Enums::locationTableVersion(pokemon.originGame(), fmtVer, false),
-                                          pokemon.metLocation()));
+            const std::string met = safeName(Names::getMetLocationName(Enums::locationTableVersion(pokemon.originGame(), fmtVer, false), pokemon.metLocation()));
             if (!met.empty())
                 out += " " + logField("met", met);
             out += " metloc=" + numberText(pokemon.metLocation()) + " metlv=" + numberText(pokemon.metLevel());
             if (pokemon.metMonth() != 0 && pokemon.metDay() != 0)
             {
                 char date[16];
-                snprintf(date, sizeof(date), "%04u-%02u-%02u", 2000 + pokemon.metYear(), pokemon.metMonth(),
-                         pokemon.metDay());
+                snprintf(date, sizeof(date), "%04u-%02u-%02u", 2000 + pokemon.metYear(), pokemon.metMonth(), pokemon.metDay());
                 out += std::string(" metdate=") + date;
             }
         }
@@ -236,9 +227,7 @@ namespace Utils
         out += " pid=" + hex32(pokemon.pid()) + " ec=" + hex32(pokemon.encryptionConstant());
         out += " exp=" + numberText(pokemon.exp());
 
-        out += " ivs=" + numberText(pokemon.ivHP()) + "/" + numberText(pokemon.ivATK()) + "/" +
-               numberText(pokemon.ivDEF()) + "/" + numberText(pokemon.ivSPA()) + "/" + numberText(pokemon.ivSPD()) +
-               "/" + numberText(pokemon.ivSPE());
+        out += " ivs=" + numberText(pokemon.ivHP()) + "/" + numberText(pokemon.ivATK()) + "/" + numberText(pokemon.ivDEF()) + "/" + numberText(pokemon.ivSPA()) + "/" + numberText(pokemon.ivSPD()) + "/" + numberText(pokemon.ivSPE());
         // Which stats are Hyper Trained, in the same order as the IVs above, so the line explains
         // itself: "ivs=20/31/20/20/20/31 ht=HP/Def/SpD" is why a recalculation moved a stat and the
         // stored IV did not. Only printed when the format has the field and something is set.
@@ -251,14 +240,10 @@ namespace Utils
                     ht += (ht.empty() ? "" : "/") + std::string(statNames[index]);
             out += " ht=" + ht;
         }
-        out += " evs=" + numberText(pokemon.evHP()) + "/" + numberText(pokemon.evATK()) + "/" +
-               numberText(pokemon.evDEF()) + "/" + numberText(pokemon.evSPA()) + "/" + numberText(pokemon.evSPD()) +
-               "/" + numberText(pokemon.evSPE());
+        out += " evs=" + numberText(pokemon.evHP()) + "/" + numberText(pokemon.evATK()) + "/" + numberText(pokemon.evDEF()) + "/" + numberText(pokemon.evSPA()) + "/" + numberText(pokemon.evSPD()) + "/" + numberText(pokemon.evSPE());
         if (pokemon.hasAwakeningValues())
         {
-            out += " avs=" + numberText(pokemon.avHP()) + "/" + numberText(pokemon.avATK()) + "/" +
-                   numberText(pokemon.avDEF()) + "/" + numberText(pokemon.avSPA()) + "/" + numberText(pokemon.avSPD()) +
-                   "/" + numberText(pokemon.avSPE());
+            out += " avs=" + numberText(pokemon.avHP()) + "/" + numberText(pokemon.avATK()) + "/" + numberText(pokemon.avDEF()) + "/" + numberText(pokemon.avSPA()) + "/" + numberText(pokemon.avSPD()) + "/" + numberText(pokemon.avSPE());
         }
 
         // Moves are logged by NAME as well as id: a move that is legal in one game and dummied in
