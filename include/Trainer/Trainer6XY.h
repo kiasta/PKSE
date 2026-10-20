@@ -1,7 +1,7 @@
 /**
- * ONE CONTAINER, FOUR GAMES, TWO CHECKSUM ALGORITHMS. The block layout is generated into
- * BlockEntry3DSs.h; everything a game-specific class supplies here is an index into that table plus
- * the answer to "which CRC?".
+ * THE X/Y SAVE CONTAINER. Each of the four 3DS groups (XY, ORAS, SM, USUM) has its own
+ * container class. The block layout is generated into Blocks6XY.h as rows of BlockEntry3DS
+ * (BlockTable.h); what this class supplies is the indices into that table and its own CRC.
  *
  * The file ends with a BEEF metadata chunk in its last 0x200 bytes, and block `id`'s checksum
  * lives at `fileSize - 0x200 + 0x14 + id*8 + 6`. Refreshing a block means recomputing its CRC over
@@ -10,8 +10,9 @@
  *
  * THE ONE THING THAT WILL BITE: GEN 6 USES CRC16-CCITT, GEN 7 USES CRC16Invert. They are different
  * algorithms of the same width over the same bytes, so using the wrong one produces a perfectly
- * well-formed 16-bit number that the game rejects. `blockCrc()` is the hook, and it is the only
- * behavioural difference between the two generations' containers.
+ * well-formed 16-bit number that the game rejects. This container's `blockCrc()` is CRC16-CCITT, and
+ * it carries no code for the other one: that is why the 3DS groups are separate classes rather
+ * than one container with a generation switch.
  *
  * Three layout facts that differ from every earlier generation:
  *
@@ -68,6 +69,9 @@ namespace Trainer
         /// The field is 0x22 bytes = 17 UTF-16 units, so 16 characters plus a terminator.
         size_t getMaxBoxNameLength() const noexcept override { return 16; }
         bool itemsAreIdIndexed() const noexcept override { return false; }
+        size_t getItemPouchCapacity(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT6_XY) ? POUCHES6_XY[pouch].slots : 0; }
+        int getItemMaxCount(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT6_XY) ? POUCHES6_XY[pouch].maxCount : 0; }
+        const char *getItemPouchName(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT6_XY) ? POUCHES6_XY[pouch].name : nullptr; }
         bool compactStorage() override { return false; }
         bool canStoreBoxName(const std::string &name) const override;
 
@@ -84,15 +88,13 @@ namespace Trainer
         uint16_t blockCrc(const uint8_t *bytes, size_t byteCount) const noexcept;
 
 
-        /// Size + the BEEF magic + the metadata chunk's own block lengths matching this game's
-        /// table. PKHeX stops at size + magic; checking the lengths as well is what makes a
-        /// mis-sized or foreign `main` fail here instead of parsing into nonsense.
-        static bool detectGen67(const std::vector<uint8_t> &bytes, size_t size,
-                                const BlockEntry3DS *tbl, size_t byteCount) noexcept;
+        /// PKHeX SaveUtil.IsG6XY / IsG7SM and siblings, exactly: the file size plus the BEEF magic.
+        /// Nothing stricter -- PKSE accepts what PKHeX accepts.
+        static bool detectGen67(const std::vector<uint8_t> &bytes, size_t size) noexcept;
 
         static bool detect(const std::vector<uint8_t> &bytes) noexcept
         {
-            return detectGen67(bytes, SAVE_SIZE_6XY, BLOCKS_6XY, BLOCK_COUNT_6XY);
+            return detectGen67(bytes, SAVE_SIZE_6XY);
         }
 
         /// Which of X and Y this save is, read from MyStatus's own

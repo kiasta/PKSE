@@ -13,36 +13,22 @@ namespace Utils
 {
     uint16_t readUInt16LittleEndian(const uint8_t *pointer)
     {
-        return static_cast<uint16_t>(pointer[0]) |
-               (static_cast<uint16_t>(pointer[1]) << 8);
+        return static_cast<uint16_t>(pointer[0]) | (static_cast<uint16_t>(pointer[1]) << 8);
     }
 
     int32_t readInt32LittleEndian(const uint8_t *pointer)
     {
-        return static_cast<uint32_t>(pointer[0]) |
-               (static_cast<uint32_t>(pointer[1]) << 8) |
-               (static_cast<uint32_t>(pointer[2]) << 16) |
-               (static_cast<uint32_t>(pointer[3]) << 24);
+        return static_cast<uint32_t>(pointer[0]) | (static_cast<uint32_t>(pointer[1]) << 8) | (static_cast<uint32_t>(pointer[2]) << 16) | (static_cast<uint32_t>(pointer[3]) << 24);
     }
 
     uint32_t readUInt32LittleEndian(const uint8_t *pointer)
     {
-        return static_cast<uint32_t>(pointer[0]) |
-               (static_cast<uint32_t>(pointer[1]) << 8) |
-               (static_cast<uint32_t>(pointer[2]) << 16) |
-               (static_cast<uint32_t>(pointer[3]) << 24);
+        return static_cast<uint32_t>(pointer[0]) | (static_cast<uint32_t>(pointer[1]) << 8) | (static_cast<uint32_t>(pointer[2]) << 16) | (static_cast<uint32_t>(pointer[3]) << 24);
     }
 
     uint64_t readUInt64LittleEndian(const uint8_t *pointer)
     {
-        return static_cast<uint64_t>(pointer[0]) |
-               (static_cast<uint64_t>(pointer[1]) << 8) |
-               (static_cast<uint64_t>(pointer[2]) << 16) |
-               (static_cast<uint64_t>(pointer[3]) << 24) |
-               (static_cast<uint64_t>(pointer[4]) << 32) |
-               (static_cast<uint64_t>(pointer[5]) << 40) |
-               (static_cast<uint64_t>(pointer[6]) << 48) |
-               (static_cast<uint64_t>(pointer[7]) << 56);
+        return static_cast<uint64_t>(pointer[0]) | (static_cast<uint64_t>(pointer[1]) << 8) | (static_cast<uint64_t>(pointer[2]) << 16) | (static_cast<uint64_t>(pointer[3]) << 24) | (static_cast<uint64_t>(pointer[4]) << 32) | (static_cast<uint64_t>(pointer[5]) << 40) | (static_cast<uint64_t>(pointer[6]) << 48) | (static_cast<uint64_t>(pointer[7]) << 56);
     }
 
     void writeUInt16LittleEndian(uint8_t *pointer, uint16_t value)
@@ -93,8 +79,7 @@ namespace Utils
     {
         NsApplicationControlData controlData;
         u64 controlDataSize = 0;
-        Result result = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleId, &controlData,
-                                                    sizeof(controlData), &controlDataSize);
+        Result result = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleId, &controlData, sizeof(controlData), &controlDataSize);
         if (R_FAILED(result))
         {
             printf("Failed to get application control data for TitleID: 0x%016lX (error: 0x%x)\n", titleId, result);

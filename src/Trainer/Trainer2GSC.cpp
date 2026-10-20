@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 
 #include "Trainer/Trainer2GSC.h"
 #include "Names/ItemPouches.h"
@@ -16,8 +17,7 @@ namespace Trainer
         // until a save is written back, which is why they are a table and not scattered literals.
         constexpr Gen2Offsets OFFSETS[4] = {
             // GS international
-            {false, false, 0x2009, 0x23DB, 0x2053, 0x2021, 0x0000, 0x2724, 0x2727, 0x288A,
-             0x2D6C, 0x284C, 0x2D68, 0x2D69, 0x7E6D, 0x23E6, 0x241F, 0x2449, 0x2464, 0x247E},
+            {false, false, 0x2009, 0x23DB, 0x2053, 0x2021, 0x0000, 0x2724, 0x2727, 0x288A, 0x2D6C, 0x284C, 0x2D68, 0x2D69, 0x7E6D, 0x23E6, 0x241F, 0x2449, 0x2464, 0x247E},
             // Crystal international
             {false, true, 0x2009, 0x23DC, 0x2052, 0x2021, 0x3E3D, 0x2700, 0x2703, 0x2865,
              0x2D10, 0x284C, 0x2B82, 0x2D0D, 0x1F0D, 0x23E7, 0x2420, 0x244A, 0x2465, 0x247F},
@@ -31,9 +31,25 @@ namespace Trainer
 
         // Pouch capacities, PKHeX PlayerBag2.cs. Order matches the items[] vector below and the
         // GSC rows in gen_itempouches.py -- the two must agree, so the indices are named.
-        constexpr size_t GEN2_POUCH_TMHM = 0, GEN2_POUCH_ITEM = 1, GEN2_POUCH_KEY = 2, GEN2_POUCH_BALL = 3,
-                         GEN2_POUCH_PC = 4;
+        constexpr size_t GEN2_POUCH_TMHM = 0, GEN2_POUCH_ITEM = 1, GEN2_POUCH_KEY = 2, GEN2_POUCH_BALL = 3, GEN2_POUCH_PC = 4;
         constexpr size_t CAP_TMHM = 57, CAP_ITEM = 20, CAP_KEY = 26, CAP_BALL = 12, CAP_PC = 50;
+
+        struct PouchInfo2GSC
+        {
+            const char *name;
+            size_t capacity;
+            int maxCount;
+        };
+        // Indexed by the GEN2_POUCH_* constants. Stacks stop at 99 (PKHeX PlayerBag2). Key Items
+        // are 1: the pouch stores ids only, so a count has nowhere to go.
+        constexpr PouchInfo2GSC POUCHES2_GSC[] = {
+            {"TMs/HMs", CAP_TMHM, 99},
+            {"Items", CAP_ITEM, 99},
+            {"Key Items", CAP_KEY, 1},
+            {"Balls", CAP_BALL, 99},
+            {"PC Items", CAP_PC, 99},
+        };
+        constexpr int POUCH_COUNT2_GSC = static_cast<int>(std::size(POUCHES2_GSC));
 
         /// The TM/HM pouch is POSITIONALLY indexed: `data[i]` is the count of the item at
         /// MACHINE[i], which is the generated GSC TM/HM pouch list.
@@ -69,8 +85,7 @@ namespace Trainer
             const uint8_t count = saveBytes[offset];
             return count <= maxCount && saveBytes[offset + 1 + count] == 0xFF;
         }
-        bool hasListAt(const std::vector<uint8_t> &saveBytes, size_t firstOffset, size_t secondOffset,
-                       uint8_t maxCount) noexcept
+        bool hasListAt(const std::vector<uint8_t> &saveBytes, size_t firstOffset, size_t secondOffset, uint8_t maxCount) noexcept
         {
             return listValid(saveBytes, firstOffset, maxCount) && listValid(saveBytes, secondOffset, maxCount);
         }
@@ -84,8 +99,7 @@ namespace Trainer
         }
         uint32_t rd32be(const uint8_t *bytes) noexcept
         {
-            return (static_cast<uint32_t>(bytes[0]) << 24) | (static_cast<uint32_t>(bytes[1]) << 16) |
-                   (static_cast<uint32_t>(bytes[2]) << 8) | static_cast<uint32_t>(bytes[3]);
+            return (static_cast<uint32_t>(bytes[0]) << 24) | (static_cast<uint32_t>(bytes[1]) << 16) | (static_cast<uint32_t>(bytes[2]) << 8) | static_cast<uint32_t>(bytes[3]);
         }
         void wr16be(uint8_t *bytes, uint16_t value) noexcept
         {
@@ -143,30 +157,29 @@ namespace Trainer
     {
         auto layoutMatches = [&](Gen2Layout layout)
         { if (out) *out = layout; return true; };
-        if (bytes.size() == GEN2_SIZE_INTL)
-        {
-            // PKHeX's order. International first; Korean GS (0x2DAE / 0x28CC) is deliberately not
-            // probed -- see the scope note in the header.
-            if (hasListAt(bytes, 0x2D6C, 0x288A, 20))
-                return layoutMatches(Gen2Layout::GS_INTL);
-            if (hasListAt(bytes, 0x2D10, 0x2865, 20))
-                return layoutMatches(Gen2Layout::C_INTL);
+        // PKHeX SaveUtil.IsG2: EITHER size, and every layout is probed whatever the size. The
+        // locale does not follow from the length -- a Japanese cartridge's SRAM is 32 KiB like
+        // everyone else's, and every Japanese offset sits below 0x8000 -- so tying the layout to
+        // the size refused ordinary Japanese saves PKHeX opens. The one Japanese field past 0x8000
+        // (Crystal's trainer gender) is bounds-checked where it is read and written.
+        if (bytes.size() != GEN2_SAVE_SIZE && bytes.size() != GEN2_SAVE_SIZE_DOUBLED)
             return false;
-        }
-        if (bytes.size() == GEN2_SIZE_JP)
-        {
-            // Japanese GS and Crystal SHARE the 0x2D10 probe (it is CurrentBox for both) and are
-            // separated only by the party offset. Probing one list cannot tell them apart.
-            if (hasListAt(bytes, 0x2D10, 0x283E, 30))
-                return layoutMatches(Gen2Layout::GS_JP);
-            if (hasListAt(bytes, 0x2D10, 0x281A, 30))
-                return layoutMatches(Gen2Layout::C_JP);
-        }
+        // PKHeX's order: international before Japanese. Korean GS (0x2DAE / 0x28CC) is
+        // deliberately not probed -- see the scope note in the header.
+        if (hasListAt(bytes, 0x2D6C, 0x288A, 20))
+            return layoutMatches(Gen2Layout::GS_INTL);
+        if (hasListAt(bytes, 0x2D10, 0x2865, 20))
+            return layoutMatches(Gen2Layout::C_INTL);
+        // Japanese GS and Crystal SHARE the 0x2D10 probe (it is CurrentBox for both) and are
+        // separated only by the party offset. Probing one list cannot tell them apart.
+        if (hasListAt(bytes, 0x2D10, 0x283E, 30))
+            return layoutMatches(Gen2Layout::GS_JP);
+        if (hasListAt(bytes, 0x2D10, 0x281A, 30))
+            return layoutMatches(Gen2Layout::C_JP);
         return false;
     }
 
-    Trainer2GSC::Trainer2GSC(std::vector<uint8_t> raw, std::string path)
-        : saveData(std::move(raw)), savePath(std::move(path)) { init(); }
+    Trainer2GSC::Trainer2GSC(std::vector<uint8_t> raw, std::string path) : saveData(std::move(raw)), savePath(std::move(path)) { init(); }
 
     void Trainer2GSC::init()
     {
@@ -202,12 +215,10 @@ namespace Trainer
         // The stride is the list length PLUS 2, and the banks split after box 7 (6 in Japanese).
         const size_t split = offsets->japanese ? 6 : 7;
         const size_t stride = boxListSize() + 2;
-        return box < split ? 0x4000 + box * stride
-                           : 0x6000 + (box - split) * stride;
+        return box < split ? 0x4000 + box * stride : 0x6000 + (box - split) * stride;
     }
 
-    void Trainer2GSC::readList(size_t listOffset, size_t capacity, size_t bodySize,
-                               std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const
+    void Trainer2GSC::readList(size_t listOffset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const
     {
         const size_t slotIndex = nameWidth();
         const size_t start = 1 + capacity + 1;
@@ -231,8 +242,7 @@ namespace Trainer
             // Build the single-entry list Pokemon2GSC expects. A BOX body is 32 bytes copied into
             // a 48-byte party body; the extra 16 are level + battle stats, which the game
             // recomputes on withdrawal and recalculateStats() reproduces.
-            std::vector<std::byte> rec(offsets->japanese ? ::Pokemon::SIZE_2JLIST : ::Pokemon::SIZE_2ULIST,
-                                       std::byte{0});
+            std::vector<std::byte> rec(offsets->japanese ? ::Pokemon::SIZE_2JLIST : ::Pokemon::SIZE_2ULIST, std::byte{0});
             rec[0] = std::byte{1};
             rec[1] = std::byte{marker};
             rec[2] = std::byte{0xFF};
@@ -240,8 +250,7 @@ namespace Trainer
             std::memcpy(rec.data() + 3 + ::Pokemon::SIZE_2PARTY, &saveData[ofsOT], slotIndex);
             std::memcpy(rec.data() + 3 + ::Pokemon::SIZE_2PARTY + slotIndex, &saveData[ofsNick], slotIndex);
 
-            auto pokemon = std::make_unique<::Pokemon::Pokemon2GSC>(
-                std::span<const std::byte>(rec.data(), rec.size()));
+            auto pokemon = std::make_unique<::Pokemon::Pokemon2GSC>(std::span<const std::byte>(rec.data(), rec.size()));
             if (!pokemon->isValid())
             {
                 out.push_back(nullptr);
@@ -253,8 +262,7 @@ namespace Trainer
         }
     }
 
-    void Trainer2GSC::writeList(size_t listOffset, size_t capacity, size_t bodySize,
-                                const std::vector<::Pokemon::Pokemon *> &mons)
+    void Trainer2GSC::writeList(size_t listOffset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &mons)
     {
         const size_t slotIndex = nameWidth();
         const size_t start = 1 + capacity + 1;
@@ -311,8 +319,7 @@ namespace Trainer
         SID = 0;
         // Three bytes, big endian, read as a u32 >> 8. Byte money+3 belongs to something else.
         money = rd32be(&saveData[offset.money]) >> 8;
-        trainerGender =
-            (offset.crystal && offset.gender && offset.gender < saveData.size()) ? (saveData[offset.gender] & 1) : 0;
+        trainerGender = (offset.crystal && offset.gender && offset.gender < saveData.size()) ? (saveData[offset.gender] & 1) : 0;
         // The whole byte, as PKHeX reads it. Gen 1's 0x80 "boxes initialised" bit is a Gen 1
         // concept and masking it off here would silently renumber a box.
         currentBox = saveData[offset.currentBoxIndex];
@@ -352,10 +359,25 @@ namespace Trainer
         }
     }
 
+    size_t Trainer2GSC::getItemPouchCapacity(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].capacity : 0;
+    }
+
+    int Trainer2GSC::getItemMaxCount(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].maxCount : 0;
+    }
+
+    const char *Trainer2GSC::getItemPouchName(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].name : nullptr;
+    }
+
     void Trainer2GSC::parseItems()
     {
         const Gen2Offsets &offset = *offsets;
-        items.assign(5, {});
+        items.assign(POUCH_COUNT2_GSC, {});
 
         // (a) TM/HM: positionally indexed, one count byte per legal machine.
         for (size_t index = 0; index < CAP_TMHM; ++index)
@@ -507,8 +529,7 @@ namespace Trainer
     {
         const Gen2Offsets &offset = *offsets;
         uint16_t sum = 0;
-        for (size_t rawIndex = offset.trainer1; rawIndex <= offset.accumulatedChecksumEnd && rawIndex < saveData.size();
-             ++rawIndex)
+        for (size_t rawIndex = offset.trainer1; rawIndex <= offset.accumulatedChecksumEnd && rawIndex < saveData.size(); ++rawIndex)
             sum = static_cast<uint16_t>(sum + saveData[rawIndex]);
         // LITTLE endian, in a format whose every entity field is big endian. Both copies.
         Utils::writeUInt16LittleEndian(&saveData[offset.overallChecksumPosition], sum);
@@ -539,8 +560,7 @@ namespace Trainer
         // so the writer and anything checking it can never disagree about where they are.
         for (const Gen2Mirror &mirror : mirrorRegions())
         {
-            if (mirror.sourceOffset + mirror.length <= saveData.size() &&
-                mirror.destinationOffset + mirror.length <= saveData.size())
+            if (mirror.sourceOffset + mirror.length <= saveData.size() && mirror.destinationOffset + mirror.length <= saveData.size())
             {
                 std::memmove(&saveData[mirror.destinationOffset], &saveData[mirror.sourceOffset], mirror.length);
             }

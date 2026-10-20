@@ -4,6 +4,7 @@
 
 #include "Pokemon/Pokemon8LA.h"
 #include "Pokemon/PersonalInfo8LA.h"
+#include "Pokemon/PersonalInfoTable.h"
 
 namespace Names
 {
@@ -166,10 +167,8 @@ namespace Pokemon
         // HP. effectiveIV, not ivXXX: a Hyper Trained stat is PLAYED at a maximal IV while the
         // stored IV stays as it was, so recomputing from the raw value writes stats below what
         // the game shows. PKHeX spells the same rule `HT_HP ? 31 : IV_HP`.
-        int hitPoints = ganbaruStat(baseHP(), effectiveIV(HT_HP), gritHP(), levelValue) +
-                        scaledHP(baseHP(), levelValue);
-        const uint16_t oldMax =
-            readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x16A)); // before it is overwritten
+        int hitPoints = ganbaruStat(baseHP(), effectiveIV(HT_HP), gritHP(), levelValue) + scaledHP(baseHP(), levelValue);
+        const uint16_t oldMax = readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x16A)); // before it is overwritten
         writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x16A), static_cast<uint16_t>(hitPoints));
         if (oldMax != static_cast<uint16_t>(hitPoints))
             writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x92), static_cast<uint16_t>(hitPoints));
@@ -188,12 +187,10 @@ namespace Pokemon
             // Nature amplifies ONLY the scaled base term; the ganbaru term is added after it,
             // unamplified. Applying the modifier to the sum inflates a boosted stat.
             const int amplified = (scaledStat(baseStats[index], levelValue) * getNatureModifier(index)) / 100;
-            stats[index] = ganbaruStat(baseStats[index], individualValues[index], gritValues[index], levelValue) +
-                           amplified;
+            stats[index] = ganbaruStat(baseStats[index], individualValues[index], gritValues[index], levelValue) + amplified;
         }
 
-        writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x16C),
-                                static_cast<uint16_t>(stats[0])); // ATK
+        writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x16C), static_cast<uint16_t>(stats[0])); // ATK
         // DEF
         writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x16E), static_cast<uint16_t>(stats[1]));
         // SPE
@@ -296,8 +293,7 @@ namespace Pokemon
         {
             uint32_t newPID = (basePID & 0xFFFFFF00) | genderByte;
 
-            uint32_t xorValue =
-                ((newPID >> 16) ^ (newPID & 0xFFFF) ^ (trainerID32 >> 16) ^ (trainerID32 & 0xFFFF)) & 0xFFFF;
+            uint32_t xorValue = ((newPID >> 16) ^ (newPID & 0xFFFF) ^ (trainerID32 >> 16) ^ (trainerID32 & 0xFFFF)) & 0xFFFF;
             if (xorValue < 16)
             {
                 newPID ^= 0x100;
@@ -396,5 +392,28 @@ namespace Pokemon
             writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x1C), newPID);
             refreshChecksum();
         }
+    }
+
+    namespace
+    {
+        // PKHeX PA8.GetScalarPercent: 80% to 120%. The volatile keeps the compiler from fusing the
+        // multiply into the add, which the game does not do and which changes the last bit.
+        float sizeScalarPercent8LA(uint8_t sizeScalar)
+        {
+            volatile float scaledPercent = (sizeScalar / 255.0f) * 0.40000004f;
+            return scaledPercent + 0.8f;
+        }
+    }
+
+    void Pokemon8LA::resetSizeAbsolutes() noexcept
+    {
+        const PersonalInfo &personalInfo = getPersonalInfo(speciesID(), form());
+        const float heightPercent = sizeScalarPercent8LA(static_cast<uint8_t>(data[0x50]));
+        const float weightPercent = sizeScalarPercent8LA(static_cast<uint8_t>(data[0x51]));
+        const float heightValue = personalInfo.height * heightPercent;
+        const float weightValue = personalInfo.weight * (heightPercent * weightPercent);
+        std::memcpy(&data[0xAC], &heightValue, sizeof heightValue);
+        std::memcpy(&data[0xB0], &weightValue, sizeof weightValue);
+        refreshChecksum();
     }
 }

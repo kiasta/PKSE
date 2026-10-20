@@ -44,8 +44,7 @@ namespace Pokemon
         std::unique_ptr<Pokemon> clone() const override
         {
             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data()));
-            std::byte *encryptedRecord =
-                encryptArray7LGPE(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
+            std::byte *encryptedRecord = encryptArray7LGPE(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
             auto copiedPokemon = std::make_unique<Pokemon7LGPE>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;

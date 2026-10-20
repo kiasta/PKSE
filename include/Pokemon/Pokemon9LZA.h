@@ -40,8 +40,7 @@ namespace Pokemon
         std::unique_ptr<Pokemon> clone() const override
         {
             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data()));
-            std::byte *encryptedRecord =
-                encryptArray9LZA(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
+            std::byte *encryptedRecord = encryptArray9LZA(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
             auto copiedPokemon = std::make_unique<Pokemon9LZA>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;
@@ -54,8 +53,7 @@ namespace Pokemon
         {
             // Z-A stores the same Gen 9 INTERNAL species index as S/V (PKHeX PA9 uses the identical
             // SpeciesConverter.GetNational9) -- convert on read; see Pokemon9SV.h / SpeciesConverter9.h.
-            return gen9InternalToNational(
-                readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x08)));
+            return gen9InternalToNational(readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x08)));
         }
 
         const char *species() const noexcept override;
@@ -463,8 +461,7 @@ namespace Pokemon
         void setSpecies(uint16_t species) noexcept override
         {
             // Store the INTERNAL index (inverse of speciesID's read conversion; PKHeX PA9.GetInternal9).
-            writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x08),
-                                    gen9NationalToInternal(species));
+            writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x08), gen9NationalToInternal(species));
             recalculateStats();
             refreshChecksum();
         }
@@ -475,8 +472,7 @@ namespace Pokemon
             // Maushold and Dudunsparce read their form from EncryptionConstant % 100, so the form byte
             // alone is only half the edit -- left mismatched the Pokemon is illegal, and the games
             // cannot produce that state. A no-op for every other species. See FormInfo.
-            setEncryptionConstant(
-                correctEncryptionConstantForForm(speciesID(), formValue, encryptionConstant()));
+            setEncryptionConstant(correctEncryptionConstantForForm(speciesID(), formValue, encryptionConstant()));
             recalculateStats();
             refreshChecksum();
         }

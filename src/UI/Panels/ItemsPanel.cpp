@@ -31,8 +31,11 @@ namespace UI
 {
     namespace Panels
     {
-        const char *pouchDisplayName(GameVersion gameGroup, int category)
+        const char *pouchDisplayName(const Trainer::Trainer &trainer, int category)
         {
+            const char *trainerPouchName = trainer.getItemPouchName(category);
+            if (trainerPouchName != nullptr) return trainerPouchName;
+            const GameVersion gameGroup = trainer.getGameGroup();
             const char *name = nullptr;
             if (gameGroup == GameVersion::ZA)
                 name = getPouchInfo9LZA(static_cast<PouchType9LZA>(category)).name;
@@ -58,8 +61,7 @@ namespace UI
             return (name != nullptr && name[0] != '\0') ? name : "?";
         }
 
-        void drawItems(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int itemsX, int itemsY, int itemsWidth,
-                       int itemsHeight)
+        void drawItems(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int itemsX, int itemsY, int itemsWidth, int itemsHeight)
         {
             framebuffer.drawFilledRoundedRect(itemsX, itemsY, itemsWidth, itemsHeight, 16, Colors::Panel);
             framebuffer.drawRoundedRect(itemsX, itemsY, itemsWidth, itemsHeight, 16, Colors::Border, 1);
@@ -69,9 +71,8 @@ namespace UI
             framebuffer.drawFilledRoundedRect(itemsX, itemsY, itemsWidth, headerHeight, 16, Colors::AccentDim);
             framebuffer.drawFilledRect(itemsX, itemsY + headerHeight - 16, itemsWidth, 16, Colors::AccentDim);
             GameVersion gameGroup = screen.trainer.getGameGroup();
-            const char *pouchName = pouchDisplayName(gameGroup, screen.selectedCategory);
-            framebuffer.drawText(itemsX + 22, itemsY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2,
-                                 std::string("Items - ") + pouchName, Colors::Text, TextStyle::Heading);
+            const char *pouchName = pouchDisplayName(screen.trainer, screen.selectedCategory);
+            framebuffer.drawText(itemsX + 22, itemsY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2, std::string("Items - ") + pouchName, Colors::Text, TextStyle::Heading);
 
             screen.touchButtons.clear();
 
@@ -83,16 +84,11 @@ namespace UI
             const auto &pouch = screen.trainer.items[screen.selectedCategory];
             // Only visible items (count > 0); "owned but empty" slots are hidden but kept in the data.
             std::vector<int> visible = screen.visibleItemIndices();
-            drawListSearchBox(framebuffer, itemsX + 24, itemsY + headerHeight + 4, itemsWidth - 48,
-                              screen.itemSearch, static_cast<int>(visible.size()),
-                              static_cast<int>(pouch.size()));
+            drawListSearchBox(framebuffer, itemsX + 24, itemsY + headerHeight + 4, itemsWidth - 48, screen.itemSearch, static_cast<int>(visible.size()), static_cast<int>(pouch.size()));
             if (visible.empty())
             {
                 // A filter that hides everything must not read as an empty pocket.
-                framebuffer.drawText(itemsX + 24, itemsY + headerHeight + listSearchBoxHeight() + 26,
-                            screen.itemSearch.isFiltering() ? "Nothing in this pocket matches that search."
-                                                            : "No items in this category",
-                            Colors::TextDim);
+                framebuffer.drawText(itemsX + 24, itemsY + headerHeight + listSearchBoxHeight() + 26, screen.itemSearch.isFiltering() ? "Nothing in this pocket matches that search." : "No items in this category", Colors::TextDim);
                 return;
             }
             const int total = static_cast<int>(visible.size());
@@ -107,10 +103,8 @@ namespace UI
 
             std::string countText = std::to_string(total) + " items";
             if (totalPages > 1)
-                countText +=
-                    "      Page " + std::to_string(screen.currentPage + 1) + " / " + std::to_string(totalPages);
-            framebuffer.drawText(tileX, itemsY + headerHeight + listSearchBoxHeight() + 6, countText, Colors::TextDim,
-                                 TextStyle::Caption);
+                countText += "      Page " + std::to_string(screen.currentPage + 1) + " / " + std::to_string(totalPages);
+            framebuffer.drawText(tileX, itemsY + headerHeight + listSearchBoxHeight() + 6, countText, Colors::TextDim, TextStyle::Caption);
 
             const int startIdx = screen.currentPage * itemsPerPage;
             const int endIdx = std::min(startIdx + itemsPerPage, total);
@@ -120,8 +114,7 @@ namespace UI
                 const InventoryItem &item = pouch[visible[itemRowIndex]];
                 const bool selected = screen.detailViewActive && itemRowIndex == screen.selectedItemIndex;
                 framebuffer.drawSoftShadow(tileX, rectY, tileW, tileH, tileH / 2);
-                framebuffer.drawFilledRoundedRect(tileX, rectY, tileW, tileH, 12,
-                                                  selected ? Colors::Primary : Colors::PanelAlt);
+                framebuffer.drawFilledRoundedRect(tileX, rectY, tileW, tileH, 12, selected ? Colors::Primary : Colors::PanelAlt);
                 const Color nameCol = selected ? Colors::PrimaryText : (item.isNew ? Colors::Accent : Colors::Text);
                 int nameX = tileX + 22;
                 if (item.isFavorite)
@@ -131,23 +124,19 @@ namespace UI
                 }
                 // Each generation numbers items differently, so the group picks the table.
                 const char *itemName = Names::getItemNameFor(gameGroup, item.itemId);
-                framebuffer.drawText(nameX, rectY + (tileH - framebuffer.lineHeight(TextStyle::Body)) / 2, itemName,
-                                     nameCol, TextStyle::Body);
+                framebuffer.drawText(nameX, rectY + (tileH - framebuffer.lineHeight(TextStyle::Body)) / 2, itemName, nameCol, TextStyle::Body);
                 // TM/HM/TR items: show the move the machine teaches (dim, after the item name).
                 if (uint16_t tmMove = Names::getTMMove(gameGroup, item.itemId))
                 {
                     int itemNameWidth, ih;
                     framebuffer.measureText(itemName, itemNameWidth, ih, TextStyle::Body);
                     const Color moveCol = selected ? Colors::PrimaryText : Colors::TextDim;
-                    framebuffer.drawText(nameX + itemNameWidth + 14,
-                                         rectY + (tileH - framebuffer.lineHeight(TextStyle::Body)) / 2,
-                                         Names::getMoveName(tmMove), moveCol, TextStyle::Body);
+                    framebuffer.drawText(nameX + itemNameWidth + 14, rectY + (tileH - framebuffer.lineHeight(TextStyle::Body)) / 2, Names::getMoveName(tmMove), moveCol, TextStyle::Body);
                 }
                 std::string countText = "\xC3\x97" + std::to_string(item.count); // ×N
                 int countTextWidth, ch;
                 framebuffer.measureText(countText, countTextWidth, ch, TextStyle::Body);
-                framebuffer.drawText(tileX + tileW - 24 - countTextWidth, rectY + (tileH - ch) / 2, countText,
-                                     selected ? Colors::PrimaryText : Colors::TextDim, TextStyle::Body);
+                framebuffer.drawText(tileX + tileW - 24 - countTextWidth, rectY + (tileH - ch) / 2, countText, selected ? Colors::PrimaryText : Colors::TextDim, TextStyle::Body);
                 screen.touchButtons.push_back({itemRowIndex, tileX, rectY, tileW, tileH}); // id = absolute item index
                 rectY += rowPitch;
             }

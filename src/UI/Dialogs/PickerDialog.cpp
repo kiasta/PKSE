@@ -1,13 +1,17 @@
+#include <algorithm>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "UI/Dialogs/PickerDialog.h"
+#include "UI/Dialogs/KeyboardDialog.h"
 #include "UI/TrainerViewScreen.h"
 #include "UI/Common.h"
 #include "UI/ScreenChrome.h" // drawScrollbar
 #include "UI/ListSearch.h"   // the shared search box
 #include "UI/PKSEFramebuffer.h"
 #include "Trainer/Trainer.h"     // getNatureName / getAbilityName
+#include "Trainer/Inventory.h"   // InventoryItem -- what a pocket holds
 #include "Names/MoveNames.h"     // getMoveName / getMoveCount
 #include "Names/ItemNames.h"     // getItemNameFor -- every generation numbers items differently
 #include "Pokemon/Gen1Tables.h"  // getItemNameGen1
@@ -187,8 +191,7 @@ namespace UI
                 return Names::getMetLocationName(screen.pickerMetVersion, static_cast<uint16_t>(value));
             if (kind == PickerKind::Form)
             {
-                const char *formName = Names::getFormName(screen.pickerFormSpecies,
-                                                          static_cast<uint8_t>(value));
+                const char *formName = Names::getFormName(screen.pickerFormSpecies, static_cast<uint8_t>(value));
                 if (formName[0] != '\0')
                     return formName;
                 return value == 0 ? std::string("Base") : ("Form " + std::to_string(value));
@@ -220,6 +223,11 @@ namespace UI
             return label != nullptr ? std::string(label) : std::string();
         }
 
+        static bool isPouchPickerKind(PickerKind kind)
+        {
+            return kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG1 || kind == PickerKind::PouchItemG3;
+        }
+
         void drawPickerDialog(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
         {
             const int screenWidth = framebuffer.getWidth(), H = framebuffer.getHeight();
@@ -242,27 +250,27 @@ namespace UI
 
             // Title + position caption. A pouch picker opened to change an existing item's type says so
             // rather than "Add Item to Pouch".
-            const char *title = (screen.itemPickerReplace &&
-                                 (kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG3))
-                                    ? "Change Item To"
-                                    : pickerTitle(kind);
+            const char *title = (screen.itemPickerReplace && (kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG3)) ? "Change Item To" : pickerTitle(kind);
             framebuffer.drawText(panelX + 20, py + 16, title, Colors::Text, TextStyle::Heading);
             {
-                std::string position = std::to_string(matchCount == 0 ? 0 : selectedIndex + 1) +
-                                  " / " + std::to_string(matchCount);
+                std::string position = std::to_string(matchCount == 0 ? 0 : selectedIndex + 1) + " / " + std::to_string(matchCount);
                 int previewWidth, phi;
                 framebuffer.measureText(position, previewWidth, phi, TextStyle::Caption);
-                framebuffer.drawText(panelX + panelWidth - 20 - previewWidth, py + 22, position, Colors::TextDim,
-                                     TextStyle::Caption);
+                framebuffer.drawText(panelX + panelWidth - 20 - previewWidth, py + 22, position, Colors::TextDim, TextStyle::Caption);
             }
             framebuffer.drawHDivider(panelX + 20, py + 52, panelWidth - 40);
 
-            drawListSearchBox(framebuffer, panelX + 12, py + 60, panelWidth - 24, screen.pickerSearch,
-                              matchCount, screen.pickerCount);
+            drawListSearchBox(framebuffer, panelX + 12, py + 60, panelWidth - 24, screen.pickerSearch, matchCount, screen.pickerCount);
 
             // Scrollable list window centered on the selection.
             const int rowH = 40;
-            const int listTop = py + 60 + listSearchBoxHeight() + 4, listBottom = py + ph - 48;
+            constexpr int panelFooterHeight = 48;
+            const int listTop = py + 60 + listSearchBoxHeight() + 4;
+            int listBottom = py + ph - panelFooterHeight;
+            // While the keyboard types this picker's query, only the rows above it can be seen -- so
+            // the window centres the selection among those, not among rows hidden under the keyboard.
+            if (const KeyboardState *keyboard = activeKeyboard())
+                listBottom = std::min(listBottom, keyboard->cardTop() - 8);
             int visible = (listBottom - listTop) / rowH;
             if (visible < 1)
                 visible = 1;
@@ -288,32 +296,32 @@ namespace UI
                 const int row = screen.pickerRowForVisibleIndex(entryIndex); // row in the full list
                 if (row < 0)
                     continue;
-                const int value = (reorder && row < static_cast<int>(screen.pickerOrder.size()))
-                                    ? screen.pickerOrder[row]
-                                    : row;
+                const int value = (reorder && row < static_cast<int>(screen.pickerOrder.size())) ? screen.pickerOrder[row] : row;
                 const int rectY = listTop + index * rowH;
                 const bool isSelected = (entryIndex == selectedIndex);
                 if (isSelected)
                 {
-                    framebuffer.drawFilledRoundedRect(panelX + 12, rectY, panelWidth - 24, rowH - 4, 8,
-                                                      Colors::Selected);
+                    framebuffer.drawFilledRoundedRect(panelX + 12, rectY, panelWidth - 24, rowH - 4, 8, Colors::Selected);
                     framebuffer.drawRoundedRect(panelX + 12, rectY, panelWidth - 24, rowH - 4, 8, Colors::Accent, 2);
                 }
                 const bool legal = reorder && row < screen.pickerLegalCount;
                 const Color rowColor = legal ? Color(120, 210, 130) : (isSelected ? Colors::Text : Colors::TextDim);
                 const std::string label = pickerRowLabel(screen, kind, value);
-                framebuffer.drawText(panelX + 28, rectY + (rowH - 4 - framebuffer.lineHeight(TextStyle::Body)) / 2,
-                                     label, rowColor);
+                framebuffer.drawText(panelX + 28, rectY + (rowH - 4 - framebuffer.lineHeight(TextStyle::Body)) / 2, label, rowColor);
                 // id = option row
                 screen.touchButtons.push_back({entryIndex, panelX + 12, rectY, panelWidth - 24, rowH - 4});
             }
+
+            // Add Item and Change Item To leave out every item the pocket already holds, since adding one
+            // again could only duplicate it. Left unsaid, an item the player holds reads as missing.
+            const std::vector<InventoryItem> *pouch = (isPouchPickerKind(kind) && screen.selectedCategory >= 0 && screen.selectedCategory < static_cast<int>(screen.trainer.items.size())) ? &screen.trainer.items[screen.selectedCategory] : nullptr;
+            const bool pouchHoldsItems = pouch != nullptr && std::any_of(pouch->begin(), pouch->end(), [](const InventoryItem &pouchItem) { return pouchItem.count > 0; });
 
             if (matchCount == 0)
             {
                 framebuffer.drawText(panelX + 28, listTop + 8, "Nothing matches that search.", Colors::TextDim);
                 int emptyStateY = listTop + 8 + framebuffer.lineHeight(TextStyle::Body) + 4;
-                framebuffer.drawText(panelX + 28, emptyStateY, "Y: change it, or clear it to see the whole list.",
-                            Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(panelX + 28, emptyStateY, "Y: change it, or clear it to see the whole list.", Colors::TextDim, TextStyle::Caption);
                 emptyStateY += framebuffer.lineHeight(TextStyle::Caption) + 10;
 
                 // The met list is IN-WORLD PLACES only. Who an egg came FROM -- "Nursery Couple",
@@ -326,23 +334,37 @@ namespace UI
                     const Names::LocationTable eggSources = Names::getEggSourceLocationTable(screen.pickerMetVersion);
                     const char *matchedSource = nullptr;
                     for (uint16_t sourceIndex = 0; sourceIndex < eggSources.count && !matchedSource; ++sourceIndex)
-                        if (eggSources.names[sourceIndex][0] != '\0' &&
-                            screen.pickerSearch.matches(eggSources.names[sourceIndex]))
+                        if (eggSources.names[sourceIndex][0] != '\0' && screen.pickerSearch.matches(eggSources.names[sourceIndex]))
                             matchedSource = eggSources.names[sourceIndex];
                     if (matchedSource)
                     {
-                        framebuffer.drawText(panelX + 28, emptyStateY,
-                                    std::string("\"") + matchedSource + "\" is where an EGG came from, not a place.",
-                                    Colors::Accent, TextStyle::Caption);
-                        framebuffer.drawText(panelX + 28, emptyStateY + framebuffer.lineHeight(TextStyle::Caption) + 4,
-                                    "Set it on the Egg Loc row instead.", Colors::Accent, TextStyle::Caption);
+                        framebuffer.drawText(panelX + 28, emptyStateY, std::string("\"") + matchedSource + "\" is where an EGG came from, not a place.", Colors::Accent, TextStyle::Caption);
+                        framebuffer.drawText(panelX + 28, emptyStateY + framebuffer.lineHeight(TextStyle::Caption) + 4, "Set it on the Egg Loc row instead.", Colors::Accent, TextStyle::Caption);
+                    }
+                }
+
+                if (pouch != nullptr)
+                {
+                    const auto matchedPouchItem = std::find_if(pouch->begin(), pouch->end(), [&](const InventoryItem &pouchItem) {
+                            return pouchItem.count > 0 && screen.pickerSearch.matches(pickerOptionLabel(kind, pouchItem.itemId));
+                        });
+                    if (matchedPouchItem != pouch->end())
+                    {
+                        framebuffer.drawText(panelX + 28, emptyStateY, std::string("\"") + pickerOptionLabel(kind, matchedPouchItem->itemId) + "\" is already in this pocket (x" + std::to_string(matchedPouchItem->count) + ").", Colors::Accent, TextStyle::Caption);
+                        framebuffer.drawText(panelX + 28, emptyStateY + framebuffer.lineHeight(TextStyle::Caption) + 4, "Change its amount from the pocket's list instead.", Colors::Accent, TextStyle::Caption);
                     }
                 }
             }
 
             // Scrollbar on the panel's right edge (same thumb as everywhere else) when the list overflows.
-            drawScrollbar(framebuffer, panelX + panelWidth - 14, listTop, visible * rowH, matchCount * rowH,
-                          first * rowH);
+            drawScrollbar(framebuffer, panelX + panelWidth - 14, listTop, visible * rowH, matchCount * rowH, first * rowH);
+
+            if (pouchHoldsItems)
+            {
+                const int footerTextY = framebuffer.textYCenteredOn(py + ph - panelFooterHeight / 2, TextStyle::Caption);
+                framebuffer.drawText(panelX + 28, footerTextY, "Items already in this pocket aren't listed here.", Colors::TextDim, TextStyle::Caption);
+            }
+
 
             // No hint strip in the card. The screen's nav bar is the ONE place controls are listed; a
             // second copy right above it is two rows of buttons for one dialog, saying different things.

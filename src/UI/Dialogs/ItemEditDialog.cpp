@@ -54,8 +54,7 @@ namespace UI
                 const std::string capacity = "max " + std::to_string(screen.currentItemMaxCount());
                 int captionWidth, ch;
                 framebuffer.measureText(capacity, captionWidth, ch, TextStyle::Caption);
-                framebuffer.drawText(dialogX + dialogWidth - 24 - captionWidth, centerY, capacity, Colors::TextDim,
-                                     TextStyle::Caption);
+                framebuffer.drawText(dialogX + dialogWidth - 24 - captionWidth, centerY, capacity, Colors::TextDim, TextStyle::Caption);
             }
 
             // Item drop-down: shows the current item; X (or a tap) opens the picker to CHANGE its type
@@ -63,10 +62,8 @@ namespace UI
             const int dropdownX = dialogX + 24, ddY = centerY + 20, ddW = dialogWidth - 48, ddH = 42;
             framebuffer.drawFilledRoundedRect(dropdownX, ddY, ddW, ddH, 8, Colors::PanelAlt);
             framebuffer.drawRoundedRect(dropdownX, ddY, ddW, ddH, 8, Colors::Border, 1);
-            framebuffer.drawText(dropdownX + 16, ddY + (ddH - framebuffer.lineHeight(TextStyle::Body)) / 2, itemName,
-                                 Colors::Text);
-            framebuffer.drawSymbol(dropdownX + ddW - 28, ddY + ddH / 2 - 8, "\xE2\x96\xBC", Colors::TextDim,
-                                   TextStyle::Caption); // v
+            framebuffer.drawText(dropdownX + 16, ddY + (ddH - framebuffer.lineHeight(TextStyle::Body)) / 2, itemName, Colors::Text);
+            framebuffer.drawSymbol(dropdownX + ddW - 28, ddY + ddH / 2 - 8, "\xE2\x96\xBC", Colors::TextDim, TextStyle::Caption); // v
             {
                 const int glyphWidth = buttonGlyphWidth(framebuffer, "X");
                 buttonGlyph(framebuffer, dropdownX + ddW - 40 - glyphWidth, ddY + ddH / 2, "X", false);
@@ -77,8 +74,7 @@ namespace UI
             std::string amount = std::to_string(screen.itemEditDialogValue);
             int amountWidth, ah;
             framebuffer.measureText(amount, amountWidth, ah, TextStyle::Title);
-            framebuffer.drawText(dialogX + (dialogWidth - amountWidth) / 2, centerY + 76, amount, Colors::Accent,
-                                 TextStyle::Title);
+            framebuffer.drawText(dialogX + (dialogWidth - amountWidth) / 2, centerY + 76, amount, Colors::Accent, TextStyle::Title);
 
             // Step buttons (ZL -100 | L -10 | < -1 | > +1 | R +10 | ZR +100), then Cancel / Remove / Confirm
             // labelled with B / Y / A.
@@ -86,12 +82,9 @@ namespace UI
             drawEditStepRow(screen, framebuffer, dialogX, dialogWidth, cby - 58 - 14, 58);
 
             const int choiceButtonWidth = 160, gap = 16;
-            drawEditChoiceButton(screen, framebuffer, dialogX + 24, cby, choiceButtonWidth, choiceButtonHeight, "B",
-                                 "Cancel", 0);
-            drawEditChoiceButton(screen, framebuffer, dialogX + 24 + choiceButtonWidth + gap, cby, choiceButtonWidth,
-                                 choiceButtonHeight, "Y", "Remove", 2);
-            drawEditChoiceButton(screen, framebuffer, dialogX + dialogWidth - 24 - choiceButtonWidth, cby,
-                                 choiceButtonWidth, choiceButtonHeight, "A", "Confirm", 1);
+            drawEditChoiceButton(screen, framebuffer, dialogX + 24, cby, choiceButtonWidth, choiceButtonHeight, "B", "Cancel", 0);
+            drawEditChoiceButton(screen, framebuffer, dialogX + 24 + choiceButtonWidth + gap, cby, choiceButtonWidth, choiceButtonHeight, "Y", "Remove", 2);
+            drawEditChoiceButton(screen, framebuffer, dialogX + dialogWidth - 24 - choiceButtonWidth, cby, choiceButtonWidth, choiceButtonHeight, "A", "Confirm", 1);
         }
 
         // Confirm before deleting the selected item from the Items list. Mirrors the storage
@@ -118,16 +111,14 @@ namespace UI
             const int dialogY = (framebuffer.getHeight() - h) / 2;
             int centerY = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h, "Remove Item", Colors::Red);
             framebuffer.drawText(dialogX + 28, centerY, "Remove " + itemName + "?", Colors::Text);
-            framebuffer.drawText(dialogX + 28, centerY + 34, "It will be taken out of this pocket.", Colors::TextDim,
-                                 TextStyle::Caption);
+            framebuffer.drawText(dialogX + 28, centerY + 34, "It will be taken out of this pocket.", Colors::TextDim, TextStyle::Caption);
 
             screen.touchButtons.clear();
             const int boxWidth = 190, bh = TouchTargetMin, by = dialogY + h - bh - 18;
             const int remX = dialogX + dialogWidth - boxWidth - 20;   // right = Remove (id 1 -> A)
             const int cancelX = remX - boxWidth - 16; // left  = Cancel (id 0 -> B)
             drawEditChoiceButton(screen, framebuffer, cancelX, by, boxWidth, bh, "B", "Cancel", 0, Colors::PanelAlt);
-            drawEditChoiceButton(screen, framebuffer, remX, by, boxWidth, bh, "A", "Remove", 1, Colors::Red,
-                                 Colors::White);
+            drawEditChoiceButton(screen, framebuffer, remX, by, boxWidth, bh, "A", "Remove", 1, Colors::Red, Colors::White);
         }
     }
 }

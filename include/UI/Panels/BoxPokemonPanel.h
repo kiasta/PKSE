@@ -11,11 +11,9 @@ namespace UI
 {
     namespace Panels
     {
-        void drawBoxPokemon(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int boxPokemonX,
-                            int boxPokemonY, int boxPokemonWidth, int boxPokemonHeight);
+        void drawBoxPokemon(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int boxPokemonX, int boxPokemonY, int boxPokemonWidth, int boxPokemonHeight);
         // HOME summary side-panel (render + hexagon + info) shown right of the box when entered.
-        void drawBoxSummaryPanel(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int boxSummaryPanelX,
-                                 int boxSummaryPanelY, int boxSummaryPanelWidth, int boxSummaryPanelHeight);
+        void drawBoxSummaryPanel(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int boxSummaryPanelX, int boxSummaryPanelY, int boxSummaryPanelWidth, int boxSummaryPanelHeight);
     }
 }
 

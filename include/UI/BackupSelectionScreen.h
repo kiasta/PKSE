@@ -7,6 +7,7 @@
 #include <switch.h>
 
 #include "UI/UIScreen.h"
+#include "UI/NavigationRepeat.h"
 #include "UI/PKSEFramebuffer.h"
 
 namespace UI
@@ -40,6 +41,8 @@ namespace UI
         }
 
     private:
+        ControllerNavigation controllerNavigation;
+
         struct BackupInfo
         {
             std::string timestamp;

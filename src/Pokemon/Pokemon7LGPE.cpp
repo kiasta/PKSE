@@ -262,8 +262,7 @@ namespace Pokemon
         // CP (PKHeX CalculateCP): base part from the NON-AV portion of every stat, plus an AV bonus. Each
         // stat's non-AV portion is (stat - its AV), so statSum = (sum of all six stats) - (sum of AVs).
         const int avSum = avHP() + avATK() + avDEF() + avSPE() + avSPA() + avSPD();
-        const int statSum =
-            hitPoints + attackStat + defenseStat + speedStat + specialAttackStat + specialDefenseStat - avSum;
+        const int statSum = hitPoints + attackStat + defenseStat + speedStat + specialAttackStat + specialDefenseStat - avSum;
         int baseCP = static_cast<int>(static_cast<float>(statSum) * 6.0f * levelValue / 100.0f);
         const int awakeCP = (avSum > 0) ? static_cast<int>(avSum * ((levelValue * 4.0f / 100.0f) + 2.0f)) : 0;
         int combatPower = baseCP + awakeCP;

@@ -34,10 +34,7 @@ namespace UI
         return first;
     }
 
-    BackupSelectionScreen::BackupSelectionScreen(u64 titleId, const std::string &titleName,
-                                                 const std::string &titleFolder)
-        : titleId(titleId), titleName(titleName), selectedIndex(0), backupSelected(false),
-          createNewBackup(false), goBack(false), showDeleteConfirmation(false), deleteConfirmationIndex(-1)
+    BackupSelectionScreen::BackupSelectionScreen(u64 titleId, const std::string &titleName, const std::string &titleFolder) : titleId(titleId), titleName(titleName), selectedIndex(0), backupSelected(false), createNewBackup(false), goBack(false), showDeleteConfirmation(false), deleteConfirmationIndex(-1)
     {
         // THE PATH TAKES THE FOLDER, NOT THE DISPLAY NAME. One string for both is how every Gen 3 language
         // SKU ends up sharing one backup directory -- see Save/TitleFolder.h.
@@ -57,9 +54,7 @@ namespace UI
         // so label it honestly rather than always promising a new backup.
         BackupInfo newBackupOption;
         newBackupOption.timestamp = "";
-        newBackupOption.displayName = g_autoBackupEnabled
-                                          ? "Load from Title (Create New Backup)"
-                                          : "Load from Title (Working Copy)";
+        newBackupOption.displayName = g_autoBackupEnabled ? "Load from Title (Create New Backup)" : "Load from Title (Working Copy)";
         backups.push_back(newBackupOption);
 
         for (const auto &timestamp : backupDirs)
@@ -99,7 +94,8 @@ namespace UI
 
     void BackupSelectionScreen::update(const PadState &pad, const TouchInput &touch)
     {
-        u64 buttonsDown = padGetButtonsDown(&pad) | navTouchButton(touch); // nav-bar badges are tappable
+        const HidAnalogStickState stick = padGetStickPos(&pad, 0);
+        u64 buttonsDown = controllerNavigation.apply(padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right) | navTouchButton(touch); // nav-bar badges are tappable
 
         // A tap recorded earlier fires once its press has actually been on screen. See armTap().
         if (pendingTapButton != 0 && --pendingTapFrames <= 0)
@@ -118,8 +114,7 @@ namespace UI
             {
                 auto isPressed = [&](const DlgBtn &b)
                 {
-                    return touch.x() >= b.hitX && touch.x() < b.hitX + b.hitWidth &&
-                           touch.y() >= b.hitY && touch.y() < b.hitY + b.hitHeight;
+                    return touch.x() >= b.hitX && touch.x() < b.hitX + b.hitWidth && touch.y() >= b.hitY && touch.y() < b.hitY + b.hitHeight;
                 };
                 if (isPressed(deleteDeleteBtn) && armTap(1, HidNpadButton_A))
                     return;
@@ -208,8 +203,7 @@ namespace UI
                 // Existing backup selected
                 createNewBackup = false;
                 char backupPath[512];
-                snprintf(backupPath, sizeof(backupPath), "%s/%s",
-                         gameDirectory.c_str(), backups[row].timestamp.c_str());
+                snprintf(backupPath, sizeof(backupPath), "%s/%s", gameDirectory.c_str(), backups[row].timestamp.c_str());
                 selectedBackupPath = backupPath;
                 backupSelected = true;
             }
@@ -269,12 +263,10 @@ namespace UI
             int itemY = startY + (row - first) * LIST_ROW_H;
             bool selected = (row == selectedIndex);
             // Row 0 is the "create new backup" action — accent it to stand out.
-            drawHomeTile(framebuffer, CARD_X + 14, itemY, CARD_W - 28, LIST_ROW_H - 10, backups[row].displayName,
-                         selected, (row == 0));
+            drawHomeTile(framebuffer, CARD_X + 14, itemY, CARD_W - 28, LIST_ROW_H - 10, backups[row].displayName, selected, (row == 0));
         }
         // Scrollbar on the card's right edge when the list overflows -- same thumb as the details editor.
-        drawScrollbar(framebuffer, CARD_X + CARD_W - 10, startY, LIST_MAX_VISIBLE * LIST_ROW_H, total * LIST_ROW_H,
-                      first * LIST_ROW_H);
+        drawScrollbar(framebuffer, CARD_X + CARD_W - 10, startY, LIST_MAX_VISIBLE * LIST_ROW_H, total * LIST_ROW_H, first * LIST_ROW_H);
     }
 
     void BackupSelectionScreen::drawDeleteConfirmation(PKSEFramebuffer &framebuffer)
@@ -283,23 +275,19 @@ namespace UI
         const int dialogX = (framebuffer.getWidth() - dialogWidth) / 2;
         const int dialogY = (framebuffer.getHeight() - h) / 2;
 
-        int centerY =
-            Dialogs::drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h, "Delete Backup?", Colors::Warning);
+        int centerY = Dialogs::drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h, "Delete Backup?", Colors::Warning);
         framebuffer.drawText(dialogX + 24, centerY, "This action cannot be undone.", Colors::TextDim);
         if (deleteConfirmationIndex >= 0 && deleteConfirmationIndex < (int)backups.size())
         {
-            framebuffer.drawText(dialogX + 24, centerY + 28, backups[deleteConfirmationIndex].displayName,
-                                 Colors::Text);
+            framebuffer.drawText(dialogX + 24, centerY + 28, backups[deleteConfirmationIndex].displayName, Colors::Text);
         }
 
         // Buttons carry their glyph (B: Cancel, A: Delete); Delete stays red. Rects are stashed so
         // update() can hit-test taps next frame.
         const int buttonHeight = TouchTargetMin, by = dialogY + h - buttonHeight - 16, bw = (dialogWidth - 48 - 16) / 2;
         const int cancelX = dialogX + 24, delX = dialogX + dialogWidth - 24 - bw;
-        drawGlyphButton(framebuffer, cancelX, by, bw, buttonHeight, "B", "Cancel", Colors::PanelAlt,
-                        Colors::Text, pendingTapButtonId == 0);
-        drawGlyphButton(framebuffer, delX, by, bw, buttonHeight, "A", "Delete", Colors::Red, Colors::White,
-                        pendingTapButtonId == 1);
+        drawGlyphButton(framebuffer, cancelX, by, bw, buttonHeight, "B", "Cancel", Colors::PanelAlt, Colors::Text, pendingTapButtonId == 0);
+        drawGlyphButton(framebuffer, delX, by, bw, buttonHeight, "A", "Delete", Colors::Red, Colors::White, pendingTapButtonId == 1);
         deleteCancelBtn = {cancelX, by, bw, buttonHeight};
         deleteDeleteBtn = {delX, by, bw, buttonHeight};
     }
@@ -320,8 +308,7 @@ namespace UI
         }
 
         char backupPath[512];
-        snprintf(backupPath, sizeof(backupPath), "%s/%s",
-                 gameDirectory.c_str(), backups[index].timestamp.c_str());
+        snprintf(backupPath, sizeof(backupPath), "%s/%s", gameDirectory.c_str(), backups[index].timestamp.c_str());
 
         if (deleteDirectoryRecursive(backupPath))
         {

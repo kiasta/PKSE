@@ -264,8 +264,7 @@ namespace Names
         NATURE_NAMES_ZH_HANS,
         NATURE_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(NATURE_NAMES_BY_LANGUAGE) / sizeof(NATURE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "NATURE_NAMES_BY_LANGUAGE must carry one table per language");
+    static_assert(sizeof(NATURE_NAMES_BY_LANGUAGE) / sizeof(NATURE_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "NATURE_NAMES_BY_LANGUAGE must carry one table per language");
 
     const char *getNatureName(uint8_t id)
     {

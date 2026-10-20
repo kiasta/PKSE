@@ -56,8 +56,7 @@ namespace Encryption
         cryptPokemon7LGPE(data, personalityValue, blockSize, BLOCK_COUNT7_LGPE);
     }
 
-    void shuffleArray7LGPE(std::span<const std::byte> data, std::span<std::byte> result, uint32_t shuffleValue,
-                           size_t blockSize)
+    void shuffleArray7LGPE(std::span<const std::byte> data, std::span<std::byte> result, uint32_t shuffleValue, size_t blockSize)
     {
 
         const uint32_t index = shuffleValue * BLOCK_COUNT7_LGPE;
@@ -86,8 +85,7 @@ namespace Encryption
     std::byte *decryptArray7LGPE(std::span<const std::byte> encryptedData)
     {
 
-        const uint32_t personalityValue =
-            readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
+        const uint32_t personalityValue = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(encryptedData.data()));
 
         const uint32_t shuffleValue = (personalityValue >> 13) & 31;
 

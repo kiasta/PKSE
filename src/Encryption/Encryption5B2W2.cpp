@@ -45,8 +45,7 @@ namespace Encryption
         crypt5B2W2(std::span<std::byte>(scratch, byteCount), seeds);
 
         std::byte *out = new std::byte[byteCount];
-        shuffleBlocks(std::span<const std::byte>(scratch, byteCount), std::span<std::byte>(out, byteCount),
-                      shuffleIndex, SIZE_BLOCK5_B2W2, /*invert=*/false);
+        shuffleBlocks(std::span<const std::byte>(scratch, byteCount), std::span<std::byte>(out, byteCount), shuffleIndex, SIZE_BLOCK5_B2W2, /*invert=*/false);
         delete[] scratch;
         return out;
     }
@@ -60,8 +59,7 @@ namespace Encryption
         const uint32_t shuffleIndex = (seeds.pidValue >> 13) & 31;
 
         std::byte *out = new std::byte[byteCount];
-        shuffleBlocks(decryptedData, std::span<std::byte>(out, byteCount), shuffleIndex,
-                      SIZE_BLOCK5_B2W2, /*invert=*/true);
+        shuffleBlocks(decryptedData, std::span<std::byte>(out, byteCount), shuffleIndex, SIZE_BLOCK5_B2W2, /*invert=*/true);
         crypt5B2W2(std::span<std::byte>(out, byteCount), seeds);
         return out;
     }

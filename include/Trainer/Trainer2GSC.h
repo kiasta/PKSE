@@ -36,8 +36,10 @@
 namespace Trainer
 {
 
-    inline constexpr size_t GEN2_SIZE_INTL = 0x8000;
-    inline constexpr size_t GEN2_SIZE_JP = 0x10000;
+    /// The two file sizes PKHeX accepts (SIZE_G2RAW_U / SIZE_G2RAW_J). PKHeX names them after a
+    /// locale, but the locale does not follow from the size: every layout is probed at both.
+    inline constexpr size_t GEN2_SAVE_SIZE = 0x8000;
+    inline constexpr size_t GEN2_SAVE_SIZE_DOUBLED = 0x10000;
 
     /// Which of the four (version x locale) layouts a file is. There is nothing in the file that
     /// says; it is inferred from where a well-formed Pokemon list sits.
@@ -136,6 +138,9 @@ namespace Trainer
         /// other four are slot lists. The flag answers for the four; updateItemBlock() special-
         /// cases the TM pouch.
         bool itemsAreIdIndexed() const noexcept override { return false; }
+        size_t getItemPouchCapacity(int pouch) const override;
+        int getItemMaxCount(int pouch) const override;
+        const char *getItemPouchName(int pouch) const override;
         bool compactStorage() override { return true; }
         /// The regions writeMirrors() refreshes -- see Gen2Mirror. Public because verifying
         /// a round trip means knowing which bytes a write is allowed to move.
@@ -169,8 +174,7 @@ namespace Trainer
         void parseItems();
         void parseBoxNames();
 
-        void readList(size_t offset, size_t capacity, size_t bodySize,
-                      std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const;
+        void readList(size_t offset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const;
         void writeList(size_t offset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &in);
         void writeChecksums() noexcept;
         void writeMirrors() noexcept;

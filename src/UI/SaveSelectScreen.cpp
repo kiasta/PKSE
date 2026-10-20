@@ -6,6 +6,7 @@
 #include "UI/Common.h"
 #include "UI/ScreenChrome.h"
 #include "UI/ListSearch.h"
+#include "UI/Dialogs/KeyboardDialog.h"
 #include "UI/SystemIcons.h"
 #include "UI/TouchInput.h"
 #include "Enums/GameVersion.h"
@@ -173,8 +174,7 @@ namespace UI
         if (R_FAILED(resultCode))
         {
             char messageBuffer[112];
-            snprintf(messageBuffer, sizeof(messageBuffer), "SaveSelect: cannot read save space %d (rc=0x%08X)", spaceId,
-                     (unsigned)resultCode);
+            snprintf(messageBuffer, sizeof(messageBuffer), "SaveSelect: cannot read save space %d (rc=0x%08X)", spaceId, (unsigned)resultCode);
             logInfoToFile(messageBuffer);
             return false;
         }
@@ -204,9 +204,7 @@ namespace UI
                     if (gameVersion == GameVersion::Invalid)
                         continue;
                     char probeBuffer[128];
-                    snprintf(probeBuffer, sizeof(probeBuffer),
-                             "SaveSelect: %016llX unknown id, identified by content as %s",
-                             (unsigned long long)titleId, getGameVersionName(gameVersion).c_str());
+                    snprintf(probeBuffer, sizeof(probeBuffer), "SaveSelect: %016llX unknown id, identified by content as %s", (unsigned long long)titleId, getGameVersionName(gameVersion).c_str());
                     logInfoToFile(probeBuffer);
                 }
 
@@ -226,8 +224,7 @@ namespace UI
                     continue;
 
                 char messageBuffer[128];
-                snprintf(messageBuffer, sizeof(messageBuffer), "SaveSelect: %s (%016llX) -> listed",
-                         getGameVersionName(gameVersion).c_str(), (unsigned long long)titleId);
+                snprintf(messageBuffer, sizeof(messageBuffer), "SaveSelect: %s (%016llX) -> listed", getGameVersionName(gameVersion).c_str(), (unsigned long long)titleId);
                 logInfoToFile(messageBuffer);
 
                 TitleEntry titleEntry;
@@ -263,9 +260,7 @@ namespace UI
         // Counts make a missing title diagnosable from the log alone: how many saves the console
         // reported in total, how many belong to this user, and how many were Pokemon titles.
         char summary[192];
-        snprintf(summary, sizeof(summary),
-                 "SaveSelect: %d save entries on console, %d for %s, %d Pokemon titles listed",
-                 scanned, forUser, user.name.c_str(), (int)user.titles.size());
+        snprintf(summary, sizeof(summary), "SaveSelect: %d save entries on console, %d for %s, %d Pokemon titles listed", scanned, forUser, user.name.c_str(), (int)user.titles.size());
         logInfoToFile(summary);
     }
 
@@ -361,7 +356,8 @@ namespace UI
     {
         // A tap on a nav-bar badge becomes that button's press, so every handler below is
         // reached identically whether the user pressed the button or tapped its on-screen badge.
-        u64 buttonsDown = padGetButtonsDown(&pad) | navTouchButton(touch);
+        const HidAnalogStickState stick = padGetStickPos(&pad, 0);
+        u64 buttonsDown = controllerNavigation.apply(padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right, HidNpadButton_L | HidNpadButton_R) | navTouchButton(touch);
 
         // A tap recorded earlier fires once its selection has actually been on screen. See armTap().
         if (pendingTapButton != 0 && --pendingTapFrames <= 0)
@@ -381,6 +377,11 @@ namespace UI
         if (buttonsDown & HidNpadButton_Y)
         {
             openFileBrowser();
+            return;
+        }
+        if (SELF_TEST_AVAILABLE && (buttonsDown & HidNpadButton_Minus))
+        {
+            selfTestRequested = true;
             return;
         }
         // Touch (tap targets were captured last draw()).
@@ -481,10 +482,8 @@ namespace UI
             int nameLineHeight = framebuffer.lineHeight(TextStyle::Title);
             framebuffer.drawText(nameX, avY + 6, u->name, Colors::Text, TextStyle::Title);
             int saveCount = (int)u->titles.size();
-            std::string subtitleText =
-                std::to_string(saveCount) + (saveCount == 1 ? " Pokémon save" : " Pokémon saves");
-            framebuffer.drawText(nameX, avY + 6 + nameLineHeight + 4, subtitleText, Colors::TextDim,
-                                 TextStyle::Caption);
+            std::string subtitleText = std::to_string(saveCount) + (saveCount == 1 ? " Pokémon save" : " Pokémon saves");
+            framebuffer.drawText(nameX, avY + 6 + nameLineHeight + 4, subtitleText, Colors::TextDim, TextStyle::Caption);
         }
 
         // Per-user switcher chips (only when more than one account).
@@ -516,8 +515,7 @@ namespace UI
             const char *message = "No Pokémon saves found for this user";
             int messageWidth, mh;
             framebuffer.measureText(message, messageWidth, mh, TextStyle::Body);
-            framebuffer.drawText((framebuffer.getWidth() - messageWidth) / 2, GRID_Y + 120, message, Colors::TextDim,
-                                 TextStyle::Body);
+            framebuffer.drawText((framebuffer.getWidth() - messageWidth) / 2, GRID_Y + 120, message, Colors::TextDim, TextStyle::Body);
         }
         else
         {
@@ -542,8 +540,7 @@ namespace UI
                 bool selectedIndex = (index == titleIndex);
 
                 framebuffer.drawSoftShadow(tileX, tileY, TILE_W, TILE_H, 16);
-                framebuffer.drawFilledRoundedRect(tileX, tileY, TILE_W, TILE_H, 16,
-                                                  selectedIndex ? Colors::PanelAlt : Colors::Panel);
+                framebuffer.drawFilledRoundedRect(tileX, tileY, TILE_W, TILE_H, 16, selectedIndex ? Colors::PanelAlt : Colors::Panel);
                 if (selectedIndex)
                     framebuffer.drawRoundedRect(tileX, tileY, TILE_W, TILE_H, 16, Colors::Primary, 3);
                 else
@@ -561,8 +558,7 @@ namespace UI
                 const std::string &label = u->titles[index].label;
                 int labelWidth, lh;
                 framebuffer.measureText(label, labelWidth, lh, TextStyle::Caption);
-                framebuffer.drawText(tileX + (TILE_W - labelWidth) / 2, iconY + ICON + 8, label,
-                            selectedIndex ? Colors::Text : Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(tileX + (TILE_W - labelWidth) / 2, iconY + ICON + 8, label, selectedIndex ? Colors::Text : Colors::TextDim, TextStyle::Caption);
 
                 titleRects.push_back({tileX, tileY, TILE_W, TILE_H, index});
             }
@@ -570,22 +566,21 @@ namespace UI
             // Scrollbar to the right of the grid, drawn only when the rows overflow -- same thumb
             // the backup list and the details editor use.
             constexpr int ROW_PITCH = TILE_H + CARD_GAP;
-            drawScrollbar(framebuffer, startX + gridW + 12, GRID_Y, VISIBLE_ROWS * ROW_PITCH, rows * ROW_PITCH,
-                          first * ROW_PITCH);
+            drawScrollbar(framebuffer, startX + gridW + 12, GRID_Y, VISIBLE_ROWS * ROW_PITCH, rows * ROW_PITCH, first * ROW_PITCH);
         }
 
         // ONE nav bar, naming whatever owns input. A second bar drawn over this, plus a third strip inside
         // the browser card, is two visible rows of controller badges saying different things about the same
         // dialog. The bar is chosen here and drawn once, the same way TrainerViewScreen's instruction chain
         // does it.
-        if (fileBrowser.active)
-            drawNavBar(framebuffer,
-                       "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  B: Up / Close");
+        if (const Dialogs::KeyboardState *keyboard = Dialogs::activeKeyboard())
+            drawNavBar(framebuffer, keyboard->navHint());
+        else if (fileBrowser.active)
+            drawNavBar(framebuffer, "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  B: Up / Close");
         else if (users.size() > 1)
-            drawNavBar(framebuffer,
-                       "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
         else
-            drawNavBar(framebuffer, "A: Select  |  Y: Open Save File  |  +: Exit");
+            drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  Y: Open Save File  |  +: Exit");
 
         // Drawn last so it sits above the grid.
         if (fileBrowser.active)
@@ -594,14 +589,10 @@ namespace UI
 
     void SaveSelectScreen::openFileBrowser()
     {
-        browseError.clear();
         // Start where a Game Boy save plausibly is. Emulators on the Switch keep saves beside
         // their ROMs, and PKSE's own backup tree is the other likely home; the browser falls
         // through to the first of these that exists.
-        fileBrowser.open("Open a Save File",
-                         {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
-                          "sdmc:/emulators/", "sdmc:/"},
-                         Save::saveFileExtensions(), Save::saveFileExactNames());
+        fileBrowser.open("Open a Save File", "Save files", {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
         logEventToFile("OPENSAVE action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
 
@@ -625,8 +616,9 @@ namespace UI
         if (buttonsDown & HidNpadButton_Y)
         {
             // Search. refresh() re-lists the folder through the query, so an empty
-            // query -- the shared "clear" gesture -- simply lists it all again.
-            if (fileBrowser.search.promptForQuery("Files"))
+            // query -- the shared "clear" gesture -- simply lists it all again. Not while typing:
+            // refresh() re-reads the folder off the card, which a big folder cannot do per key.
+            if (fileBrowser.search.promptForQuery("Files", ListSearch::FilterTiming::OnAccept))
             {
                 fileBrowser.returnTo.clear();
                 fileBrowser.refresh();
@@ -650,8 +642,7 @@ namespace UI
         {
             for (const auto &r : browserTaps)
             {
-                if (touch.x() >= r.hitX && touch.x() < r.hitX + r.hitWidth && touch.y() >= r.hitY &&
-                    touch.y() < r.hitY + r.hitHeight)
+                if (touch.x() >= r.hitX && touch.x() < r.hitX + r.hitWidth && touch.y() >= r.hitY && touch.y() < r.hitY + r.hitHeight)
                 {
                     fileBrowser.selectedIndex = r.buttonId; // draws selected this frame
                     fileBrowser.move(0);
@@ -665,33 +656,32 @@ namespace UI
 
         const std::string picked = fileBrowser.chosenPath;
         fileBrowser.chosenPath.clear();
+        const size_t slashPosition = picked.find_last_of('/');
+        const std::string pickedName = (slashPosition == std::string::npos) ? picked : picked.substr(slashPosition + 1);
 
-        // Validate BEFORE leaving the picker. Handing an unrecognised file to the editor would
-        // drop the user into a blank trainer view with no way to tell what went wrong, so the
-        // refusal is reported here, in the browser, with the file still on screen.
+        // THE OPEN IS THE CHECK, made BEFORE leaving the picker. A file that passed a lighter test and
+        // then failed to open dropped the user back on the title grid with nothing said, so every
+        // refusal is reported here, in the browser, with the file still on screen and named.
         size_t length = 0;
         uint8_t *bytes = Utils::readAllBytes(picked.c_str(), &length);
         if (!bytes)
         {
-            fileBrowser.status = "Couldn't read that file.";
+            fileBrowser.status = "Couldn't read \"" + pickedName + "\".";
             logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" result=UNREADABLE");
             return;
         }
-        // The SAME probe chain the editor will run, so the picker and the opener cannot disagree
-        // about what is a save.
-        const std::vector<uint8_t> probe(bytes, bytes + length);
+        std::vector<uint8_t> fileBytes(bytes, bytes + length);
         delete[] bytes;
-        if (!Save::isExternalSave(probe))
+        std::string refusalText;
+        std::unique_ptr<Trainer::Trainer> openedTrainer = Save::openExternalSave(std::move(fileBytes), picked, &selectedFileLabel, &refusalText);
+        if (!openedTrainer)
         {
-            // Naming the size is what turns "it didn't work" into something the user can act on:
-            // a save that is the right size but not recognised is a different problem from a file
-            // that was never a save.
-            fileBrowser.status = "Not a save PKSE can open (" + std::to_string(length) + " bytes).";
-            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) +
-                           " result=UNRECOGNISED");
+            fileBrowser.status = "\"" + pickedName + "\" " + refusalText + ".";
+            logEventToFile("OPENSAVE action=PICK file=\"" + picked + "\" size=" + std::to_string(length) + " result=UNRECOGNISED reason=\"" + refusalText + "\"");
             return;
         }
 
+        selectedFileTrainer = std::move(openedTrainer);
         selectedFilePath = picked;
         fileSelected = true;
         fileBrowser.close();

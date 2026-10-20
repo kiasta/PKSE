@@ -32,15 +32,40 @@ using namespace Encryption;
 
 namespace Trainer
 {
-    // The sector footer magic is ONE fact about Gen 3, and both containers spell it out
-    // separately. Two constants that must agree eventually do not -- this makes that a build
-    // failure instead of a save that silently fails to be recognised.
-    static_assert(RSE_SECTOR_MAGIC == FRLG_SECTOR_MAGIC,
-                  "Gen 3 sector magic disagrees between the RSE and FR/LG containers");
-
-
     namespace
     {
+        /// A slot is usable when all 14 logical sector ids are present, once each -- PKHeX's
+        /// SAV3.IsAllMainSectorsPresent, which is the whole of what PKSE accepts. The sector footer
+        /// also carries a magic word (0x08012025 at +0xFF8) that this deliberately does NOT test:
+        /// PKHeX does not, and requiring it refused saves PKHeX opens. detect() and selectActiveSlot()
+        /// must ask the same question, or a file passes the probe and then fails to open.
+        bool slotHoldsEverySector(const std::vector<uint8_t> &bytes, size_t slotBase, size_t &sectorZeroOffset)
+        {
+            bool seen[RSE_SECTORS] = {false};
+            for (size_t sectorIndex = 0; sectorIndex < RSE_SECTORS; ++sectorIndex)
+            {
+                const size_t byteOffset = slotBase + sectorIndex * RSE_SECTOR_SIZE;
+                const uint16_t sectionId = readUInt16LittleEndian(&bytes[byteOffset + 0xFF4]);
+                if (sectionId >= RSE_SECTORS || seen[sectionId])
+                    return false;
+                seen[sectionId] = true;
+                if (sectionId == 0)
+                    sectorZeroOffset = byteOffset;
+            }
+            return true;
+        }
+
+        /// PKHeX SAV3BlockDetection.CompareCounters: an erased counter loses unless the other is one
+        /// short of it, which only a counter that has rolled over can be.
+        bool firstCounterIsNewer(uint32_t firstCounter, uint32_t secondCounter)
+        {
+            if (firstCounter == 0xFFFFFFFFu && secondCounter != 0xFFFFFFFEu)
+                return false;
+            if (secondCounter == 0xFFFFFFFFu && firstCounter != 0xFFFFFFFEu)
+                return true;
+            return firstCounter >= secondCounter;
+        }
+
         // Decodes through UTF-16 and hands back UTF-8, so the accents and the ♀/♂ a Gen 3 name may
         // legitimately contain survive into a std::string. Going straight to narrow chars is what
         // silently dropped them before -- none of them fit in one.
@@ -130,8 +155,7 @@ namespace Trainer
             // always holds a level, a max HP and 0xFF as its mail id, so an all-zero tail is padding from
             // wherever the record was lengthened -- the bank's 100-byte record is one such place. Copying
             // it as found wrote a level 0, 0/0 HP Pokemon into the party.
-            const bool hasPartyTail =
-                byteCount == 100 && std::any_of(buffer + 80, buffer + 100, [](uint8_t value) { return value != 0; });
+            const bool hasPartyTail = byteCount == 100 && std::any_of(buffer + 80, buffer + 100, [](uint8_t value) { return value != 0; });
             if (!hasPartyTail)
             {
                 // Box-sourced: no tail in the source bytes, so derive one. 0x50 (status) stays 0
@@ -147,8 +171,7 @@ namespace Trainer
                 writeUInt16LittleEndian(buffer + 0x60, pk.statSPA());
                 writeUInt16LittleEndian(buffer + 0x62, pk.statSPD());
             }
-            std::byte *encryptedRecord = encryptArray3RSE(
-                std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 100));
+            std::byte *encryptedRecord = encryptArray3RSE(std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 100));
             std::memcpy(out, encryptedRecord, 100);
             delete[] encryptedRecord;
         }
@@ -160,15 +183,13 @@ namespace Trainer
             std::memset(buffer, 0, sizeof(buffer));
             const size_t byteCount = std::min<size_t>(pk.getDataSize(), 80);
             std::memcpy(buffer, pk.getData().data(), byteCount);
-            std::byte *encryptedRecord = encryptArray3RSE(
-                std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 80));
+            std::byte *encryptedRecord = encryptArray3RSE(std::span<const std::byte>(reinterpret_cast<const std::byte *>(buffer), 80));
             std::memcpy(out, encryptedRecord, 80);
             delete[] encryptedRecord;
         }
     }
 
-    Trainer3RSE::Trainer3RSE(std::vector<uint8_t> data, std::string fileName)
-        : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
+    Trainer3RSE::Trainer3RSE(std::vector<uint8_t> data, std::string fileName) : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
     {
         // Always leave the containers in a consistent shape, even for a bad save.
         boxes.clear();
@@ -200,26 +221,19 @@ namespace Trainer
 
     void Trainer3RSE::selectActiveSlot()
     {
-        auto slotCounter = [&](size_t base) -> uint32_t
-        {
-            for (size_t sIndex = 0; sIndex < RSE_SECTORS; ++sIndex)
-            {
-                const size_t byteOffset = base + sIndex * RSE_SECTOR_SIZE;
-                if (readUInt16LittleEndian(&saveData[byteOffset + 0xFF4]) == 0)
-                    return readUInt32LittleEndian(&saveData[byteOffset + 0xFFC]);
-            }
-            return 0;
-        };
-        const uint32_t slotACounter = slotCounter(RSE_SLOT_A);
-        const uint32_t slotBCounter = slotCounter(RSE_SLOT_B);
-        // An unwritten slot's counter is 0xFFFFFFFF (erased sentinel) and must lose; otherwise greater wins.
+        // PKHeX SAV3.GetActiveSlot. A slot missing a sector is never the save, however new its counter:
+        // an interrupted save leaves the newer slot exactly like that, and the game loads the other one.
+        size_t slotASectorZero = 0;
+        size_t slotBSectorZero = 0;
+        const bool slotAComplete = slotHoldsEverySector(saveData, RSE_SLOT_A, slotASectorZero);
+        const bool slotBComplete = slotHoldsEverySector(saveData, RSE_SLOT_B, slotBSectorZero);
+        const uint32_t slotACounter = slotAComplete ? readUInt32LittleEndian(&saveData[slotASectorZero + 0xFFC]) : 0;
+        const uint32_t slotBCounter = slotBComplete ? readUInt32LittleEndian(&saveData[slotBSectorZero + 0xFFC]) : 0;
         bool aWins;
-        if (slotACounter == 0xFFFFFFFFu && slotBCounter != 0xFFFFFFFFu)
-            aWins = false;
-        else if (slotBCounter == 0xFFFFFFFFu && slotACounter != 0xFFFFFFFFu)
-            aWins = true;
+        if (slotAComplete && slotBComplete)
+            aWins = firstCounterIsNewer(slotACounter, slotBCounter);
         else
-            aWins = (slotACounter >= slotBCounter);
+            aWins = slotAComplete || !slotBComplete;
         slotBaseOffset = aWins ? RSE_SLOT_A : RSE_SLOT_B;
 
         // Resolve the rotated sector table: sectorOffset[id] = absolute offset of the sector carrying id.
@@ -239,8 +253,7 @@ namespace Trainer
         valid = (found == static_cast<int>(RSE_SECTORS));
 
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "RSE active slot @0x%05zX (counter A=%u B=%u)", slotBaseOffset, slotACounter,
-                 slotBCounter);
+        snprintf(buffer, sizeof(buffer), "RSE active slot @0x%05zX (counter A=%u%s B=%u%s)", slotBaseOffset, slotACounter, slotAComplete ? "" : " incomplete", slotBCounter, slotBComplete ? "" : " incomplete");
         logInfoToFile(buffer);
     }
 
@@ -274,8 +287,7 @@ namespace Trainer
         saveSecurityKey = (saveLayout == Gen3HoennLayout::Emerald) ? marker : 0u;
 
         char buffer[96];
-        snprintf(buffer, sizeof(buffer), "RSE layout = %s (key %08X)",
-                 saveLayout == Gen3HoennLayout::Emerald ? "Emerald" : "Ruby/Sapphire", saveSecurityKey);
+        snprintf(buffer, sizeof(buffer), "RSE layout = %s (key %08X)", saveLayout == Gen3HoennLayout::Emerald ? "Emerald" : "Ruby/Sapphire", saveSecurityKey);
         logInfoToFile(buffer);
     }
 
@@ -283,27 +295,11 @@ namespace Trainer
     {
         if (bytes.size() != RSE_SAVE_SIZE)
             return false;
-        // A slot is usable when all 14 logical sector ids are present with the right magic. Checking
-        // both slots matters: a save mid-write has one good slot and one being replaced.
+        // Either slot will do: a save mid-write has one good slot and one being replaced.
         for (size_t slotBase : {RSE_SLOT_A, RSE_SLOT_B})
         {
-            bool seen[RSE_SECTORS] = {false};
             size_t smallOffset = 0;
-            int found = 0;
-            for (size_t sectorIndex = 0; sectorIndex < RSE_SECTORS; ++sectorIndex)
-            {
-                const size_t byteOffset = slotBase + sectorIndex * RSE_SECTOR_SIZE;
-                if (readUInt32LittleEndian(&bytes[byteOffset + 0xFF8]) != RSE_SECTOR_MAGIC)
-                    break;
-                const uint16_t sectionId = readUInt16LittleEndian(&bytes[byteOffset + 0xFF4]);
-                if (sectionId >= RSE_SECTORS || seen[sectionId])
-                    break;
-                seen[sectionId] = true;
-                ++found;
-                if (sectionId == 0)
-                    smallOffset = byteOffset;
-            }
-            if (found != static_cast<int>(RSE_SECTORS))
+            if (!slotHoldsEverySector(bytes, slotBase, smallOffset))
                 continue;
             // It is a Gen 3 save. Now: OURS, or FireRed/LeafGreen's? FR/LG write the fixed value 1
             // at Small+0xAC and nothing else does, so that one word is the whole test. Trainer3FRLG
@@ -349,8 +345,7 @@ namespace Trainer
         if (size > sizeof(scratch))
             size = sizeof(scratch);
         readBlock(blockBaseId, logical, scratch, size);
-        auto pokemon = std::make_unique<Pokemon3RSE>(
-            std::span<const std::byte>(reinterpret_cast<const std::byte *>(scratch), size));
+        auto pokemon = std::make_unique<Pokemon3RSE>(std::span<const std::byte>(reinterpret_cast<const std::byte *>(scratch), size));
         // Which charset this save is written in. An EGG needs it: its own language byte always says
         // Japanese, so nothing in the record can say how to read the OT name beside it.
         pokemon->setSaveLanguage(languageId);
@@ -374,8 +369,7 @@ namespace Trainer
     void Trainer3RSE::detectLanguage(size_t smallBlockOffset)
     {
         const bool japanese = readUInt16LittleEndian(&saveData[smallBlockOffset + 0x06]) == 0;
-        languageId = static_cast<uint8_t>(japanese ? Enums::LanguageID::Japanese
-                                                     : Enums::LanguageID::English);
+        languageId = static_cast<uint8_t>(japanese ? Enums::LanguageID::Japanese : Enums::LanguageID::English);
     }
 
     void Trainer3RSE::parseTrainer()
@@ -453,14 +447,12 @@ namespace Trainer
             uint8_t nameBuf[RSE_BOX_NAME_BYTES];
             // Seed with what's already in the save: g3Encode only writes the text and terminator,
             // deliberately leaving the bytes past it untouched (see g3Encode).
-            readBlock(STORAGE_ID, RSE_BOX_NAME_OFFSET + boxNameIndex * RSE_BOX_NAME_BYTES,
-                      nameBuf, RSE_BOX_NAME_BYTES);
+            readBlock(STORAGE_ID, RSE_BOX_NAME_OFFSET + boxNameIndex * RSE_BOX_NAME_BYTES, nameBuf, RSE_BOX_NAME_BYTES);
             // A name the Gen 3 table can't express is skipped rather than written mangled. The UI
             // validates before getting here, so this is a backstop, not the primary check.
             if (!g3Encode(boxNames[boxNameIndex], nameBuf, RSE_BOX_NAME_BYTES, RSE_BOX_NAME_CHARS, languageId))
                 continue;
-            writeBlock(STORAGE_ID, RSE_BOX_NAME_OFFSET + boxNameIndex * RSE_BOX_NAME_BYTES,
-                       nameBuf, RSE_BOX_NAME_BYTES);
+            writeBlock(STORAGE_ID, RSE_BOX_NAME_OFFSET + boxNameIndex * RSE_BOX_NAME_BYTES, nameBuf, RSE_BOX_NAME_BYTES);
         }
     }
 

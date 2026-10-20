@@ -41,6 +41,9 @@ namespace Trainer
         void parseBoxes();
         void parseBoxNames();
         void parseItems();
+        /// True when the slot at `offset` already holds an empty slot the game wrote, which a
+        /// writer leaves alone rather than stamping the canonical blank over.
+        bool slotHoldsGameBlank(size_t offset) const;
 
     public:
         explicit Trainer8BDSP(std::vector<uint8_t> data);

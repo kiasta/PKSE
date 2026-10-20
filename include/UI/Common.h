@@ -85,9 +85,7 @@ namespace UI
     {
         uint8_t red, green, blue, alpha;
 
-        constexpr Color(uint8_t redValue, uint8_t greenValue, uint8_t blueValue,
-                        uint8_t alphaValue = 255)
-            : red(redValue), green(greenValue), blue(blueValue), alpha(alphaValue) {}
+        constexpr Color(uint8_t redValue, uint8_t greenValue, uint8_t blueValue, uint8_t alphaValue = 255) : red(redValue), green(greenValue), blue(blueValue), alpha(alphaValue) {}
 
         uint32_t toRGBA8() const
         {
@@ -133,6 +131,9 @@ namespace UI
         constexpr Color EvolveText(10, 36, 18);
         constexpr Color LegalityClean(120, 205, 140);
         constexpr Color LegalityProblem(235, 100, 100);
+        // Laid over a box slot that does not match the storage search. Black at partial alpha darkens
+        // either theme's disc and sprite alike.
+        constexpr Color SearchMissShade(0, 0, 0, 140);
 
         // Semantic theme colors (runtime-swappable by applyTheme())
         // These are mutable so a dark/light toggle can restyle the whole UI without
@@ -162,6 +163,10 @@ namespace UI
         inline Color CursorMenu = Color(232, 92, 92);
         inline Color CursorMove = Color(86, 148, 244);
         inline Color CursorMulti = Color(96, 205, 128);
+        // Translucent strip behind a caption laid over a live screen (the self test's walkthrough
+        // caption). Theme-aware because the caption is drawn in Text/TextDim: black under the dark
+        // theme's light text, white under the light theme's dark text.
+        inline Color CaptionBacking = Color(0, 0, 0, 205);
 
         // Let's Go specific colors (matching in-game UI) — theme-independent
         constexpr Color PartnerHeart(255, 105, 180); // Hot pink heart for Partner Pokemon
@@ -215,6 +220,7 @@ namespace UI
             CursorMenu = Color(232, 92, 92);
             CursorMove = Color(86, 148, 244);
             CursorMulti = Color(96, 205, 128);
+            CaptionBacking = Color(0, 0, 0, 205);
         }
         else
         { // Light
@@ -234,6 +240,7 @@ namespace UI
             CursorMenu = Color(206, 58, 58);
             CursorMove = Color(38, 106, 214);
             CursorMulti = Color(38, 150, 84);
+            CaptionBacking = Color(255, 255, 255, 225);
         }
     }
 }

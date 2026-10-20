@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "Pokemon/Pokemon4HGSS.h"
+#include "Pokemon/PIDSearch.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PokemonTypes.h"
 #include "Utils/Gen4Text.h"
@@ -201,69 +202,66 @@ namespace Pokemon
         return ((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0; // Gen 3-5 threshold is 8
     }
 
+    // Gen 4 builds shininess, gender, nature (PID % 25) and the ability slot (bit 0) from the PID, and
+    // also stores the gender at 0x40, which PKHeX requires to agree with the PID's. Each caller names
+    // what it changes and holds the rest; the stored gender is written to match the new PID.
+    bool Pokemon4HGSS::rerollPID(int wantShiny, int wantGender, int wantNature, uint32_t trainerID32) noexcept
+    {
+        PIDRequirements requirements;
+        requirements.trainerID32 = trainerID32;
+        requirements.shinyThreshold = 8; // Gen 3-5
+        requirements.wantShiny = wantShiny;
+        requirements.genderRatio = personal().genderRatio;
+        requirements.wantGender = wantGender;
+        requirements.wantNature = wantNature;
+        requirements.abilityBitIndex = 0;
+        requirements.wantAbilityBit = static_cast<int>(pid() & 1);
+        uint32_t pidValue = 0;
+        if (!findPID(requirements, pidValue))
+        {
+            Utils::logErrorToFile("Pokemon4HGSS::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(wantNature) + "; the Pokemon is unchanged");
+            return false;
+        }
+        wr32(0x00, pidValue);
+        writeStoredGender(genderFromPID(pidValue, requirements.genderRatio));
+        recalculateStats();
+        refreshChecksum();
+        return true;
+    }
+
+    // A legality touch-up asked for nothing to change, so it holds everything the PID decides.
     void Pokemon4HGSS::regeneratePID(uint32_t trainerID32) noexcept
     {
-        // Preserve nature and the ability slot, which are BOTH PID-derived in Gen 4 -- the same
-        // constraint the Gen 3 path already works under.
-        const uint8_t wantNature = nature();
-        const uint32_t wantSlot = pid() & 1;
-        for (int index = 0; index < 100000; ++index)
-        {
-            const uint32_t candidate = Utils::rand32();
-            if (candidate % 25 != wantNature)
-                continue;
-            if ((candidate & 1) != wantSlot)
-                continue;
-            wr32(0x00, candidate);
-            recalculateStats();
-            refreshChecksum();
-            return;
-        }
+        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), nature(), trainerID32);
     }
 
     void Pokemon4HGSS::setShiny(bool makeShiny, uint32_t trainerID32) noexcept
     {
         if (isShiny(trainerID32, "") == makeShiny)
             return;
-        const uint8_t wantNature = nature();
-        const uint32_t wantSlot = pid() & 1;
-        for (int index = 0; index < 1000000; ++index)
-        {
-            const uint32_t candidate = Utils::rand32();
-            if (candidate % 25 != wantNature)
-                continue;
-            if ((candidate & 1) != wantSlot)
-                continue;
-            const uint32_t trainerShinyValue = ((trainerID32 >> 16) ^ (trainerID32 & 0xFFFF));
-            const uint32_t pokemonShinyValue = ((candidate >> 16) ^ (candidate & 0xFFFF));
-            if ((((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0) != makeShiny)
-                continue;
-            wr32(0x00, candidate);
-            recalculateStats();
-            refreshChecksum();
-            return;
-        }
+        rerollPID(makeShiny ? 1 : 0, gender(), nature(), trainerID32);
     }
 
-    void Pokemon4HGSS::setNature(uint8_t count) noexcept
+    void Pokemon4HGSS::setNature(uint8_t natureValue) noexcept
     {
-        if (count > 24)
+        if (natureValue > 24 || natureValue == nature())
             return;
-        // Gen 4 stores no nature: it IS `PID % 25`, so the only way to change it is to rebuild the
-        // PID -- which also re-rolls shininess. Destructive and irreversible, exactly like the Gen 3
-        // down-convert, so the UI must confirm before calling this.
-        const uint32_t wantSlot = pid() & 1;
-        for (int index = 0; index < 100000; ++index)
+        // Gen 4 stores no nature: it IS `PID % 25`, so changing it means a new PID. Shininess, gender
+        // and the ability slot are held, so the nature is the only thing that changes.
+        rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), natureValue, id32());
+    }
+
+    void Pokemon4HGSS::setGender(uint8_t genderValue) noexcept
+    {
+        // A species whose gender is fixed, or a PID that already gives this gender: the stored bits
+        // are all that change. Otherwise the PID has to give the new gender too.
+        const uint8_t genderRatio = personal().genderRatio;
+        if (genderValue > 1 || genderRatio == 0 || genderRatio == 254 || genderRatio == 255 || genderFromPID(pid(), genderRatio) == genderValue)
         {
-            const uint32_t candidate = Utils::rand32();
-            if (candidate % 25 != count)
-                continue;
-            if ((candidate & 1) != wantSlot)
-                continue;
-            wr32(0x00, candidate);
-            recalculateStats();
+            writeStoredGender(genderValue);
             refreshChecksum();
             return;
         }
+        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, nature(), id32());
     }
 }

@@ -103,8 +103,7 @@ namespace Trainer
         return false;
     }
 
-    Trainer1RBY::Trainer1RBY(std::vector<uint8_t> data, std::string fileName)
-        : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
+    Trainer1RBY::Trainer1RBY(std::vector<uint8_t> data, std::string fileName) : Trainer(std::vector<Block>{}), saveData(std::move(data)), saveFileName(std::move(fileName))
     {
         if (!detect(saveData, saveIsJapanese))
         {
@@ -126,12 +125,7 @@ namespace Trainer
 
         if (g_debugLogging)
         {
-            logInfoToFile("Gen 1 save loaded",
-                          (saveFileName + " " + (saveIsJapanese ? "JP" : "INT") + " " + gameTitle() +
-                           " OT=" + trainerName + " ID=" + std::to_string(TID16) +
-                           " party=" + std::to_string(party.size()) +
-                           " boxes=" + std::to_string(getBoxCount()) + "x" + std::to_string(getSlotsPerBox()))
-                              .c_str());
+            logInfoToFile("Gen 1 save loaded", (saveFileName + " " + (saveIsJapanese ? "JP" : "INT") + " " + gameTitle() + " OT=" + trainerName + " ID=" + std::to_string(TID16) + " party=" + std::to_string(party.size()) + " boxes=" + std::to_string(getBoxCount()) + "x" + std::to_string(getSlotsPerBox())).c_str());
         }
     }
 
@@ -192,8 +186,7 @@ namespace Trainer
         gameVersionString = saveIsJapanese ? "Gen 1 (JP)" : "Gen 1";
     }
 
-    std::unique_ptr<::Pokemon::Pokemon> Trainer1RBY::readListEntry(size_t listOffset, size_t capacity,
-                                                                   bool isParty, size_t index) const
+    std::unique_ptr<::Pokemon::Pokemon> Trainer1RBY::readListEntry(size_t listOffset, size_t capacity, bool isParty, size_t index) const
     {
         const size_t slotIndex = strLen();
         const size_t bodyLen = isParty ? ::Pokemon::SIZE_1PARTY : ::Pokemon::SIZE_1STORED;
@@ -231,8 +224,7 @@ namespace Trainer
         std::memcpy(rec.data() + 3 + ::Pokemon::SIZE_1PARTY, &saveData[ofsOT], slotIndex);
         std::memcpy(rec.data() + 3 + ::Pokemon::SIZE_1PARTY + slotIndex, &saveData[ofsNick], slotIndex);
 
-        auto pokemon = std::make_unique<::Pokemon::Pokemon1RBY>(
-            std::span<const std::byte>(rec.data(), rec.size()));
+        auto pokemon = std::make_unique<::Pokemon::Pokemon1RBY>(std::span<const std::byte>(rec.data(), rec.size()));
         if (!pokemon->isValid())
             return nullptr;
         if (!isParty)
@@ -240,8 +232,7 @@ namespace Trainer
         return pokemon;
     }
 
-    void Trainer1RBY::writeList(size_t listOffset, size_t capacity, bool isParty,
-                                const std::vector<::Pokemon::Pokemon *> &mons)
+    void Trainer1RBY::writeList(size_t listOffset, size_t capacity, bool isParty, const std::vector<::Pokemon::Pokemon *> &mons)
     {
         const size_t slotIndex = strLen();
         const size_t bodyLen = isParty ? ::Pokemon::SIZE_1PARTY : ::Pokemon::SIZE_1STORED;
@@ -357,10 +348,8 @@ namespace Trainer
     {
         items.clear();
         items.resize(POUCH_COUNT1_RBY);
-        readPouch(offsets.items, getItemPouchCapacity(static_cast<int>(PouchType1RBY::Items)),
-                  items[static_cast<size_t>(PouchType1RBY::Items)]);
-        readPouch(offsets.pcItems, getItemPouchCapacity(static_cast<int>(PouchType1RBY::PCItems)),
-                  items[static_cast<size_t>(PouchType1RBY::PCItems)]);
+        readPouch(offsets.items, getItemPouchCapacity(static_cast<int>(PouchType1RBY::Items)), items[static_cast<size_t>(PouchType1RBY::Items)]);
+        readPouch(offsets.pcItems, getItemPouchCapacity(static_cast<int>(PouchType1RBY::PCItems)), items[static_cast<size_t>(PouchType1RBY::PCItems)]);
     }
 
     void Trainer1RBY::updatePartyBlock()
@@ -404,11 +393,9 @@ namespace Trainer
     void Trainer1RBY::updateItemBlock()
     {
         if (items.size() > static_cast<size_t>(PouchType1RBY::Items))
-            writePouch(offsets.items, getItemPouchCapacity(static_cast<int>(PouchType1RBY::Items)),
-                       items[static_cast<size_t>(PouchType1RBY::Items)]);
+            writePouch(offsets.items, getItemPouchCapacity(static_cast<int>(PouchType1RBY::Items)), items[static_cast<size_t>(PouchType1RBY::Items)]);
         if (items.size() > static_cast<size_t>(PouchType1RBY::PCItems))
-            writePouch(offsets.pcItems, getItemPouchCapacity(static_cast<int>(PouchType1RBY::PCItems)),
-                       items[static_cast<size_t>(PouchType1RBY::PCItems)]);
+            writePouch(offsets.pcItems, getItemPouchCapacity(static_cast<int>(PouchType1RBY::PCItems)), items[static_cast<size_t>(PouchType1RBY::PCItems)]);
     }
 
     void Trainer1RBY::updateTrainerInfoBlock()
@@ -434,8 +421,7 @@ namespace Trainer
 
     void Trainer1RBY::updateCurrentBoxBlock()
     {
-        saveData[offsets.currentBoxIndex] =
-            static_cast<uint8_t>((saveData[offsets.currentBoxIndex] & 0x80) | (currentBox & 0x7F));
+        saveData[offsets.currentBoxIndex] = static_cast<uint8_t>((saveData[offsets.currentBoxIndex] & 0x80) | (currentBox & 0x7F));
     }
 
     void Trainer1RBY::updatePokedexBlock()

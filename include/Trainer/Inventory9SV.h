@@ -22,6 +22,11 @@ namespace Trainer
 
     constexpr size_t ITEM_SIZE9_SV = 0x10; // 16 bytes per item
 
+    // Bits of an item record's flags word (PKHeX InventoryItem9). The game sets OBTAINED on every item it
+    // holds, so a held item stored without it is a record only an editor writes.
+    constexpr uint8_t ITEM_NEW_FLAG9_SV = 0x01;
+    constexpr uint8_t ITEM_OBTAINED_FLAG9_SV = 0x04;
+
     constexpr size_t MAX_ITEM_ID9_SV = ITEM_BLOCK_SIZE9_SV / ITEM_SIZE9_SV; // 2992
 
     constexpr size_t POUCH_COUNT9_SV = 10; // Number of pouches (in-game bag order)
@@ -52,6 +57,11 @@ namespace Trainer
 
             item.itemId = itemId;
             item.count = static_cast<uint16_t>(item.count);
+            // The game's own markers (PKHeX InventoryItem9.IsNew / IsFavorite): bit 0 is the red
+            // "new" dot, bit 1 the favourite. The writer ORs isNew back into bit 0, so an item read
+            // with the bit clear stays clear.
+            item.isNew = (item.flags & 0x1) != 0;
+            item.isFavorite = (item.flags & 0x2) != 0;
 
             return item;
         }

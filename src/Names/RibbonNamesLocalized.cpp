@@ -337,8 +337,7 @@ namespace Names
     {
         if (englishName == nullptr || languageIndex >= LANGUAGE_COUNT)
             return nullptr;
-        constexpr size_t count =
-            sizeof(LOCALIZED_RIBBON_NAMES) / sizeof(LOCALIZED_RIBBON_NAMES[0]);
+        constexpr size_t count = sizeof(LOCALIZED_RIBBON_NAMES) / sizeof(LOCALIZED_RIBBON_NAMES[0]);
         size_t low = 0, high = count;
         while (low < high)
         {

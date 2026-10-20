@@ -1204,8 +1204,7 @@ namespace Names {
         G2_LOC_NAMES_ZH_HANS,
         G2_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G2_LOC_NAMES_BY_LANGUAGE) / sizeof(G2_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G2_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G2_LOC_NAMES_BY_LANGUAGE) / sizeof(G2_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G2_LOC_NAMES must carry one table per language");
 
     // Gen 3 R/S/E + FR/LG (SA=1, RU=2, EM=3, FR=4, LG=5) -- bank 0
     // Source: PKHeX text_rsefrlg_00000_en.txt  (256 entries x 9 languages)
@@ -3542,8 +3541,7 @@ namespace Names {
         G3_LOC_NAMES_ZH_HANS,
         G3_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G3_LOC_NAMES_BY_LANGUAGE) / sizeof(G3_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G3_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G3_LOC_NAMES_BY_LANGUAGE) / sizeof(G3_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G3_LOC_NAMES must carry one table per language");
 
     // Gen 4 D/P/Pt + HG/SS (HG=7, SS=8, D=10, P=11, Pt=12) -- bank 0
     // Source: PKHeX text_hgss_00000_en.txt  (235 entries x 9 languages)
@@ -5691,8 +5689,7 @@ namespace Names {
         G4_LOC_NAMES_ZH_HANS,
         G4_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G4_LOC_NAMES_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G4_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G4_LOC_NAMES_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G4_LOC_NAMES must carry one table per language");
 
     // Gen 5 B/W + B2/W2 (W=20, B=21, W2=22, B2=23) -- bank 0
     // Source: PKHeX text_bw2_00000_en.txt  (154 entries x 9 languages)
@@ -7111,8 +7108,7 @@ namespace Names {
         G5_LOC_NAMES_ZH_HANS,
         G5_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G5_LOC_NAMES_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G5_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G5_LOC_NAMES_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G5_LOC_NAMES must carry one table per language");
 
     // Gen 6 X/Y + OR/AS (X=24, Y=25, AS=26, OR=27) -- bank 0
     // Source: PKHeX text_xy_00000_en.txt  (355 entries x 9 languages)
@@ -10340,8 +10336,7 @@ namespace Names {
         G6_LOC_NAMES_ZH_HANS,
         G6_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G6_LOC_NAMES_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G6_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G6_LOC_NAMES_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G6_LOC_NAMES must carry one table per language");
 
     // Gen 7 (3DS) Sun/Moon + Ultra Sun/Moon (SN=30, MN=31, US=32, UM=33) -- bank 0
     // Source: PKHeX text_sm_00000_en.txt  (233 entries x 9 languages)
@@ -12471,8 +12466,7 @@ namespace Names {
         G7_LOC_NAMES_ZH_HANS,
         G7_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(G7_LOC_NAMES_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G7_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(G7_LOC_NAMES_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G7_LOC_NAMES must carry one table per language");
 
     // Let's Go, Pikachu! / Eevee! + GO (GO=34, GP=42, GE=43) -- bank 0
     // Source: PKHeX text_gg_00000_en.txt  (54 entries x 9 languages)
@@ -12991,8 +12985,7 @@ namespace Names {
         GG_LOC_NAMES_ZH_HANS,
         GG_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(GG_LOC_NAMES_BY_LANGUAGE) / sizeof(GG_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "GG_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(GG_LOC_NAMES_BY_LANGUAGE) / sizeof(GG_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "GG_LOC_NAMES must carry one table per language");
 
     // Sword / Shield (SW=44, SH=45) -- bank 0
     // Source: PKHeX text_swsh_00000_en.txt  (247 entries x 9 languages)
@@ -15248,8 +15241,7 @@ namespace Names {
         SWSH_LOC_NAMES_ZH_HANS,
         SWSH_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(SWSH_LOC_NAMES_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SWSH_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(SWSH_LOC_NAMES_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SWSH_LOC_NAMES must carry one table per language");
 
     // Legends: Arceus (PLA=47) -- bank 0
     // Source: PKHeX text_la_00000_en.txt  (156 entries x 9 languages)
@@ -16686,8 +16678,7 @@ namespace Names {
         PLA_LOC_NAMES_ZH_HANS,
         PLA_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(PLA_LOC_NAMES_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "PLA_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(PLA_LOC_NAMES_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "PLA_LOC_NAMES must carry one table per language");
 
     // Brilliant Diamond / Shining Pearl (BD=48, SP=49) -- bank 0
     // Source: PKHeX text_bdsp_00000_en.txt  (658 entries x 9 languages)
@@ -22642,8 +22633,7 @@ namespace Names {
         BDSP_LOC_NAMES_ZH_HANS,
         BDSP_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(BDSP_LOC_NAMES_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "BDSP_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(BDSP_LOC_NAMES_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "BDSP_LOC_NAMES must carry one table per language");
 
     // Scarlet / Violet (SL=50, VL=51) -- bank 0
     // Source: PKHeX text_sv_00000_en.txt  (201 entries x 9 languages)
@@ -24485,8 +24475,7 @@ namespace Names {
         SV_LOC_NAMES_ZH_HANS,
         SV_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(SV_LOC_NAMES_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SV_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(SV_LOC_NAMES_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SV_LOC_NAMES must carry one table per language");
 
     // Legends: Z-A (ZA=52) -- bank 0
     // Source: PKHeX text_za_00000_en.txt  (284 entries x 9 languages)
@@ -27075,8 +27064,7 @@ namespace Names {
         ZA_LOC_NAMES_ZH_HANS,
         ZA_LOC_NAMES_ZH_HANT,
     };
-    static_assert(sizeof(ZA_LOC_NAMES_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ZA_LOC_NAMES must carry one table per language");
+    static_assert(sizeof(ZA_LOC_NAMES_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ZA_LOC_NAMES must carry one table per language");
 
     // Gen 4 D/P/Pt + HG/SS (HG=7, SS=8, D=10, P=11, Pt=12) -- bank 2  [ids 2000+]
     // Source: PKHeX text_hgss_02000_en.txt  (15 entries x 9 languages)
@@ -27244,8 +27232,7 @@ namespace Names {
         G4_LOC_NAMES_2_ZH_HANS,
         G4_LOC_NAMES_2_ZH_HANT,
     };
-    static_assert(sizeof(G4_LOC_NAMES_2_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_2_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G4_LOC_NAMES_2 must carry one table per language");
+    static_assert(sizeof(G4_LOC_NAMES_2_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_2_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G4_LOC_NAMES_2 must carry one table per language");
 
     // Gen 4 D/P/Pt + HG/SS (HG=7, SS=8, D=10, P=11, Pt=12) -- bank 3  [ids 3000+]
     // Source: PKHeX text_hgss_03000_en.txt  (77 entries x 9 languages)
@@ -27971,8 +27958,7 @@ namespace Names {
         G4_LOC_NAMES_3_ZH_HANS,
         G4_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(G4_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G4_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(G4_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G4_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G4_LOC_NAMES_3 must carry one table per language");
 
     // Gen 5 B/W + B2/W2 (W=20, B=21, W2=22, B2=23) -- bank 3  [ids 30000+]
     // Source: PKHeX text_bw2_30000_en.txt  (16 entries x 9 languages)
@@ -28149,8 +28135,7 @@ namespace Names {
         G5_LOC_NAMES_3_ZH_HANS,
         G5_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(G5_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G5_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(G5_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G5_LOC_NAMES_3 must carry one table per language");
 
     // Gen 5 B/W + B2/W2 (W=20, B=21, W2=22, B2=23) -- bank 4  [ids 40000+]
     // Source: PKHeX text_bw2_40000_en.txt  (110 entries x 9 languages)
@@ -29173,8 +29158,7 @@ namespace Names {
         G5_LOC_NAMES_4_ZH_HANS,
         G5_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(G5_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G5_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(G5_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G5_LOC_NAMES_4 must carry one table per language");
 
     // Gen 5 B/W + B2/W2 (W=20, B=21, W2=22, B2=23) -- bank 6  [ids 60000+]
     // Source: PKHeX text_bw2_60000_en.txt  (4 entries x 9 languages)
@@ -29243,8 +29227,7 @@ namespace Names {
         G5_LOC_NAMES_6_ZH_HANS,
         G5_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(G5_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G5_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(G5_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G5_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G5_LOC_NAMES_6 must carry one table per language");
 
     // Gen 6 X/Y + OR/AS (X=24, Y=25, AS=26, OR=27) -- bank 3  [ids 30000+]
     // Source: PKHeX text_xy_30000_en.txt  (12 entries x 9 languages)
@@ -29385,8 +29368,7 @@ namespace Names {
         G6_LOC_NAMES_3_ZH_HANS,
         G6_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(G6_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G6_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(G6_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G6_LOC_NAMES_3 must carry one table per language");
 
     // Gen 6 X/Y + OR/AS (X=24, Y=25, AS=26, OR=27) -- bank 4  [ids 40000+]
     // Source: PKHeX text_xy_40000_en.txt  (80 entries x 9 languages)
@@ -30139,8 +30121,7 @@ namespace Names {
         G6_LOC_NAMES_4_ZH_HANS,
         G6_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(G6_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G6_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(G6_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G6_LOC_NAMES_4 must carry one table per language");
 
     // Gen 6 X/Y + OR/AS (X=24, Y=25, AS=26, OR=27) -- bank 6  [ids 60000+]
     // Source: PKHeX text_xy_60000_en.txt  (5 entries x 9 languages)
@@ -30218,8 +30199,7 @@ namespace Names {
         G6_LOC_NAMES_6_ZH_HANS,
         G6_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(G6_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G6_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(G6_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G6_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G6_LOC_NAMES_6 must carry one table per language");
 
     // Gen 7 (3DS) Sun/Moon + Ultra Sun/Moon (SN=30, MN=31, US=32, UM=33) -- bank 3  [ids 30000+]
     // Source: PKHeX text_sm_30000_en.txt  (18 entries x 9 languages)
@@ -30414,8 +30394,7 @@ namespace Names {
         G7_LOC_NAMES_3_ZH_HANS,
         G7_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(G7_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G7_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(G7_LOC_NAMES_3_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G7_LOC_NAMES_3 must carry one table per language");
 
     // Gen 7 (3DS) Sun/Moon + Ultra Sun/Moon (SN=30, MN=31, US=32, UM=33) -- bank 4  [ids 40000+]
     // Source: PKHeX text_sm_40000_en.txt  (89 entries x 9 languages)
@@ -31249,8 +31228,7 @@ namespace Names {
         G7_LOC_NAMES_4_ZH_HANS,
         G7_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(G7_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G7_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(G7_LOC_NAMES_4_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G7_LOC_NAMES_4 must carry one table per language");
 
     // Gen 7 (3DS) Sun/Moon + Ultra Sun/Moon (SN=30, MN=31, US=32, UM=33) -- bank 6  [ids 60000+]
     // Source: PKHeX text_sm_60000_en.txt  (5 entries x 9 languages)
@@ -31328,8 +31306,7 @@ namespace Names {
         G7_LOC_NAMES_6_ZH_HANS,
         G7_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(G7_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "G7_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(G7_LOC_NAMES_6_BY_LANGUAGE) / sizeof(G7_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "G7_LOC_NAMES_6 must carry one table per language");
 
     // Let's Go, Pikachu! / Eevee! + GO (GO=34, GP=42, GE=43) -- bank 4  [ids 40000+]
     // Source: PKHeX text_gg_40000_en.txt  (78 entries x 9 languages)
@@ -32064,8 +32041,7 @@ namespace Names {
         GG_LOC_NAMES_4_ZH_HANS,
         GG_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(GG_LOC_NAMES_4_BY_LANGUAGE) / sizeof(GG_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "GG_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(GG_LOC_NAMES_4_BY_LANGUAGE) / sizeof(GG_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "GG_LOC_NAMES_4 must carry one table per language");
 
     // Sword / Shield (SW=44, SH=45) -- bank 3  [ids 30000+]
     // Source: PKHeX text_swsh_30000_en.txt  (20 entries x 9 languages)
@@ -32278,8 +32254,7 @@ namespace Names {
         SWSH_LOC_NAMES_3_ZH_HANS,
         SWSH_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(SWSH_LOC_NAMES_3_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SWSH_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(SWSH_LOC_NAMES_3_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SWSH_LOC_NAMES_3 must carry one table per language");
 
     // Sword / Shield (SW=44, SH=45) -- bank 4  [ids 40000+]
     // Source: PKHeX text_swsh_40000_en.txt  (114 entries x 9 languages)
@@ -33338,8 +33313,7 @@ namespace Names {
         SWSH_LOC_NAMES_4_ZH_HANS,
         SWSH_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(SWSH_LOC_NAMES_4_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SWSH_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(SWSH_LOC_NAMES_4_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SWSH_LOC_NAMES_4 must carry one table per language");
 
     // Sword / Shield (SW=44, SH=45) -- bank 6  [ids 60000+]
     // Source: PKHeX text_swsh_60000_en.txt  (5 entries x 9 languages)
@@ -33417,8 +33391,7 @@ namespace Names {
         SWSH_LOC_NAMES_6_ZH_HANS,
         SWSH_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(SWSH_LOC_NAMES_6_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SWSH_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(SWSH_LOC_NAMES_6_BY_LANGUAGE) / sizeof(SWSH_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SWSH_LOC_NAMES_6 must carry one table per language");
 
     // Legends: Arceus (PLA=47) -- bank 3  [ids 30000+]
     // Source: PKHeX text_la_30000_en.txt  (23 entries x 9 languages)
@@ -33658,8 +33631,7 @@ namespace Names {
         PLA_LOC_NAMES_3_ZH_HANS,
         PLA_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(PLA_LOC_NAMES_3_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "PLA_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(PLA_LOC_NAMES_3_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "PLA_LOC_NAMES_3 must carry one table per language");
 
     // Legends: Arceus (PLA=47) -- bank 4  [ids 40000+]
     // Source: PKHeX text_la_40000_en.txt  (87 entries x 9 languages)
@@ -34475,8 +34447,7 @@ namespace Names {
         PLA_LOC_NAMES_4_ZH_HANS,
         PLA_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(PLA_LOC_NAMES_4_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "PLA_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(PLA_LOC_NAMES_4_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "PLA_LOC_NAMES_4 must carry one table per language");
 
     // Legends: Arceus (PLA=47) -- bank 6  [ids 60000+]
     // Source: PKHeX text_la_60000_en.txt  (5 entries x 9 languages)
@@ -34554,8 +34525,7 @@ namespace Names {
         PLA_LOC_NAMES_6_ZH_HANS,
         PLA_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(PLA_LOC_NAMES_6_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "PLA_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(PLA_LOC_NAMES_6_BY_LANGUAGE) / sizeof(PLA_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "PLA_LOC_NAMES_6 must carry one table per language");
 
     // Brilliant Diamond / Shining Pearl (BD=48, SP=49) -- bank 3  [ids 30000+]
     // Source: PKHeX text_bdsp_30000_en.txt  (23 entries x 9 languages)
@@ -34795,8 +34765,7 @@ namespace Names {
         BDSP_LOC_NAMES_3_ZH_HANS,
         BDSP_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(BDSP_LOC_NAMES_3_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "BDSP_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(BDSP_LOC_NAMES_3_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "BDSP_LOC_NAMES_3 must carry one table per language");
 
     // Brilliant Diamond / Shining Pearl (BD=48, SP=49) -- bank 4  [ids 40000+]
     // Source: PKHeX text_bdsp_40000_en.txt  (87 entries x 9 languages)
@@ -35612,8 +35581,7 @@ namespace Names {
         BDSP_LOC_NAMES_4_ZH_HANS,
         BDSP_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(BDSP_LOC_NAMES_4_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "BDSP_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(BDSP_LOC_NAMES_4_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "BDSP_LOC_NAMES_4 must carry one table per language");
 
     // Brilliant Diamond / Shining Pearl (BD=48, SP=49) -- bank 6  [ids 60000+]
     // Source: PKHeX text_bdsp_60000_en.txt  (11 entries x 9 languages)
@@ -35745,8 +35713,7 @@ namespace Names {
         BDSP_LOC_NAMES_6_ZH_HANS,
         BDSP_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(BDSP_LOC_NAMES_6_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "BDSP_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(BDSP_LOC_NAMES_6_BY_LANGUAGE) / sizeof(BDSP_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "BDSP_LOC_NAMES_6 must carry one table per language");
 
     // Scarlet / Violet (SL=50, VL=51) -- bank 3  [ids 30000+]
     // Source: PKHeX text_sv_30000_en.txt  (25 entries x 9 languages)
@@ -36004,8 +35971,7 @@ namespace Names {
         SV_LOC_NAMES_3_ZH_HANS,
         SV_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(SV_LOC_NAMES_3_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SV_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(SV_LOC_NAMES_3_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SV_LOC_NAMES_3 must carry one table per language");
 
     // Scarlet / Violet (SL=50, VL=51) -- bank 4  [ids 40000+]
     // Source: PKHeX text_sv_40000_en.txt  (145 entries x 9 languages)
@@ -37343,8 +37309,7 @@ namespace Names {
         SV_LOC_NAMES_4_ZH_HANS,
         SV_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(SV_LOC_NAMES_4_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SV_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(SV_LOC_NAMES_4_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SV_LOC_NAMES_4 must carry one table per language");
 
     // Scarlet / Violet (SL=50, VL=51) -- bank 6  [ids 60000+]
     // Source: PKHeX text_sv_60000_en.txt  (6 entries x 9 languages)
@@ -37431,8 +37396,7 @@ namespace Names {
         SV_LOC_NAMES_6_ZH_HANS,
         SV_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(SV_LOC_NAMES_6_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "SV_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(SV_LOC_NAMES_6_BY_LANGUAGE) / sizeof(SV_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "SV_LOC_NAMES_6 must carry one table per language");
 
     // Legends: Z-A (ZA=52) -- bank 3  [ids 30000+]
     // Source: PKHeX text_za_30000_en.txt  (36 entries x 9 languages)
@@ -37789,8 +37753,7 @@ namespace Names {
         ZA_LOC_NAMES_3_ZH_HANS,
         ZA_LOC_NAMES_3_ZH_HANT,
     };
-    static_assert(sizeof(ZA_LOC_NAMES_3_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ZA_LOC_NAMES_3 must carry one table per language");
+    static_assert(sizeof(ZA_LOC_NAMES_3_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_3_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ZA_LOC_NAMES_3 must carry one table per language");
 
     // Legends: Z-A (ZA=52) -- bank 4  [ids 40000+]
     // Source: PKHeX text_za_40000_en.txt  (71 entries x 9 languages)
@@ -38462,8 +38425,7 @@ namespace Names {
         ZA_LOC_NAMES_4_ZH_HANS,
         ZA_LOC_NAMES_4_ZH_HANT,
     };
-    static_assert(sizeof(ZA_LOC_NAMES_4_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ZA_LOC_NAMES_4 must carry one table per language");
+    static_assert(sizeof(ZA_LOC_NAMES_4_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_4_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ZA_LOC_NAMES_4 must carry one table per language");
 
     // Legends: Z-A (ZA=52) -- bank 6  [ids 60000+]
     // Source: PKHeX text_za_60000_en.txt  (6 entries x 9 languages)
@@ -38550,8 +38512,7 @@ namespace Names {
         ZA_LOC_NAMES_6_ZH_HANS,
         ZA_LOC_NAMES_6_ZH_HANT,
     };
-    static_assert(sizeof(ZA_LOC_NAMES_6_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT,
-                  "ZA_LOC_NAMES_6 must carry one table per language");
+    static_assert(sizeof(ZA_LOC_NAMES_6_BY_LANGUAGE) / sizeof(ZA_LOC_NAMES_6_BY_LANGUAGE[0]) == LANGUAGE_COUNT, "ZA_LOC_NAMES_6 must carry one table per language");
 
     // names[id] when in range, else "" (also "" for an absent bank: table=nullptr, count=0).
     static const char* lookup(const char* const* table, size_t count, uint16_t locationId) {
@@ -38559,10 +38520,7 @@ namespace Names {
     }
 
     // LocationSet6 banking (Gen 5+): id / 10000 selects the bank.
-    static const char* lookupBanked(
-            const char* const* bank0, size_t count0, const char* const* bank3, size_t count3,
-            const char* const* bank4, size_t count4, const char* const* bank6, size_t count6,
-            uint16_t locationId) {
+    static const char* lookupBanked(const char* const* bank0, size_t count0, const char* const* bank3, size_t count3, const char* const* bank4, size_t count4, const char* const* bank6, size_t count6, uint16_t locationId) {
         if (locationId >= 60000) return lookup(bank6, count6, static_cast<uint16_t>(locationId - 60000));
         if (locationId >= 40000) return lookup(bank4, count4, static_cast<uint16_t>(locationId - 40000));
         if (locationId >= 30000) return lookup(bank3, count3, static_cast<uint16_t>(locationId - 30000));
@@ -38570,9 +38528,7 @@ namespace Names {
     }
 
     // LocationSet4 banking (Gen 4): banks at 0 / 2000 / 3000.
-    static const char* lookupBanked4(
-            const char* const* bank0, size_t count0, const char* const* bank2, size_t count2,
-            const char* const* bank3, size_t count3, uint16_t locationId) {
+    static const char* lookupBanked4(const char* const* bank0, size_t count0, const char* const* bank2, size_t count2, const char* const* bank3, size_t count3, uint16_t locationId) {
         if (locationId >= 3000) return lookup(bank3, count3, static_cast<uint16_t>(locationId - 3000));
         if (locationId >= 2000) return lookup(bank2, count2, static_cast<uint16_t>(locationId - 2000));
         return lookup(bank0, count0, locationId);

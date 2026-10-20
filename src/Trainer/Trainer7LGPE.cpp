@@ -80,8 +80,7 @@ namespace Trainer
         this->trainerName = utf16ToUtf8(getString(&block.data[0x38], 26));
         this->trainerGender = block.data[0x05] & 1; // 0x05: gender (0=M, 1=F)
 
-        snprintf(logBuffer, sizeof(logBuffer), "Parsed trainer: Name='%s', ID32=%u, TID=%u, SID=%u",
-                 this->trainerName.c_str(), this->ID32, this->TID, this->SID);
+        snprintf(logBuffer, sizeof(logBuffer), "Parsed trainer: Name='%s', ID32=%u, TID=%u, SID=%u", this->trainerName.c_str(), this->ID32, this->TID, this->SID);
         logInfoToFile(logBuffer);
 
         // Let's Go doesn't have save revision/DLC, set base values
@@ -124,11 +123,7 @@ namespace Trainer
         }
 
         // Debug: Log first 16 bytes
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Header bytes 0-15: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                 block.data[0], block.data[1], block.data[2], block.data[3], block.data[4], block.data[5],
-                 block.data[6], block.data[7], block.data[8], block.data[9], block.data[10], block.data[11],
-                 block.data[12], block.data[13], block.data[14], block.data[15]);
+        snprintf(logBuffer, sizeof(logBuffer), "Header bytes 0-15: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", block.data[0], block.data[1], block.data[2], block.data[3], block.data[4], block.data[5], block.data[6], block.data[7], block.data[8], block.data[9], block.data[10], block.data[11], block.data[12], block.data[13], block.data[14], block.data[15]);
         logInfoToFile(logBuffer);
 
         constexpr uint16_t SLOT_EMPTY = 1001;
@@ -148,8 +143,7 @@ namespace Trainer
                 calculatedPartyCount++;
             }
 
-            snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: index = %u%s", partySlotIndex, index,
-                     (index == SLOT_EMPTY) ? " (empty)" : (index >= MAX_SLOTS ? " (INVALID)" : ""));
+            snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: index = %u%s", partySlotIndex, index, (index == SLOT_EMPTY) ? " (empty)" : (index >= MAX_SLOTS ? " (INVALID)" : ""));
             logInfoToFile(logBuffer);
         }
 
@@ -158,8 +152,7 @@ namespace Trainer
         logInfoToFile(logBuffer);
 
         starterIndex = readUInt16LittleEndian(&block.data[0x0C]);
-        snprintf(logBuffer, sizeof(logBuffer), "Starter index: %u%s",
-                 starterIndex, (starterIndex == SLOT_EMPTY) ? " (empty)" : "");
+        snprintf(logBuffer, sizeof(logBuffer), "Starter index: %u%s", starterIndex, (starterIndex == SLOT_EMPTY) ? " (empty)" : "");
         logInfoToFile(logBuffer);
 
         uint16_t listCount = readUInt16LittleEndian(&block.data[0x0E]);
@@ -175,9 +168,7 @@ namespace Trainer
         snprintf(logBuffer, sizeof(logBuffer), "parsePokeListPokemonBlock: block size = %zu bytes", block.data.size());
         logInfoToFile(logBuffer);
 
-        const std::span<const std::byte> blockSpan(
-            reinterpret_cast<const std::byte *>(block.data.data()),
-            block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         size_t pokemonCount = 0;
         constexpr uint16_t SLOT_EMPTY = 1001;
@@ -195,16 +186,14 @@ namespace Trainer
                 const size_t offset = (boxIndex * SLOTS_PER_BOX7_LGPE + slot) * SIZE_PARTY7_LGPE;
                 if (offset + SIZE_PARTY7_LGPE > block.data.size())
                 {
-                    snprintf(logBuffer, sizeof(logBuffer), "Box %zu slot %zu: offset %zu exceeds block size", boxIndex,
-                             slot, offset);
+                    snprintf(logBuffer, sizeof(logBuffer), "Box %zu slot %zu: offset %zu exceeds block size", boxIndex, slot, offset);
                     logInfoToFile(logBuffer);
                     break;
                 }
 
                 std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY7_LGPE);
 
-                uint32_t encryptionConstant =
-                    readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(slotSpan.data()));
+                uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(slotSpan.data()));
                 if (encryptionConstant != 0)
                 {
                     boxes[boxIndex][slot] = std::make_unique<Pokemon7LGPE>(slotSpan);
@@ -222,15 +211,13 @@ namespace Trainer
 
         // Now populate party from partyIndices
         // Party indices point to storage slots (0-999)
-        for (size_t partySlotIndex = 0; partySlotIndex < partyCount && partySlotIndex < MAX_PARTY_SLOTS;
-             ++partySlotIndex)
+        for (size_t partySlotIndex = 0; partySlotIndex < partyCount && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
         {
             uint16_t storageIndex = partyIndices[partySlotIndex];
 
             if (storageIndex == SLOT_EMPTY || storageIndex >= MAX_STORAGE_SLOTS)
             {
-                snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: skipped (index=%u)", partySlotIndex,
-                         storageIndex);
+                snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: skipped (index=%u)", partySlotIndex, storageIndex);
                 logInfoToFile(logBuffer);
                 continue;
             }
@@ -245,16 +232,13 @@ namespace Trainer
                 {
                     std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY7_LGPE);
                     party.push_back(std::make_unique<Pokemon7LGPE>(slotSpan));
-                    snprintf(logBuffer, sizeof(logBuffer),
-                             "Party slot %zu: loaded from storage index %u (box %zu, slot %zu)", partySlotIndex,
-                             storageIndex, boxIndex, slotIndex);
+                    snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: loaded from storage index %u (box %zu, slot %zu)", partySlotIndex, storageIndex, boxIndex, slotIndex);
                     logInfoToFile(logBuffer);
                 }
             }
             else
             {
-                snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: storage index %u has no Pokemon",
-                         partySlotIndex, storageIndex);
+                snprintf(logBuffer, sizeof(logBuffer), "Party slot %zu: storage index %u has no Pokemon", partySlotIndex, storageIndex);
                 logInfoToFile(logBuffer);
             }
         }
@@ -357,8 +341,7 @@ namespace Trainer
             const size_t size = pokemon.getDataSize();
             if (offset + size > destination.size())
                 return;
-            uint32_t encryptionConstant =
-                readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon.getData().data()));
+            uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon.getData().data()));
             std::span<const std::byte> decrypted(pokemon.getData().data(), size);
             std::byte *encryptedRecord = Encryption::encryptArray7LGPE(decrypted, encryptionConstant);
             std::memcpy(&destination[offset], encryptedRecord, size);
@@ -381,7 +364,7 @@ namespace Trainer
          * compacted before writing:
          *   1. Walk boxes in order, collect occupied Pokemon into a packed list, and record each
          *      old storage index -> new packed index (this removes any gaps left by moves).
-         *   2. Write the packed list to storage; zero the tail.
+         *   2. Write the packed list to storage; fill the tail with the file's own empty slots.
          *   3. Overlay the party copies at their remapped indices (party edits win over the box
          *      copy of the same slot).
          *   4. Write the header: remapped party pointers + starter + the packed count.
@@ -423,25 +406,48 @@ namespace Trainer
             if (block.data.size() < required)
                 block.data.resize(required, 0);
 
+            // The tail keeps the file's own empty slots, in order, as PKHeX's CompressStorage does.
+            // The game writes an empty slot as the ENCRYPTED blank, 246 non-zero bytes behind a zero
+            // encryption constant, so zeroing the tail rewrote a quarter of the file on an unedited
+            // save. A slot the user emptied still holds its Pokemon, so it is not reused.
+            std::vector<uint8_t> emptySlotBytes;
+            for (size_t nIndex = 0; nIndex < TOTAL; ++nIndex)
+            {
+                const size_t slotOffset = nIndex * SIZE_PARTY7_LGPE;
+                if (readUInt32LittleEndian(&block.data[slotOffset]) == 0)
+                {
+                    emptySlotBytes.insert(emptySlotBytes.end(), block.data.begin() + static_cast<std::ptrdiff_t>(slotOffset), block.data.begin() + static_cast<std::ptrdiff_t>(slotOffset + SIZE_PARTY7_LGPE));
+                }
+            }
+            const size_t emptySlotCount = emptySlotBytes.size() / SIZE_PARTY7_LGPE;
+
             for (size_t nIndex = 0; nIndex < TOTAL; ++nIndex)
             {
                 const size_t offset = nIndex * SIZE_PARTY7_LGPE;
                 if (nIndex < packed.size())
+                {
                     writeEncryptedPokemon(block.data, offset, *packed[nIndex]);
+                    continue;
+                }
+                const size_t tailIndex = nIndex - packed.size();
+                if (tailIndex < emptySlotCount)
+                {
+                    std::memcpy(&block.data[offset], &emptySlotBytes[tailIndex * SIZE_PARTY7_LGPE], SIZE_PARTY7_LGPE);
+                }
                 else
+                {
                     std::memset(&block.data[offset], 0, SIZE_PARTY7_LGPE);
+                }
             }
 
-            for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-                 ++partySlotIndex)
+            for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
             {
                 const uint16_t newIdx = remap(partyIndices[partySlotIndex]);
                 if (newIdx >= TOTAL)
                     continue;
                 if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                     continue;
-                writeEncryptedPokemon(block.data, static_cast<size_t>(newIdx) * SIZE_PARTY7_LGPE,
-                                      *party[partySlotIndex]);
+                writeEncryptedPokemon(block.data, static_cast<size_t>(newIdx) * SIZE_PARTY7_LGPE, *party[partySlotIndex]);
             }
             break;
         }
@@ -533,9 +539,7 @@ namespace Trainer
         // Remap everything that points INTO storage. Same mapping updateBoxBlock() will apply.
         auto remap = [&](uint16_t oldIdx) -> uint16_t
         {
-            return (oldIdx < TOTAL && oldToNew[oldIdx] >= 0)
-                       ? static_cast<uint16_t>(oldToNew[oldIdx])
-                       : SLOT_EMPTY;
+            return (oldIdx < TOTAL && oldToNew[oldIdx] >= 0) ? static_cast<uint16_t>(oldToNew[oldIdx]) : SLOT_EMPTY;
         };
         for (size_t partySlotIndex = 0; partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
             partyIndices[partySlotIndex] = remap(partyIndices[partySlotIndex]);
@@ -592,10 +596,8 @@ namespace Trainer
         // *live* blank entity still needs a valid decrypted PB7 buffer, so use the encrypt->decrypt
         // round-trip here (same principle as the SwishCrypto gens' encrypted-blank fallback).
         std::vector<std::byte> zero(SIZE_PARTY7_LGPE, std::byte{0});
-        std::byte *encryptedRecord = Encryption::encryptArray7LGPE(
-            std::span<const std::byte>(zero.data(), SIZE_PARTY7_LGPE), 0);
-        auto clone = std::make_unique<Pokemon7LGPE>(
-            std::span<const std::byte>(encryptedRecord, SIZE_PARTY7_LGPE));
+        std::byte *encryptedRecord = Encryption::encryptArray7LGPE(std::span<const std::byte>(zero.data(), SIZE_PARTY7_LGPE), 0);
+        auto clone = std::make_unique<Pokemon7LGPE>(std::span<const std::byte>(encryptedRecord, SIZE_PARTY7_LGPE));
         delete[] encryptedRecord;
         return clone;
     }
@@ -639,8 +641,13 @@ namespace Trainer
         // Let's Go remembers the smallest and largest of each species you have seen. Four groups of
         // 186 six-byte entries at 0xF78; the table ends exactly on the block's last byte (0x20E8),
         // which is a useful check that the geometry is right.
-        //   entry[0] height scalar, [1] flag, [2] weight scalar, [3] 0, [4..5] untouched
+        //   entry[0..1] u16 height = 2 x height scalar, [2] weight scalar, [3] 0, [4..5] untouched
         // An untouched entry reads as UNSET (height 0xFE / weight 0x7F) and the dex shows no record.
+        //
+        // The height is a u16 holding twice the scalar, not PKHeX's Zukan7b reading (byte 0 the
+        // scalar, byte 1 a "flagged" marker). Every record in a real save is even, a third of them
+        // have byte 1 set, and each one that matches a stored Pokemon holds exactly twice its
+        // scalar. Read PKHeX's way, a save halved every height record it rewrote.
         constexpr size_t ZUKAN_SIZE_START = 0xF78;
         constexpr size_t ZUKAN_SIZE_ENTRY = 6;
         constexpr size_t ZUKAN_SIZE_COUNT = 186;
@@ -654,21 +661,22 @@ namespace Trainer
 
         size_t ggSizeOffset(int group, int index)
         {
-            return ZUKAN_SIZE_START +
-                   ZUKAN_SIZE_ENTRY * (static_cast<size_t>(index) + static_cast<size_t>(group) * ZUKAN_SIZE_COUNT);
+            return ZUKAN_SIZE_START + ZUKAN_SIZE_ENTRY * (static_cast<size_t>(index) + static_cast<size_t>(group) * ZUKAN_SIZE_COUNT);
         }
         bool ggSizeUnset(const std::vector<uint8_t> &d, size_t offset)
         {
             // UNSET == 0x007F00FE little-endian: FE 00 7F 00.
-            return offset + 4 <= d.size() && d[offset] == 0xFE && d[offset + 1] == 0x00 && d[offset + 2] == 0x7F &&
-                   d[offset + 3] == 0x00;
+            return offset + 4 <= d.size() && d[offset] == 0xFE && d[offset + 1] == 0x00 && d[offset + 2] == 0x7F && d[offset + 3] == 0x00;
+        }
+        uint8_t ggSizeHeightScalar(const std::vector<uint8_t> &dexBytes, size_t entryOffset)
+        {
+            return static_cast<uint8_t>(readUInt16LittleEndian(&dexBytes[entryOffset]) / 2);
         }
         void ggSizeWrite(std::vector<uint8_t> &d, size_t offset, uint8_t height, uint8_t weight)
         {
             if (offset + 4 > d.size())
                 return;
-            d[offset] = height;
-            d[offset + 1] = 0; // "flagged" marker; the games leave it clear for an ordinary record
+            writeUInt16LittleEndian(&d[offset], static_cast<uint16_t>(height * 2));
             d[offset + 2] = weight;
             d[offset + 3] = 0;
         }
@@ -684,12 +692,6 @@ namespace Trainer
         float ggWeightAbsoluteFrom(const ::Pokemon::PersonalInfo &pi, uint8_t heightScalar, uint8_t weightScalar)
         {
             return ggHeightRatio(heightScalar) * (ggWeightRatio(weightScalar) * static_cast<float>(pi.weight));
-        }
-
-        // The partner Pikachu / Eevee are cosmetic overlays on form 0, not dex forms of their own.
-        bool isBuddyForm(uint16_t species, uint8_t form)
-        {
-            return (species == 25 && form == 8) || (species == 133 && form == 1);
         }
 
         // Language id -> dex language slot. Slot 6 (langID 6) is unused, so 7+ shift down by two.
@@ -735,13 +737,17 @@ namespace Trainer
             if (species == 0 || species > LGPE_MAX_SPECIES)
                 return;
 
-            uint8_t form = pokemon->form();
-            if (isBuddyForm(species, form))
-                form = 0;
+            const uint8_t form = pokemon->form();
             // Gate on the dex's own entry table, not on the personal table's per-game presence bit.
             // Presence answers "can this game hold it", which is a different question: it is true for
             // forms the DEX has no entry for, and writing a form bit for one of those would set a flag
             // the game never reads.
+            //
+            // The partner Pikachu (form 8) and partner Eevee (form 1) have no entry, so they are not
+            // registered at all, as PKHeX's Zukan7b.SetDex does. Folding them onto form 0 first wrote
+            // the partner's size into records the game keeps differently: a real save holds the
+            // partner Eevee as Eevee's maximum height and weight, and an unedited write added it as
+            // the minimum weight too.
             const int entryIndex = getDexEntryIndex7LGPE(species, form);
             if (entryIndex < 0)
                 return;
@@ -822,15 +828,13 @@ namespace Trainer
             if (hAbs < static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_HEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() &&
-                    (ggSizeUnset(*dex, offset) || heightScalarValue < (*dex)[offset]))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue < ggSizeHeightScalar(*dex, offset)))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
             else if (hAbs > static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_HEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() &&
-                    (ggSizeUnset(*dex, offset) || heightScalarValue > (*dex)[offset]))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue > ggSizeHeightScalar(*dex, offset)))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
 
@@ -839,15 +843,13 @@ namespace Trainer
             if (wAbs < static_cast<float>(pi.weight))
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_WEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() &&
-                    (ggSizeUnset(*dex, offset) || wAbs < ggWeightAbsoluteFrom(pi, (*dex)[offset], (*dex)[offset + 2])))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs < ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
             else if (wAbs > static_cast<float>(pi.weight))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_WEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() &&
-                    (ggSizeUnset(*dex, offset) || wAbs > ggWeightAbsoluteFrom(pi, (*dex)[offset], (*dex)[offset + 2])))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs > ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
         };
@@ -941,9 +943,7 @@ namespace Trainer
 
         if (saveData.size() != SAVE_SIZE7_LGPE)
         {
-            logErrorToFile("createBlocksFromSaveData7LGPE: Invalid save file size. Expected " +
-                           std::to_string(SAVE_SIZE7_LGPE) + " bytes, got " +
-                           std::to_string(saveData.size()) + " bytes.");
+            logErrorToFile("createBlocksFromSaveData7LGPE: Invalid save file size. Expected " + std::to_string(SAVE_SIZE7_LGPE) + " bytes, got " + std::to_string(saveData.size()) + " bytes.");
             return blocks;
         }
 
@@ -974,15 +974,12 @@ namespace Trainer
                 Save::Block block;
                 block.key = static_cast<uint32_t>(def.key);
                 block.type = SCTypeCode::Array;
-                block.data.assign(
-                    saveData.begin() + def.offset,
-                    saveData.begin() + def.offset + def.size);
+                block.data.assign(saveData.begin() + def.offset, saveData.begin() + def.offset + def.size);
                 blocks.push_back(std::move(block));
             }
         }
 
-        logInfoToFile("createBlocksFromSaveData7LGPE: Created " + std::to_string(blocks.size()) +
-                      " blocks from save data");
+        logInfoToFile("createBlocksFromSaveData7LGPE: Created " + std::to_string(blocks.size()) + " blocks from save data");
 
         return blocks;
     }
@@ -999,8 +996,7 @@ namespace Trainer
                 checksum ^= bytes[index];
                 for (int bitIndex = 0; bitIndex < 8; ++bitIndex)
                 {
-                    checksum = (checksum & 1) ? static_cast<uint16_t>((checksum >> 1) ^ 0xA001)
-                                    : static_cast<uint16_t>(checksum >> 1);
+                    checksum = (checksum & 1) ? static_cast<uint16_t>((checksum >> 1) ^ 0xA001) : static_cast<uint16_t>(checksum >> 1);
                 }
             }
             return checksum;

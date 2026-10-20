@@ -138,8 +138,7 @@ namespace Pokemon
     // when the name is short. Unrepresentable chars end the name; bytes past the terminator are left
     // untouched. Without these setters a created pokemon's OT name + nickname were BLANK, so Gen 3 read the
     // pokemon as traded-in ("Apparently met") and showed no name.
-    static void g3EncodeName(std::byte *destination, size_t offset, const std::u16string &value, size_t maxChars,
-                             uint8_t languageId)
+    static void g3EncodeName(std::byte *destination, size_t offset, const std::u16string &value, size_t maxChars, uint8_t languageId)
     {
         size_t byteCount = 0;
         for (const char16_t character : value)
@@ -173,6 +172,7 @@ namespace Pokemon
     // retrying full-width, which is how the cartridge itself stores such a name.
     bool Pokemon3RSE::canStoreNickname(const std::u16string &value) const noexcept
     {
+        if (isEgg()) return true; // setNickname stores the egg placeholder, whatever it is given
         const uint8_t languageId = language();
         for (const char16_t character : value)
         {
@@ -182,9 +182,14 @@ namespace Pokemon
         return true;
     }
 
+    // An egg has no name of its own: the games write the Japanese word for egg in every region, and
+    // PKHeX's PK3 Nickname setter writes that placeholder whatever it is given while IsEgg is set.
+    // Storing a real name here would leave an egg no cartridge holds, in the Japanese charset its
+    // language selects. Clear the egg bit before naming a hatched Pokemon.
     void Pokemon3RSE::setNickname(const std::u16string &value) noexcept
     {
-        g3EncodeName(data.data(), 0x08, value, 10, language()); // nickname: 10 chars @ 0x08 (no isNicknamed flag)
+        const std::u16string storedNickname = isEgg() ? std::u16string(EGG_NICKNAME_JAPANESE) : value;
+        g3EncodeName(data.data(), 0x08, storedNickname, 10, language()); // nickname: 10 chars @ 0x08 (no isNicknamed flag)
         refreshChecksum();
     }
 
@@ -237,8 +242,7 @@ namespace Pokemon
         // 0x56 sits past the checksummed region (0x20..0x4F), so no refreshChecksum() is needed.
     }
 
-    uint16_t Pokemon3RSE::carryCurrentHP(uint16_t storedCur, uint16_t storedMax,
-                                          uint16_t newMax) noexcept
+    uint16_t Pokemon3RSE::carryCurrentHP(uint16_t storedCur, uint16_t storedMax, uint16_t newMax) noexcept
     {
         // max moved (or was never set) -> refill
         if (storedMax != newMax) return newMax;
@@ -313,8 +317,7 @@ namespace Pokemon
             // Stamp in a letter-preserving bit pattern before ANY test -- every constraint below reads
             // the whole PID, so this has to happen first or they would be judging a PID we won't store.
             if (letterPatternCount > 0)
-                pidValue = withUnownFormValue(pidValue,
-                                              letterPatterns[(walk >> 2) % static_cast<uint32_t>(letterPatternCount)]);
+                pidValue = withUnownFormValue(pidValue, letterPatterns[(walk >> 2) % static_cast<uint32_t>(letterPatternCount)]);
             // Cheapest reject first: this LCG's low bit flips every step, so half the walk is
             // discarded by an AND before the nature modulo runs.
             if (wantAbilityBit >= 0 && static_cast<int>(pidValue & 1u) != wantAbilityBit)
@@ -323,9 +326,7 @@ namespace Pokemon
                 continue;
             if (wantGender >= 0)
             {
-                const int genderValue = (genderRatio == 255) ? 2 : (genderRatio == 254) ? 1
-                                            : (genderRatio == 0)     ? 0
-                                                            : ((pidValue & 0xFF) < genderRatio ? 1 : 0);
+                const int genderValue = (genderRatio == 255) ? 2 : (genderRatio == 254) ? 1 : (genderRatio == 0) ? 0 : ((pidValue & 0xFF) < genderRatio ? 1 : 0);
                 if (genderValue != wantGender)
                     continue;
             }

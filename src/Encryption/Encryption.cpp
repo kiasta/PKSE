@@ -86,8 +86,7 @@ namespace Encryption
         }
     }
 
-    void shuffleBlocks(std::span<const std::byte> data, std::span<std::byte> result,
-                       uint32_t shuffleValue, size_t blockSize, bool invert)
+    void shuffleBlocks(std::span<const std::byte> data, std::span<std::byte> result, uint32_t shuffleValue, size_t blockSize, bool invert)
     {
         constexpr size_t start = 8; // encryption constant + checksum, never shuffled
         constexpr size_t blockCount = 4;

@@ -17,6 +17,7 @@ PKSE is a homebrew application for conveniently editing Pokemon save files on th
 - **Pokemon creator** — build a Pokemon from scratch in any supported game's format, with legal options highlighted.
 - **Legality checker** — flags illegal values as you edit, and checks whether a real encounter in the Pokemon's origin game could have produced it (informational; it never blocks or auto-changes anything).
 - **Cross-game bank** — PKSE-native persistent storage that every supported game shares, 200 boxes deep. Deposit from one game and withdraw into another and the Pokemon is converted into the destination's format on the way out, preserving its origin (OT, IDs, met data, IVs/nature/PID). Moves the destination can't legally know are cleared, since an impossible move corrupts the Pokemon in some games. Red/Blue/Yellow and Gold/Silver/Crystal Pokemon travel forward through Poke Transporter, exactly as the Virtual Console games did, and never back.
+- **Pokemon files** — export a Pokemon from Storage as a PKHeX-compatible file (`.pk3`, `.pb7`, `.pk9` and so on) to `sdmc:/PKSE/exports`, and import one into the bank through the same browser as PKSM banks. PKHeX's encrypted files (`.ek3` … `.ea9`) open too.
 - **PKSM bank import** — read a PKSM `.bnk` file straight off the SD card (Minus in the Storage view opens a file browser) and pull its Pokemon into PKSE's bank, keeping your box layout and box names. Every generation a PKSM bank can hold is covered — Gens 1 through 9 — and the preview reports exactly what it found before anything is written.
 
 ## **Screenshots**
@@ -62,13 +63,13 @@ FireRed and LeafGreen ship as a separate Switch title per language; all twelve a
 
 ### Earlier generations
 
-Every main-series game before the Switch is implemented too — 26 titles. Their saves are files rather than installed games, so they are opened from the SD card: see [Opening an older game's save](#opening-an-older-games-save).
+Every main-series game before the Switch is implemented too — 28 titles. Their saves are files rather than installed games, so they are opened from the SD card: see [Opening an older game's save](#opening-an-older-games-save).
 
 | Generation | Titles |
 |---|---|
 | 1 | Red / Blue / Yellow |
 | 2 | Gold / Silver / Crystal |
-| 3 | Ruby / Sapphire / Emerald |
+| 3 | Ruby / Sapphire / Emerald, FireRed / LeafGreen (the GBA games' saves, as well as the Switch release's) |
 | 4 | Diamond / Pearl / Platinum, HeartGold / SoulSilver |
 | 5 | Black / White, Black 2 / White 2 |
 | 6 | X / Y, Omega Ruby / Alpha Sapphire |
@@ -79,7 +80,7 @@ Every main-series game before the Switch is implemented too — 26 titles. Their
 - Pokemon from Generations 4, 5 and 6 can be stored in the bank, but PKSE doesn't convert them into another game's format yet.
 - Ribbons and marks are listed on the details page but can't be edited.
 - Korean Gold/Silver saves aren't supported. They use a different character table and checksum, so PKSE refuses them rather than half-opening one.
-- Red/Blue, Gold/Silver, Ruby/Sapphire, Diamond/Pearl and HeartGold/SoulSilver each write an identical save with no version byte, so PKSE can only name the pair.
+- Red/Blue, Gold/Silver, Ruby/Sapphire, FireRed/LeafGreen (as a GBA save file), Diamond/Pearl and HeartGold/SoulSilver each write an identical save with no version byte, so PKSE can only name the pair.
 
 ---
 
@@ -91,7 +92,26 @@ Pick a user, a game, then a backup to work on (or create a new one). Backups liv
 
 ### Opening an older game's save
 
-An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat` and `.sgm` files and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
+An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat`, `.sgm`, `.dsv`, `.duc`, `.dss`, `.fla` and `.SaveRAM` files, second-player and save-slot files (`.sa2`–`.sa4`, `.srm2`, `.sav1`–`.sav9`), and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and if it can't open a file it says why, under the list. Before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
+
+Saves straight from an emulator open as they are, and are written back in the same shape so the emulator keeps reading them:
+
+- a real-time clock saved after the game's save (mGBA, BGB, VBA-M, SameBoy, the Analogue Pocket and many flashcarts), including **TGB Dual**'s and the **MiSTer** Game Boy and GBA cores';
+- RetroArch's **VBA Next** and **Beetle GBA** cores, whose `.srm` files are 136 KiB rather than 128 KiB, and its **meteor** core;
+- **DeSmuME** and **DraStic** `.dsv` files;
+- **no$gba** `.SAV` files saved uncompressed or "Compressed (fast/rlu)";
+- **Action Replay DS**, **Action Replay DSi** and **MAX Drive DS** `.duc` and `.dss` dumps;
+- **BizHawk** 1.x Game Boy Advance saves;
+- Game Boy saves from **Nintendo Switch Online**;
+- saves followed by unused space — a whole-chip dump, a flashcart file such as YSMenu's 1 MiB DS saves, or GBE+'s 128 KiB Game Boy saves.
+
+Some files are recognised but can't be read yet, because the save inside is compressed. PKSE says which, and what to change:
+
+- **RetroArch** with *SaveRAM Compression* on: turn it off (Settings > Saving), then save in the game again;
+- **no$gba** "Compressed (good/lz)" saves: set no$gba's *SAV/SNA File Format* to *Uncompressed*, then save again;
+- **Goomba Color** and **Retron 5** saves, which PKSE can't open yet;
+- a ZIP archive: extract the save from it first;
+- a whole 3DS save container from GodMode9: export the save with Checkpoint or JKSM and open its `main`.
 
 ### Logs
 
@@ -156,7 +176,7 @@ make                   # or: make -j$(nproc)
 
 This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output, and `make all` is an alias for `make`.
 
-There is no separate production build. SD-card logging is a **runtime** setting — Settings → *Enable Debug Logging*, off by default — so the `.nro` you test is the one you ship, and a user who hits a bug can always produce a log.
+`make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, and `make all` builds both. The development build is listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
 
 To check that the code compiles without a full build, `python tools/syntax_check.py` runs the real cross compiler over every source file in a few seconds, with no linking and no MSys2 shell needed. `--warnings` does a full optimizing pass instead and fails on any warning — the build is kept warning-free.
 

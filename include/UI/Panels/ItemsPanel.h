@@ -9,19 +9,24 @@ namespace UI
     class TrainerViewScreen;
 }
 
+namespace Trainer
+{
+    class Trainer;
+}
+
 namespace UI
 {
     namespace Panels
     {
-        void drawItems(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int itemsX, int itemsY,
-                       int itemsWidth, int itemsHeight);
+        void drawItems(UI::TrainerViewScreen &screen, UI::PKSEFramebuffer &framebuffer, int itemsX, int itemsY, int itemsWidth, int itemsHeight);
 
-        /// Display name of a pouch/category index within a game group ("Medicine", "TMs", ...).
+        /// Display name of a pouch/category index in the trainer's bag ("Medicine", "TMs", ...).
+        /// The trainer answers first; groups whose trainer does not fall back to this file's table.
         ///
         /// Shared rather than inlined at the header draw.
         /// Never returns null -- an out-of-range category yields "?" so a log line cannot end
         /// up formatting a null pointer.
-        const char *pouchDisplayName(Enums::GameVersion gameGroup, int category);
+        const char *pouchDisplayName(const Trainer::Trainer &trainer, int category);
     }
 }
 

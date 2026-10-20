@@ -332,8 +332,7 @@ namespace Trainer
         {
             if (!Enums::isGen3Group(group) || record.size() != SIZE_PARTY3_FRLG)
                 return record;
-            const bool tailIsPadding = std::all_of(record.begin() + SIZE_STORED3_FRLG, record.end(),
-                                                   [](std::byte value) { return value == std::byte{0}; });
+            const bool tailIsPadding = std::all_of(record.begin() + SIZE_STORED3_FRLG, record.end(), [](std::byte value) { return value == std::byte{0}; });
             return tailIsPadding ? record.first(SIZE_STORED3_FRLG) : record;
         }
 
@@ -387,8 +386,7 @@ namespace Trainer
             }
         }
 
-        std::byte *encryptFor(GameVersion group, std::span<const std::byte> decryptedRecord,
-                              uint32_t encryptionConstant)
+        std::byte *encryptFor(GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant)
         {
             switch (group)
             {
@@ -468,9 +466,15 @@ namespace Trainer
         load();
     }
 
+    // Where the bank file lives. Empty (the normal case) means sdmc:/PKSE/bank; see setRootOverride.
+    static std::string g_bankRootOverride;
+
+    void Bank::setRootOverride(const std::string &directory) { g_bankRootOverride = directory; }
+    bool Bank::rootOverridden() noexcept { return !g_bankRootOverride.empty(); }
+
     std::string Bank::bankDir()
     {
-        return BASE_SAVE_DIRECTORY + "/bank";
+        return g_bankRootOverride.empty() ? (BASE_SAVE_DIRECTORY + "/bank") : g_bankRootOverride;
     }
 
     std::string Bank::filePath() const
@@ -515,8 +519,7 @@ namespace Trainer
 
                 // Mirror the pokemon's native bytes: encrypt with its own group + EC, copy up to its
                 // record size (box mons are shorter than party; the tail stays zero-padded).
-                const uint32_t encryptionConstant =
-                    readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                const uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
                 std::span<const std::byte> dec(pokemon->getData().data(), pokemon->getDataSize());
                 std::byte *encryptedRecord = encryptFor(gameVersion, dec, encryptionConstant);
                 if (encryptedRecord)
@@ -562,35 +565,72 @@ namespace Trainer
         currentBox = 0; // and so does the open box -- this is the discard path as well as the load
 
         const std::string path = filePath();
-        size_t fileSize = 0;
-        uint8_t *file = readAllBytes(path.c_str(), &fileSize);
-        if (!file)
+        loadProblem.clear();
+        fileUntouchable = false;
+
+        // A save interrupted between removing the old file and renaming the new one into place
+        // (see save()) leaves only the temporary file, and it is complete: the old file is removed
+        // only after the new one is fully written. Put it back where it belongs.
+        const std::string temporaryPath = path + ".tmp";
+        struct stat fileStatus;
+        if (stat(path.c_str(), &fileStatus) != 0 && stat(temporaryPath.c_str(), &fileStatus) == 0)
         {
-            // No unified bank yet: one-time import of any legacy per-group bank files, then snapshot.
-            migrateLegacyBanks();
-            savedImage = serialize();
-            logInfoToFile("Bank: no unified bank file; migrated legacy banks if present", path.c_str());
-            return;
+            if (std::rename(temporaryPath.c_str(), path.c_str()) == 0)
+                logErrorToFile("Bank: recovered bank.dat from an interrupted save", temporaryPath.c_str());
+            else
+                logErrorToFile("Bank: could not recover bank.dat from an interrupted save", temporaryPath.c_str());
         }
+        const bool fileExists = stat(path.c_str(), &fileStatus) == 0;
 
-        const size_t payload = maxPayloadSize();
-        const size_t recSize = 4 + payload;
+        size_t fileSize = 0;
+        uint8_t *file = fileExists ? readAllBytes(path.c_str(), &fileSize) : nullptr;
 
-        // A file we cannot parse must be moved aside, NOT left in place to be silently overwritten
+        // A file we cannot use must be moved aside, NOT left in place to be silently overwritten
         // by the next save. Whatever it is -- a newer format, a bad card, a half-finished write --
         // it is the user's only copy of those Pokemon, and starting empty over the top of it would
-        // destroy them. Renaming lets us proceed with an empty bank while the original survives.
+        // destroy them. Renaming lets us proceed with an empty bank while the original survives;
+        // if even that fails, save() refuses to write over it.
         auto abandonFile = [&](const char *why)
         {
             const std::string aside = path + ".unreadable";
             std::remove(aside.c_str()); // keep only the most recent casualty
             if (std::rename(path.c_str(), aside.c_str()) == 0)
+            {
                 logErrorToFile("Bank: unreadable file preserved as bank.dat.unreadable", why);
+                loadProblem = "The bank file could not be read. It was kept as bank.dat.unreadable and the bank opened empty.";
+            }
             else
+            {
                 logErrorToFile("Bank: unreadable file could NOT be preserved", why);
+                fileUntouchable = true;
+                loadProblem = "The bank file could not be read, so the bank opened empty and will not be saved over it.";
+            }
             delete[] file;
             savedImage = serialize();
         };
+
+        if (!fileExists)
+        {
+            // No unified bank yet: one-time import of any legacy per-group bank files, then snapshot.
+            // Skipped for a redirected (self-test) bank -- the legacy files are the USER's, and
+            // dragging them into a scratch file would be work nobody asked for.
+            if (!rootOverridden())
+                migrateLegacyBanks();
+            savedImage = serialize();
+            logInfoToFile("Bank: no unified bank file; migrated legacy banks if present", path.c_str());
+            return;
+        }
+        if (!file)
+        {
+            // There IS a bank file and it will not read: an SD card error, a short read, no memory.
+            // Treating that as "no bank yet" re-ran the legacy migration and let the next save
+            // overwrite every Pokemon in it.
+            abandonFile("the file exists but could not be read");
+            return;
+        }
+
+        const size_t payload = maxPayloadSize();
+        const size_t recSize = 4 + payload;
 
         if (fileSize < HEADER_SIZE || std::memcmp(file, BANK_MAGIC, 8) != 0)
         {
@@ -621,8 +661,7 @@ namespace Trainer
         {
             // The bank was written by a build with MORE boxes. Everything past ours cannot be loaded,
             // and saving would drop it, so say so loudly rather than quietly truncating someone's bank.
-            logErrorToFile("Bank: file has more boxes than this build supports; extra boxes will be lost if saved",
-                           std::to_string(fileBoxes).c_str());
+            logErrorToFile("Bank: file has more boxes than this build supports; extra boxes will be lost if saved", std::to_string(fileBoxes).c_str());
         }
         const size_t fileTotal = static_cast<size_t>(fileBoxes) * BANK_SLOTS_PER_BOX;
         const size_t total = BANK_BOX_COUNT * BANK_SLOTS_PER_BOX;
@@ -644,8 +683,7 @@ namespace Trainer
                 continue;
             } // unknown tag = damage
 
-            std::span<const std::byte> rec(reinterpret_cast<const std::byte *>(file + recOff + 4),
-                                           recordSizeForTagImpl(bankTag));
+            std::span<const std::byte> rec(reinterpret_cast<const std::byte *>(file + recOff + 4), recordSizeForTagImpl(bankTag));
             auto pokemon = makePokemonImpl(gameVersion, depositedSpan(gameVersion, rec));
 
             // Bytes off the SD card are NOT trusted. A slot that decodes to nonsense must be
@@ -691,11 +729,9 @@ namespace Trainer
         // Optional open-box section (see CURRENT_BOX_MARKER). Absent in files written before it
         // existed, and absent from a truncated names section too -- both keep box 0, which is where
         // the bank opened before any of this.
-        if (fileSize >= sectionOffset + 6 &&
-            std::memcmp(file + sectionOffset, CURRENT_BOX_MARKER, 4) == 0)
+        if (fileSize >= sectionOffset + 6 && std::memcmp(file + sectionOffset, CURRENT_BOX_MARKER, 4) == 0)
         {
-            const uint16_t storedBox =
-                static_cast<uint16_t>(file[sectionOffset + 4] | (file[sectionOffset + 5] << 8));
+            const uint16_t storedBox = static_cast<uint16_t>(file[sectionOffset + 4] | (file[sectionOffset + 5] << 8));
             // BANK_BOX_COUNT is a ratchet, so a file written by a build with more boxes than this
             // one can name a box that no longer exists.
             currentBox = (storedBox < BANK_BOX_COUNT) ? storedBox : 0;
@@ -704,8 +740,7 @@ namespace Trainer
         delete[] file;
         savedImage = serialize(); // baseline snapshot of the just-loaded state
         if (loadRejects > 0)
-            logErrorToFile("Bank: dropped damaged slot records on load",
-                           std::to_string(loadRejects).c_str());
+            logErrorToFile("Bank: dropped damaged slot records on load", std::to_string(loadRejects).c_str());
         logInfoToFile("Bank: loaded unified bank", path.c_str());
     }
 
@@ -805,8 +840,7 @@ namespace Trainer
 
                 const auto &source = boxes[box][slot];
                 const uint32_t bankTag = readUInt32LittleEndian(image.data() + recOff);
-                const bool occupied = source && source->speciesID() != 0 &&
-                                      bankTagForEntity(*source) != BTAG_EMPTY;
+                const bool occupied = source && source->speciesID() != 0 && bankTagForEntity(*source) != BTAG_EMPTY;
                 if (!occupied)
                 {
                     // wrote a record for a slot we consider empty
@@ -833,11 +867,7 @@ namespace Trainer
                 }
 
                 // Decoded exactly as load() decodes it, padding and all.
-                auto roundTripped = makePokemonImpl(
-                    gameVersion,
-                    depositedSpan(gameVersion, std::span<const std::byte>(
-                                                   reinterpret_cast<const std::byte *>(image.data() + recOff + 4),
-                                                   recordSizeForTagImpl(bankTag))));
+                auto roundTripped = makePokemonImpl(gameVersion, depositedSpan(gameVersion, std::span<const std::byte>(reinterpret_cast<const std::byte *>(image.data() + recOff + 4), recordSizeForTagImpl(bankTag))));
                 if (!roundTripped)
                 {
                     ++failures;
@@ -847,14 +877,11 @@ namespace Trainer
                 // Compare exactly the span serialize() wrote -- a box pokemon is shorter than the party
                 // record it sits in, and the zero tail beyond it is padding, not data. Comparing
                 // past that would fail on padding rather than on any real difference.
-                const size_t byteCount =
-                    std::min({source->getDataSize(), roundTripped->getDataSize(), recordSizeForTagImpl(bankTag)});
+                const size_t byteCount = std::min({source->getDataSize(), roundTripped->getDataSize(), recordSizeForTagImpl(bankTag)});
                 if (std::memcmp(source->getData().data(), roundTripped->getData().data(), byteCount) != 0)
                 {
                     ++failures;
-                    const std::string where = "box " + std::to_string(box + 1) +
-                                              " slot " + std::to_string(slot + 1) +
-                                              " (" + std::string(source->species()) + ")";
+                    const std::string where = "box " + std::to_string(box + 1) + " slot " + std::to_string(slot + 1) + " (" + std::string(source->species()) + ")";
                     logErrorToFile("Bank: slot failed encrypt/decrypt round trip", where.c_str());
                 }
             }
@@ -879,16 +906,38 @@ namespace Trainer
         verifyFailures = verifyImage(buffer);
 
         const std::string path = filePath();
-        FILE *f = fopen(path.c_str(), "wb");
+        if (fileUntouchable)
+        {
+            logErrorToFile("Bank: refusing to write over a bank file that could not be read or set aside", path.c_str());
+            return false;
+        }
+
+        // Written to a temporary file first, and only moved into place once it is complete. Writing
+        // straight into bank.dat truncated it first, so a save cut short (power, an SD error) left a
+        // damaged bank. The old file is removed before the rename because a FAT rename does not
+        // replace an existing file; load() recovers the temporary file if that is where it stopped.
+        const std::string temporaryPath = path + ".tmp";
+        FILE *f = fopen(temporaryPath.c_str(), "wb");
         if (!f)
         {
-            logErrorToFile("Bank: failed to open bank file for writing", path.c_str());
+            logErrorToFile("Bank: failed to open bank file for writing", temporaryPath.c_str());
             return false;
         }
         const size_t written = fwrite(buffer.data(), 1, buffer.size(), f);
-        fclose(f);
-        if (written != buffer.size())
+        const int flushResult = fflush(f);
+        const int closeResult = fclose(f);
+        if (written != buffer.size() || flushResult != 0 || closeResult != 0)
+        {
+            logErrorToFile("Bank: failed to write the whole bank file", temporaryPath.c_str());
+            std::remove(temporaryPath.c_str());
             return false;
+        }
+        std::remove(path.c_str());
+        if (std::rename(temporaryPath.c_str(), path.c_str()) != 0)
+        {
+            logErrorToFile("Bank: failed to move the new bank file into place", temporaryPath.c_str());
+            return false;
+        }
 
         savedImage = std::move(buffer); // in sync with disk again
         return true;
@@ -901,12 +950,17 @@ namespace Trainer
 
     //
     // The bodies stay in the anonymous namespace above because every caller in this file is a free
-    // helper rather than a Bank member. These three forward to them so anything else that needs an
+    // helper rather than a Bank member. These four forward to them so anything else that needs an
     // entity of an arbitrary save format reads the same mapping instead of keeping a second copy
     // of it in step.
     std::unique_ptr<::Pokemon::Pokemon> Bank::makePokemon(GameVersion group, std::span<const std::byte> record)
     {
         return makePokemonImpl(group, record);
+    }
+
+    std::byte *Bank::encryptRecord(GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant)
+    {
+        return encryptFor(group, decryptedRecord, encryptionConstant);
     }
 
     size_t Bank::recordSizeFor(GameVersion group) { return recordSizeForImpl(group); }

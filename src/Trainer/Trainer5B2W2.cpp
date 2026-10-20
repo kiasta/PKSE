@@ -47,8 +47,7 @@ namespace Trainer
         return crc16ccitt(&bytes[base], infoLen) == stored;
     }
 
-    Trainer5B2W2::Trainer5B2W2(std::vector<uint8_t> raw, std::string path)
-        : saveData(std::move(raw)), savePath(std::move(path))
+    Trainer5B2W2::Trainer5B2W2(std::vector<uint8_t> raw, std::string path) : saveData(std::move(raw)), savePath(std::move(path))
     {
         init();
     }
@@ -92,8 +91,7 @@ namespace Trainer
         std::memcpy(full.data(), dec, byteCount);
         delete[] dec;
         std::byte *encryptedRecord = Encryption::encryptArray5B2W2(full);
-        auto pokemon = std::make_unique<::Pokemon::Pokemon5B2W2>(
-            std::span<const std::byte>(encryptedRecord, Encryption::SIZE_PARTY5_B2W2));
+        auto pokemon = std::make_unique<::Pokemon::Pokemon5B2W2>(std::span<const std::byte>(encryptedRecord, Encryption::SIZE_PARTY5_B2W2));
         delete[] encryptedRecord;
         pokemon->recalculateStats();
         return pokemon;
@@ -159,8 +157,7 @@ namespace Trainer
             const uint8_t *box = at(BLOCK_BOX_FIRST_5B2W2 + boxIndex);
             for (size_t slotIndex = 0; slotIndex < BOX_SLOTS; ++slotIndex)
             {
-                boxes[boxIndex][slotIndex] = makeEntity(box + slotIndex * Encryption::SIZE_STORED5_B2W2,
-                                          Encryption::SIZE_STORED5_B2W2);
+                boxes[boxIndex][slotIndex] = makeEntity(box + slotIndex * Encryption::SIZE_STORED5_B2W2, Encryption::SIZE_STORED5_B2W2);
             }
         }
     }
@@ -170,8 +167,7 @@ namespace Trainer
         const uint8_t *count = at(BLOCK_BOX_NAMES_5B2W2);
         for (size_t boxIndex = 0; boxIndex < getBoxCount(); ++boxIndex)
         {
-            const std::u16string name =
-                readUtf16Field(count + BN_NAME_BASE + boxIndex * BN_NAME_STRIDE, BN_NAME_BYTES / 2, true);
+            const std::u16string name = readUtf16Field(count + BN_NAME_BASE + boxIndex * BN_NAME_STRIDE, BN_NAME_BYTES / 2, true);
             boxNames[boxIndex] = name.empty() ? ("Box " + std::to_string(boxIndex + 1)) : utf16ToUtf8(name);
         }
     }
@@ -191,8 +187,7 @@ namespace Trainer
                 const uint16_t itemId = readUInt16LittleEndian(g + entryOffset);
                 if (itemId == 0)
                     continue;
-                items[pouchIndex].push_back(
-                    InventoryItem{itemId, readUInt16LittleEndian(g + entryOffset + 2), false, false});
+                items[pouchIndex].push_back(InventoryItem{itemId, readUInt16LittleEndian(g + entryOffset + 2), false, false});
                 itemSlot[pouchIndex].push_back(ItemOrigin{static_cast<uint16_t>(pouchSlotIndex), itemId});
             }
         }
@@ -203,8 +198,7 @@ namespace Trainer
         uint8_t *bytes = at(BLOCK_PARTY_5B2W2);
         const auto blank = Encryption::blankRecord5B2W2(Encryption::SIZE_PARTY5_B2W2);
         size_t written = 0;
-        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-             ++partySlotIndex)
+        for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
@@ -214,14 +208,12 @@ namespace Trainer
             const auto srcData = party[partySlotIndex]->getData();
             std::memcpy(rec.data(), srcData.data(), std::min(rec.size(), srcData.size()));
             std::byte *encryptedRecord = Encryption::encryptArray5B2W2(rec);
-            std::memcpy(bytes + PARTY_DATA_OFS + written * Encryption::SIZE_PARTY5_B2W2, encryptedRecord,
-                        Encryption::SIZE_PARTY5_B2W2);
+            std::memcpy(bytes + PARTY_DATA_OFS + written * Encryption::SIZE_PARTY5_B2W2, encryptedRecord, Encryption::SIZE_PARTY5_B2W2);
             delete[] encryptedRecord;
             ++written;
         }
         for (size_t partySlotIndex = written; partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
-            std::memcpy(bytes + PARTY_DATA_OFS + partySlotIndex * Encryption::SIZE_PARTY5_B2W2, blank.data(),
-                        blank.size());
+            std::memcpy(bytes + PARTY_DATA_OFS + partySlotIndex * Encryption::SIZE_PARTY5_B2W2, blank.data(), blank.size());
         bytes[PARTY_COUNT_OFS] = static_cast<uint8_t>(written);
     }
 
@@ -272,8 +264,7 @@ namespace Trainer
         {
             // never write back the "Box N" display defaults
             if (!isBoxNameDirty(boxIndex)) continue;
-            writeUtf16Field(count + BN_NAME_BASE + boxIndex * BN_NAME_STRIDE, BN_NAME_BYTES / 2,
-                            utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G5, true);
+            writeUtf16Field(count + BN_NAME_BASE + boxIndex * BN_NAME_STRIDE, BN_NAME_BYTES / 2, utf8ToUtf16(boxNames[boxIndex]), UTF16_TERM_G5, true);
         }
     }
 
@@ -283,11 +274,8 @@ namespace Trainer
     {
         uint8_t *g = at(BLOCK_INVENTORY_5B2W2);
         const PouchLayout5B2W2 *pouchLayout = POUCHES5_B2W2;
-        for (int pouchIndex = 0; pouchIndex < POUCH_COUNT5_B2W2 && pouchIndex < static_cast<int>(items.size());
-             ++pouchIndex)
-            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots, items[pouchIndex],
-                                 pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex]
-                                                                         : std::vector<ItemOrigin>{});
+        for (int pouchIndex = 0; pouchIndex < POUCH_COUNT5_B2W2 && pouchIndex < static_cast<int>(items.size()); ++pouchIndex)
+            writePouchPositional(g + pouchLayout[pouchIndex].offset, pouchLayout[pouchIndex].slots, items[pouchIndex], pouchIndex < static_cast<int>(itemSlot.size()) ? itemSlot[pouchIndex] : std::vector<ItemOrigin>{});
     }
 
     bool Trainer5B2W2::canStoreBoxName(const std::string &name) const

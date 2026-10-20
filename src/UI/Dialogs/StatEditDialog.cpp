@@ -41,8 +41,7 @@ namespace UI
             constexpr int dialogWidth = 600, h = 384;
             const int dialogX = (framebuffer.getWidth() - dialogWidth) / 2;
             const int dialogY = (framebuffer.getHeight() - h) / 2;
-            int centerY = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h,
-                                          std::string("Edit ") + statName, Colors::Text);
+            int centerY = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h, std::string("Edit ") + statName, Colors::Text);
 
             screen.touchButtons.clear();
 
@@ -53,10 +52,8 @@ namespace UI
             if (ivMode)
                 framebuffer.drawSelectionHighlight(dialogX + 16, centerY - 4, dialogWidth - 32, 34);
             framebuffer.drawText(labelX, centerY + 2, ivLabel, ivMode ? Colors::Text : Colors::TextDim);
-            framebuffer.drawText(valX, centerY + 2, std::to_string(screen.statEdit.currentIV),
-                                 ivMode ? Colors::Accent : Colors::Text);
-            framebuffer.drawText(rangeX, centerY + 4, "(0 - " + std::to_string(fmtMaxIV) + ")", Colors::TextDim,
-                                 TextStyle::Caption);
+            framebuffer.drawText(valX, centerY + 2, std::to_string(screen.statEdit.currentIV), ivMode ? Colors::Accent : Colors::Text);
+            framebuffer.drawText(rangeX, centerY + 4, "(0 - " + std::to_string(fmtMaxIV) + ")", Colors::TextDim, TextStyle::Caption);
             screen.touchButtons.push_back({10, dialogX + 16, centerY - 4, dialogWidth - 32, 34});
             centerY += 42;
 
@@ -64,14 +61,9 @@ namespace UI
             if (!ivMode)
                 framebuffer.drawSelectionHighlight(dialogX + 16, centerY - 4, dialogWidth - 32, 34);
             framebuffer.drawText(labelX, centerY + 2, evLabel, !ivMode ? Colors::Text : Colors::TextDim);
-            framebuffer.drawText(valX, centerY + 2,
-                                 std::to_string(usesAV ? screen.statEdit.currentAV : screen.statEdit.currentEV),
-                                 !ivMode ? Colors::Accent : Colors::Text);
+            framebuffer.drawText(valX, centerY + 2, std::to_string(usesAV ? screen.statEdit.currentAV : screen.statEdit.currentEV), !ivMode ? Colors::Accent : Colors::Text);
             {
-                const std::string evRange =
-                    usesAV    ? (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 200)"))
-                    : gbStats ? ("(0 - " + std::to_string(fmtMaxEV) + ")")
-                              : (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 252)"));
+                const std::string evRange = usesAV ? (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 200)")) : gbStats ? ("(0 - " + std::to_string(fmtMaxEV) + ")") : (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 252)"));
                 framebuffer.drawText(rangeX, centerY + 4, evRange, Colors::TextDim, TextStyle::Caption);
             }
             screen.touchButtons.push_back({11, dialogX + 16, centerY - 4, dialogWidth - 32, 34});
@@ -79,8 +71,7 @@ namespace UI
 
             if (usesAV)
             {
-                framebuffer.drawText(labelX, centerY, "Awakening Values (each 0-200, no total cap)", Colors::TextDim,
-                                     TextStyle::Caption);
+                framebuffer.drawText(labelX, centerY, "Awakening Values (each 0-200, no total cap)", Colors::TextDim, TextStyle::Caption);
             }
             else if (gbStats)
             {
@@ -88,8 +79,7 @@ namespace UI
                 // once. Printing an "x / 510" bar here would invent a budget the games do not have.
                 // What IS worth saying is that the contribution is a square root, so the last few
                 // thousand points are worth almost nothing and the number is not a linear stat bonus.
-                framebuffer.drawText(labelX, centerY, "Stat Experience (each 0-65535, no total cap; adds via sqrt)",
-                            Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(labelX, centerY, "Stat Experience (each 0-65535, no total cap; adds via sqrt)", Colors::TextDim, TextStyle::Caption);
             }
             else
             {
@@ -115,12 +105,10 @@ namespace UI
                     currentEV = pokemon->evSPE();
                     break;
                 }
-                int totalEVs = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() +
-                               pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD();
+                int totalEVs = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() + pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD();
                 int projectedTotal = totalEVs - currentEV + screen.statEdit.currentEV;
                 bool over = projectedTotal > 510;
-                framebuffer.drawText(labelX, centerY, "Total EVs: " + std::to_string(projectedTotal) + " / 510",
-                            over ? Colors::Red : Colors::TextDim, TextStyle::Caption);
+                framebuffer.drawText(labelX, centerY, "Total EVs: " + std::to_string(projectedTotal) + " / 510", over ? Colors::Red : Colors::TextDim, TextStyle::Caption);
             }
 
             // Step buttons (ZL -100 | L -10 | < -1 | > +1 | R +10 | ZR +100), then Cancel / Save labelled
@@ -129,10 +117,8 @@ namespace UI
             drawEditStepRow(screen, framebuffer, dialogX, dialogWidth, cby - 58 - 14, 58);
 
             const int choiceButtonWidth = 190;
-            drawEditChoiceButton(screen, framebuffer, dialogX + 24, cby, choiceButtonWidth, choiceButtonHeight, "B",
-                                 "Cancel", 0);
-            drawEditChoiceButton(screen, framebuffer, dialogX + dialogWidth - 24 - choiceButtonWidth, cby,
-                                 choiceButtonWidth, choiceButtonHeight, "A", "Save", 1);
+            drawEditChoiceButton(screen, framebuffer, dialogX + 24, cby, choiceButtonWidth, choiceButtonHeight, "B", "Cancel", 0);
+            drawEditChoiceButton(screen, framebuffer, dialogX + dialogWidth - 24 - choiceButtonWidth, cby, choiceButtonWidth, choiceButtonHeight, "A", "Save", 1);
         }
     }
 }

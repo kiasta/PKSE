@@ -11,6 +11,7 @@
                              // so the save layer, which includes it transitively, can be compiled.
 
 namespace Utils {
+    /// The whole file, in a buffer the caller releases with delete[]; null (logged) when it cannot be read.
     uint8_t* readAllBytes(const char* path, size_t* outSize);
     bool copyDirectory(const char* srcPath, const char* destPath);
     bool copyFile(const char* srcPath, const char* destPath);
@@ -33,9 +34,7 @@ namespace Utils {
     // `primaryFile` is the one file a backup must hold; the game's `optionalFiles` beside it are
     // copied when present and passed over in silence when not, because whether they exist at all
     // depends on what the player has done in-game.
-    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char* backupDir,
-                              const std::string& primaryFile,
-                              const std::vector<std::string>& optionalFiles = {});
+    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char* backupDir, const std::string& primaryFile, const std::vector<std::string>& optionalFiles = {});
     std::string getTimestamp();
     std::vector<std::string> listBackupDirectories(const char* gameDirectory);
 }

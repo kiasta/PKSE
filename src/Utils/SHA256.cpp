@@ -49,16 +49,12 @@ namespace Utils
         // Prepare message schedule
         for (int index = 0; index < 16; index++)
         {
-            messageDigestWord[index] = (buffer[index * 4] << 24) |
-                   (buffer[index * 4 + 1] << 16) |
-                   (buffer[index * 4 + 2] << 8) |
-                   (buffer[index * 4 + 3]);
+            messageDigestWord[index] = (buffer[index * 4] << 24) | (buffer[index * 4 + 1] << 16) | (buffer[index * 4 + 2] << 8) | (buffer[index * 4 + 3]);
         }
 
         for (int moveIndex = 16; moveIndex < 64; moveIndex++)
         {
-            messageDigestWord[moveIndex] = SIG1(messageDigestWord[moveIndex - 2]) + messageDigestWord[moveIndex - 7] +
-                                           SIG0(messageDigestWord[moveIndex - 15]) + messageDigestWord[moveIndex - 16];
+            messageDigestWord[moveIndex] = SIG1(messageDigestWord[moveIndex - 2]) + messageDigestWord[moveIndex - 7] + SIG0(messageDigestWord[moveIndex - 15]) + messageDigestWord[moveIndex - 16];
         }
 
         a = state[0];

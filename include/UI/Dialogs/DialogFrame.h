@@ -17,20 +17,16 @@ namespace UI
 
         // Draw a centered modal dialog frame: a dim scrim over the screen, a lifted card, a heading
         // title, and an accent underline. Returns the Y at which content should start.
-        inline int drawDialogFrame(PKSEFramebuffer &framebuffer, int dialogX, int dialogY, int dialogWidth,
-                                   int dialogHeight, const std::string &title, Color titleColor)
+        inline int drawDialogFrame(PKSEFramebuffer &framebuffer, int dialogX, int dialogY, int dialogWidth, int dialogHeight, const std::string &title, Color titleColor)
         {
             // scrim
             framebuffer.drawFilledRect(0, 0, framebuffer.getWidth(), framebuffer.getHeight(), Color(0, 0, 0, 150));
             framebuffer.drawSoftShadow(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS);
-            framebuffer.drawFilledRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS,
-                                              Colors::Panel);
-            framebuffer.drawRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS,
-                                        Colors::Border, 1);
+            framebuffer.drawFilledRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS, Colors::Panel);
+            framebuffer.drawRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, DIALOG_CORNER_RADIUS, Colors::Border, 1);
             framebuffer.drawText(dialogX + 24, dialogY + 16, title, titleColor, TextStyle::Heading);
             // Inset so the rule stops short of the rounded corners instead of running into the curve.
-            framebuffer.drawFilledRect(dialogX + DIALOG_CORNER_RADIUS, dialogY + 56,
-                                       dialogWidth - DIALOG_CORNER_RADIUS * 2, 2, Colors::Accent);
+            framebuffer.drawFilledRect(dialogX + DIALOG_CORNER_RADIUS, dialogY + 56, dialogWidth - DIALOG_CORNER_RADIUS * 2, 2, Colors::Accent);
             return dialogY + 78;
         }
 

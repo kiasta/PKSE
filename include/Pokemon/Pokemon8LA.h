@@ -62,8 +62,7 @@ namespace Pokemon
         std::unique_ptr<Pokemon> clone() const override
         {
             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data()));
-            std::byte *encryptedRecord =
-                encryptArray8LA(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
+            std::byte *encryptedRecord = encryptArray8LA(std::span<const std::byte>(data.data(), dataSize), encryptionConstant);
             auto copiedPokemon = std::make_unique<Pokemon8LA>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;
@@ -668,6 +667,13 @@ namespace Pokemon
             std::memcpy(&floatValue, &data[0xB0], sizeof floatValue);
             return floatValue;
         }
+
+        /**
+         * Sets the absolute height and weight from the size scalars (0x50 / 0x51) and the species'
+         * base size, as the game computes them (PKHeX PA8.ResetHeight / ResetWeight). A record that
+         * reaches this format any other way than being caught in it carries no absolutes of its own.
+         */
+        void resetSizeAbsolutes() noexcept;
 
         /**
          * GRIT VALUES (0-10 per stat), Legends: Arceus's replacement for EVs.

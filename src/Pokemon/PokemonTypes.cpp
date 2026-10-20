@@ -50,8 +50,7 @@ namespace Pokemon
     // "never overridden" sentinel defers to the original.
     uint8_t resolveTeraType(uint8_t teraTypeOriginal, uint8_t teraTypeOverride)
     {
-        const bool overrideNamesAType =
-            teraTypeOverride <= TYPE_FAIRY || teraTypeOverride == TERA_TYPE_STELLAR;
+        const bool overrideNamesAType = teraTypeOverride <= TYPE_FAIRY || teraTypeOverride == TERA_TYPE_STELLAR;
         if (overrideNamesAType)
             return teraTypeOverride;
         if (teraTypeOverride != TERA_TYPE_OVERRIDE_NONE)

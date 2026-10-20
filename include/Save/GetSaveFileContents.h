@@ -8,6 +8,7 @@
 #include <switch.h>
 
 #include "Enums/GameVersion.h"
+#include "Save/SaveEnvelope.h"
 #include "Save/TitleFolder.h" // InstalledTitle + the naming rule the migration moves onto
 #include "Trainer/Trainer.h"
 #include "Trainer/Trainer7LGPE.h"
@@ -38,8 +39,7 @@ using namespace Trainer;
 namespace Save
 {
     // Type alias for trainer variants (supports different generation trainers)
-    using TrainerVariant =
-        std::variant<Trainer7LGPE, Trainer8SWSH, Trainer9LZA, Trainer9SV, Trainer8LA, Trainer8BDSP, Trainer3FRLG>;
+    using TrainerVariant = std::variant<Trainer7LGPE, Trainer8SWSH, Trainer9LZA, Trainer9SV, Trainer8LA, Trainer8BDSP, Trainer3FRLG>;
 
     /**
      * Save File Reading/Writing Functions
@@ -97,18 +97,15 @@ namespace Save
      */
     std::unique_ptr<Trainer::Trainer> readTitleSaveAsTrainer(const char *backupDir, u64 titleId);
 
-    bool saveTrainerInfo(Trainer::Trainer &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                         bool injectToTitle);
+    bool saveTrainerInfo(Trainer::Trainer &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer7LGPE readTrainerInfoLetsGo(const char *backupDir);
 
-    bool saveTrainerInfoLetsGo(Trainer7LGPE &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                               bool injectToTitle);
+    bool saveTrainerInfoLetsGo(Trainer7LGPE &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer8SWSH readTrainerInfoSwSh(const char *backupDir);
 
-    bool saveTrainerInfoSwSh(Trainer8SWSH &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoSwSh(Trainer8SWSH &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     Trainer9LZA readTrainerInfoLZA(const char *backupDir);
 
@@ -119,33 +116,28 @@ namespace Save
      */
     Trainer9SV readTrainerInfoSV(const char *backupDir);
 
-    bool saveTrainerInfoLZA(Trainer9LZA &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                            bool injectToTitle);
+    bool saveTrainerInfoLZA(Trainer9LZA &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /**
      * Saves trainer info to a Pokemon Scarlet/Violet save file (dedicated Trainer9SV, packed slots).
      */
-    bool saveTrainerInfoSV(Trainer9SV &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                           bool injectToTitle);
+    bool saveTrainerInfoSV(Trainer9SV &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads trainer info from a Pokemon Legends: Arceus save file (PA8; box slots are stored-size). */
     Trainer8LA readTrainerInfoLA(const char *backupDir);
     /** Saves a Legends: Arceus save (party + box serialize; LA item write is deferred). */
-    bool saveTrainerInfoLA(Trainer8LA &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                           bool injectToTitle);
+    bool saveTrainerInfoLA(Trainer8LA &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads a BDSP (SAV8BDSP) FLAT save (SaveData.bin) into a Trainer8BDSP — no SwishCrypto decrypt. */
     Trainer8BDSP readTrainerInfoBDSP(const char *backupDir);
     /** Saves a BDSP save: flat party/box serialize + whole-file MD5 rehash (SaveData.bin + Backup.bin). */
-    bool saveTrainerInfoBDSP(Trainer8BDSP &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoBDSP(Trainer8BDSP &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /** Reads a GBA FireRed/LeafGreen (SAV3FRLG) 128 KiB save into a Trainer3FRLG (scans the dir for the
      *  128 KiB / *.sav file so Checkpoint exports like "FireRed_e.sav" are found automatically). */
     Trainer3FRLG readTrainerInfoFRLG(const char *backupDir);
     /** Saves an FRLG save: re-encrypt party/boxes/items in place + recompute all 14 sector checksums. */
-    bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid,
-                             bool injectToTitle);
+    bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
     /**
      * Writes a Gen 1 save back to the file it was opened from.
@@ -157,9 +149,6 @@ namespace Save
      * not merely alongside.
      */
     bool saveTrainerInfoRBY(Trainer::Trainer1RBY &trainer, const char *savePath);
-
-    /// True for the generations that arrive as loose files rather than as an installed title.
-    bool isLooseSaveGroup(Enums::GameVersion group) noexcept;
 
     /// A display name for the title bar. Most groups just name themselves; Gen 1 and Gen 2 know
     /// more about their own file than the group does (locale, and for Gen 2 the actual version).
@@ -176,9 +165,17 @@ namespace Save
     /// told apart by which offsets hold well-formed data. Gen 1 is tried before Gen 2 and Gen 4
     /// before Gen 5, exactly as SaveUtil.GetTypeInfo does.
     ///
-    /// `label` receives a display name for the title bar.
-    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes, const std::string &path,
-                                                       std::string *label);
+    /// A file that is not a save as it stands is tried again without each envelope an emulator,
+    /// dumper or online service puts around one (Save/SaveEnvelope.h).
+    ///
+    /// `label` receives a display name for the title bar. `refusalText` receives why the file was
+    /// refused, worded to follow its name: the file browser shows it, so the user is never left to
+    /// guess why nothing opened.
+    std::unique_ptr<Trainer::Trainer> openExternalSave(std::vector<uint8_t> bytes, const std::string &path, std::string *label, std::string *refusalText = nullptr);
+
+    /// Splits a loose save FILE into the envelope around it and the save inside, by the one rule
+    /// openExternalSave and saveExternalSave both follow. False when no loose format is in there.
+    bool findExternalSaveEnvelope(const std::vector<uint8_t> &fileBytes, SaveEnvelope &envelope, std::vector<uint8_t> &saveImage);
 
     /**
      * True when a save of this GROUP arrives as a loose FILE rather than as installed save data.
@@ -186,17 +183,15 @@ namespace Save
      * Derived from the LOOSE_FORMATS table itself, so it cannot drift from what openExternalSave
      * will actually accept. The trade-partner picker is the caller: a record whose format comes
      * from a file gets the file browser, and everything else -- Sword/Shield, BD/SP, S/V, Z-A,
-     * Let's Go, FireRed/LeafGreen -- gets the console's own save list, because those titles have no
-     * file to browse to.
+     * Let's Go -- gets the console's own save list, because those titles have no file to browse to.
+     * FireRed/LeafGreen open both ways; no Gen 3 record reaches the picker, since before Gen 6 a
+     * trade writes nothing to a Pokemon.
      */
     bool groupOpensFromFile(Enums::GameVersion group) noexcept;
 
-    /// True when `bytes` is a save openExternalSave() would accept. Used by the file browser to
-    /// refuse a pick while the file is still on screen, so the two can never disagree.
-    bool isExternalSave(const std::vector<uint8_t> &bytes);
-
-    /// Writes a loose save back to the file it came from, backing up the ORIGINAL bytes first.
-    /// Same contract as saveTrainerInfoRBY, which it now subsumes for every generation.
+    /// Writes a loose save back to the file it came from, backing up the ORIGINAL bytes first, and
+    /// puts back any envelope the file had. Same contract as saveTrainerInfoRBY, which it now
+    /// subsumes for every generation.
     ///
     /// `backupOriginal` is false ONLY for a caller writing to a throwaway copy it made itself and
     /// must leave nothing behind -- the same reason such a caller passes `injectToTitle`

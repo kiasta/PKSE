@@ -43,9 +43,7 @@ namespace UI
     // (UIManager owns it), and it is cleared on destruction so a late eviction is a no-op.
     static PKSEFramebuffer *s_activeFramebuffer = nullptr;
 
-    PKSEFramebuffer::PKSEFramebuffer()
-        : window(nullptr), glContext(nullptr), vg(nullptr),
-          fontSans(-1), fontSym(-1), fontSym2(-1), width(1280), height(720)
+    PKSEFramebuffer::PKSEFramebuffer() : window(nullptr), glContext(nullptr), vg(nullptr), fontSans(-1), fontSym(-1), fontSym2(-1), width(1280), height(720)
     {
 
         // Request an OpenGL 4.3 core context with a stencil buffer — NanoVG needs stencil for its
@@ -61,8 +59,7 @@ namespace UI
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-        window = SDL_CreateWindow("PKSE", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                  width, height, SDL_WINDOW_OPENGL);
+        window = SDL_CreateWindow("PKSE", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_OPENGL);
         if (!window)
         {
             logErrorToFile("SDL_CreateWindow(OPENGL) failed");
@@ -145,9 +142,7 @@ namespace UI
             PlFontData fontData;
             if (R_FAILED(plGetSharedFontByType(&fontData, sharedFont.type)))
                 continue;
-            const int fontId = nvgCreateFontMem(vg, sharedFont.name,
-                                                static_cast<unsigned char *>(fontData.address),
-                                                static_cast<int>(fontData.size), /*freeData=*/0);
+            const int fontId = nvgCreateFontMem(vg, sharedFont.name, static_cast<unsigned char *>(fontData.address), static_cast<int>(fontData.size), /*freeData=*/0);
             if (fontId >= 0 && fontSans >= 0)
                 nvgAddFallbackFontId(vg, fontSans, fontId);
         }
@@ -292,8 +287,7 @@ namespace UI
         nvgStroke(vg);
     }
 
-    void PKSEFramebuffer::drawFilledRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius,
-                                                Color color)
+    void PKSEFramebuffer::drawFilledRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color)
     {
         if (rectWidth <= 0 || rectHeight <= 0 || !ensureFrame())
             return;
@@ -308,8 +302,7 @@ namespace UI
         nvgFill(vg);
     }
 
-    void PKSEFramebuffer::drawRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius,
-                                          Color color, int thickness)
+    void PKSEFramebuffer::drawRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color, int thickness)
     {
         if (rectWidth <= 0 || rectHeight <= 0 || thickness <= 0 || !ensureFrame())
             return;
@@ -320,8 +313,7 @@ namespace UI
             cornerRadius = 0;
         float strokeWidth = (float)thickness;
         nvgBeginPath(vg);
-        nvgRoundedRect(vg, rectX + strokeWidth * 0.5f, rectY + strokeWidth * 0.5f, rectWidth - strokeWidth,
-                       rectHeight - strokeWidth, std::max(0.0f, cornerRadius - strokeWidth * 0.5f));
+        nvgRoundedRect(vg, rectX + strokeWidth * 0.5f, rectY + strokeWidth * 0.5f, rectWidth - strokeWidth, rectHeight - strokeWidth, std::max(0.0f, cornerRadius - strokeWidth * 0.5f));
         nvgStrokeColor(vg, toNVG(color));
         nvgStrokeWidth(vg, strokeWidth);
         nvgStroke(vg);
@@ -408,8 +400,7 @@ namespace UI
         auto shade = [&](float floatValue) { // f < 1 darkens, f > 1 lightens toward white
             auto shadeChannel = [&](int value)
             {
-                const float offset =
-                    (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
+                const float offset = (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
                 return (unsigned char)std::min(255.0f, std::max(0.0f, offset));
             };
             return nvgRGBA(shadeChannel(color.red), shadeChannel(color.green), shadeChannel(color.blue), color.alpha);
@@ -445,8 +436,7 @@ namespace UI
         nvgLineTo(vg, iconX + iconWidth - cornerRadius, frontTop);
         nvgQuadTo(vg, iconX + iconWidth, frontTop, iconX + iconWidth, frontTop + cornerRadius);
         nvgLineTo(vg, iconX + iconWidth - splayB, top + iconHeight - cornerRadius);
-        nvgQuadTo(vg, iconX + iconWidth - splayB, top + iconHeight, iconX + iconWidth - splayB - cornerRadius,
-                  top + iconHeight);
+        nvgQuadTo(vg, iconX + iconWidth - splayB, top + iconHeight, iconX + iconWidth - splayB - cornerRadius, top + iconHeight);
         nvgLineTo(vg, iconX + splayB + cornerRadius, top + iconHeight);
         nvgQuadTo(vg, iconX + splayB, top + iconHeight, iconX + splayB, top + iconHeight - cornerRadius);
         nvgClosePath(vg);
@@ -473,8 +463,7 @@ namespace UI
         {
             auto shadeChannel = [&](int value)
             {
-                const float offset =
-                    (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
+                const float offset = (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
                 return (unsigned char)std::min(255.0f, std::max(0.0f, offset));
             };
             return nvgRGBA(shadeChannel(color.red), shadeChannel(color.green), shadeChannel(color.blue), color.alpha);
@@ -531,6 +520,83 @@ namespace UI
         nvgFill(vg);
     }
 
+    void PKSEFramebuffer::drawBackspaceIcon(int iconX, int iconY, int size, Color color)
+    {
+        // A 16x16 art box scaled to `size`. The tag spans x 1.2..14.8 and y 3.2..12.8, symmetric
+        // about the box's centre; the cross sits in the middle of the tag's square body, not of the
+        // box, or it crowds the point.
+        if (size <= 3 || !ensureFrame())
+            return;
+        const float unitScale = size / 16.0f;
+        const float strokeWidth = std::max(1.5f, 1.6f * unitScale);
+        const float bodyLeft = iconX + 5.4f * unitScale;
+        const float bodyRight = iconX + 14.8f * unitScale;
+        const float bodyTop = iconY + 3.2f * unitScale;
+        const float bodyBottom = iconY + 12.8f * unitScale;
+        const float centerY = iconY + 8.0f * unitScale;
+
+        nvgLineJoin(vg, NVG_ROUND);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, iconX + 1.2f * unitScale, centerY); // the point
+        nvgLineTo(vg, bodyLeft, bodyTop);
+        nvgLineTo(vg, bodyRight, bodyTop);
+        nvgLineTo(vg, bodyRight, bodyBottom);
+        nvgLineTo(vg, bodyLeft, bodyBottom);
+        nvgClosePath(vg);
+        nvgStrokeColor(vg, toNVG(color));
+        nvgStrokeWidth(vg, strokeWidth);
+        nvgStroke(vg);
+
+        const float crossCenterX = (bodyLeft + bodyRight) * 0.5f;
+        const float crossReach = 2.1f * unitScale;
+        nvgLineCap(vg, NVG_ROUND);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, crossCenterX - crossReach, centerY - crossReach);
+        nvgLineTo(vg, crossCenterX + crossReach, centerY + crossReach);
+        nvgMoveTo(vg, crossCenterX + crossReach, centerY - crossReach);
+        nvgLineTo(vg, crossCenterX - crossReach, centerY + crossReach);
+        nvgStroke(vg);
+        // Nothing in this file wraps its state in nvgSave/nvgRestore, so the next stroke drawn this
+        // frame would inherit both.
+        nvgLineCap(vg, NVG_BUTT);
+        nvgLineJoin(vg, NVG_MITER);
+    }
+
+    void PKSEFramebuffer::drawShiftIcon(int iconX, int iconY, int size, Color color, bool filled)
+    {
+        // A 16x16 art box scaled to `size`: the arrow runs x 1.8..14.2 and y 1.8..14.2. One path, so
+        // the outline has no seam where the head meets the shaft.
+        if (size <= 3 || !ensureFrame())
+            return;
+        const float unitScale = size / 16.0f;
+        const float centerX = iconX + 8.0f * unitScale;
+        const float headBaseY = iconY + 8.4f * unitScale;
+        const float halfShaft = 2.8f * unitScale;
+        const float shaftBottomY = iconY + 14.2f * unitScale;
+
+        nvgLineJoin(vg, NVG_ROUND);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, centerX, iconY + 1.8f * unitScale); // apex
+        nvgLineTo(vg, iconX + 14.2f * unitScale, headBaseY);
+        nvgLineTo(vg, centerX + halfShaft, headBaseY);
+        nvgLineTo(vg, centerX + halfShaft, shaftBottomY);
+        nvgLineTo(vg, centerX - halfShaft, shaftBottomY);
+        nvgLineTo(vg, centerX - halfShaft, headBaseY);
+        nvgLineTo(vg, iconX + 1.8f * unitScale, headBaseY);
+        nvgClosePath(vg);
+        if (filled)
+        {
+            nvgFillColor(vg, toNVG(color));
+            nvgFill(vg);
+        }
+        // Stroked in both states: the fill alone would sit half a stroke inside the outline's
+        // extents, and the arrow would visibly shrink when shift came on.
+        nvgStrokeColor(vg, toNVG(color));
+        nvgStrokeWidth(vg, std::max(1.5f, 1.6f * unitScale));
+        nvgStroke(vg);
+        nvgLineJoin(vg, NVG_MITER);
+    }
+
     void PKSEFramebuffer::drawSearchIcon(int iconX, int iconY, int size, Color color)
     {
         // Proportions are a 16x16 art box scaled to `size`, chosen so the glyph's extents are
@@ -551,8 +617,7 @@ namespace UI
         // magnifier to someone who already knows that is what they are looking at.
         nvgBeginPath(vg);
         nvgCircle(vg, lensCenterX, lensCenterY, lensRadius);
-        nvgFillColor(vg, nvgRGBA(color.red, color.green, color.blue,
-                                 (unsigned char)(color.alpha * 0.16f)));
+        nvgFillColor(vg, nvgRGBA(color.red, color.green, color.blue, (unsigned char)(color.alpha * 0.16f)));
         nvgFill(vg);
 
         // The handle, running out along the diagonal from under the rim. Its start is placed so
@@ -648,8 +713,7 @@ namespace UI
         auto shade = [&](float floatValue) { // f < 1 darkens, f > 1 lightens toward white
             auto shadeChannel = [&](int value)
             {
-                const float shadedChannel =
-                    (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
+                const float shadedChannel = (floatValue <= 1.0f) ? value * floatValue : value + (255.0f - value) * (floatValue - 1.0f);
                 return (unsigned char)std::min(255.0f, std::max(0.0f, shadedChannel));
             };
             return nvgRGBA(shadeChannel(color.red), shadeChannel(color.green), shadeChannel(color.blue), color.alpha);
@@ -673,8 +737,7 @@ namespace UI
         nvgStrokeWidth(vg, outer * 0.9f);
         nvgStroke(vg);
         // Lit from the upper-left, falling off across the head.
-        NVGpaint body = nvgLinearGradient(vg, tipX - halfW * artScale, baseY - artH * artScale, tipX + halfW * artScale,
-                                          baseY, shade(1.5f), toNVG(color));
+        NVGpaint body = nvgLinearGradient(vg, tipX - halfW * artScale, baseY - artH * artScale, tipX + halfW * artScale, baseY, shade(1.5f), toNVG(color));
         nvgFillPaint(vg, body);
         nvgFill(vg);
     }
@@ -683,8 +746,7 @@ namespace UI
     {
         drawFilledRoundedRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2, color);
     }
-    void PKSEFramebuffer::drawPillBorder(int pillX, int pillY, int pillWidth, int pillHeight, Color color,
-                                         int thickness)
+    void PKSEFramebuffer::drawPillBorder(int pillX, int pillY, int pillWidth, int pillHeight, Color color, int thickness)
     {
         drawRoundedRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2, color, thickness);
     }
@@ -704,33 +766,27 @@ namespace UI
         if (shadowWidth <= 0 || shadowHeight <= 0 || !ensureFrame())
             return;
         // Real feathered drop shadow: box gradient in the ring around the element (hole in the middle).
-        NVGpaint shadowPaint =
-            nvgBoxGradient(vg, (float)shadowX, shadowY + 3.0f, (float)shadowWidth, (float)shadowHeight,
-                           cornerRadius + 2.0f, 12.0f, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0));
+        NVGpaint shadowPaint = nvgBoxGradient(vg, (float)shadowX, shadowY + 3.0f, (float)shadowWidth, (float)shadowHeight, cornerRadius + 2.0f, 12.0f, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0));
         nvgBeginPath(vg);
         nvgRect(vg, shadowX - 14.0f, shadowY - 14.0f, shadowWidth + 28.0f, shadowHeight + 28.0f);
-        nvgRoundedRect(vg, (float)shadowX, (float)shadowY, (float)shadowWidth, (float)shadowHeight,
-                       (float)cornerRadius);
+        nvgRoundedRect(vg, (float)shadowX, (float)shadowY, (float)shadowWidth, (float)shadowHeight, (float)cornerRadius);
         nvgPathWinding(vg, NVG_HOLE);
         nvgFillPaint(vg, shadowPaint);
         nvgFill(vg);
     }
 
-    void PKSEFramebuffer::drawVerticalGradient(int gradientX, int gradientY, int gradientWidth, int gradientHeight,
-                                               Color top, Color bottom)
+    void PKSEFramebuffer::drawVerticalGradient(int gradientX, int gradientY, int gradientWidth, int gradientHeight, Color top, Color bottom)
     {
         if (gradientWidth <= 0 || gradientHeight <= 0 || !ensureFrame())
             return;
-        NVGpaint gradientPaint = nvgLinearGradient(vg, (float)gradientX, (float)gradientY, (float)gradientX,
-                                                   (float)(gradientY + gradientHeight), toNVG(top), toNVG(bottom));
+        NVGpaint gradientPaint = nvgLinearGradient(vg, (float)gradientX, (float)gradientY, (float)gradientX, (float)(gradientY + gradientHeight), toNVG(top), toNVG(bottom));
         nvgBeginPath(vg);
         nvgRect(vg, (float)gradientX, (float)gradientY, (float)gradientWidth, (float)gradientHeight);
         nvgFillPaint(vg, gradientPaint);
         nvgFill(vg);
     }
 
-    void PKSEFramebuffer::drawStatHexagon(int centerX, int centerY, int hexRadius, const float *values, int count,
-                                          float maxValue, Color fill, Color webColor, Color outline)
+    void PKSEFramebuffer::drawStatHexagon(int centerX, int centerY, int hexRadius, const float *values, int count, float maxValue, Color fill, Color webColor, Color outline)
     {
         if (hexRadius <= 0 || count <= 0 || !values || !ensureFrame())
             return;
@@ -776,8 +832,7 @@ namespace UI
         {
             double value = maxValue > 0.0f ? values[index] / maxValue : 0.0;
             value = std::clamp(value, 0.06, 1.0);
-            float panelX = axisX(axisAngles[index], hexRadius * value),
-                  py = axisY(axisAngles[index], hexRadius * value);
+            float panelX = axisX(axisAngles[index], hexRadius * value), py = axisY(axisAngles[index], hexRadius * value);
             if (index == 0)
                 nvgMoveTo(vg, panelX, py);
             else
@@ -903,40 +958,35 @@ namespace UI
         return image;
     }
 
-    void PKSEFramebuffer::drawImage(int imageX, int imageY, int imageWidth, int imageHeight, const unsigned char *data,
-                                    int channels)
+    void PKSEFramebuffer::drawImage(int imageX, int imageY, int imageWidth, int imageHeight, const unsigned char *data, int channels)
     {
         if (!ensureFrame())
             return;
         int image = nvgImageFor(data, imageWidth, imageHeight, channels);
         if (image < 0)
             return;
-        NVGpaint imagePaint =
-            nvgImagePattern(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight, 0.0f, image, 1.0f);
+        NVGpaint imagePaint = nvgImagePattern(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight, 0.0f, image, 1.0f);
         nvgBeginPath(vg);
         nvgRect(vg, (float)imageX, (float)imageY, (float)imageWidth, (float)imageHeight);
         nvgFillPaint(vg, imagePaint);
         nvgFill(vg);
     }
 
-    void PKSEFramebuffer::drawImageScaled(int imageX, int imageY, int imageWidth, int imageHeight, int destWidth,
-                                          int destHeight, const unsigned char *data, int channels)
+    void PKSEFramebuffer::drawImageScaled(int imageX, int imageY, int imageWidth, int imageHeight, int destWidth, int destHeight, const unsigned char *data, int channels)
     {
         if (!ensureFrame())
             return;
         int image = nvgImageFor(data, imageWidth, imageHeight, channels);
         if (image < 0)
             return;
-        NVGpaint imagePaint =
-            nvgImagePattern(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight, 0.0f, image, 1.0f);
+        NVGpaint imagePaint = nvgImagePattern(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight, 0.0f, image, 1.0f);
         nvgBeginPath(vg);
         nvgRect(vg, (float)imageX, (float)imageY, (float)destWidth, (float)destHeight);
         nvgFillPaint(vg, imagePaint);
         nvgFill(vg);
     }
 
-    void PKSEFramebuffer::drawSpriteIdle(int spriteX, int spriteY, int boxWidth, int boxHeight, int sourceWidth,
-                                         int sourceHeight, const unsigned char *data, int channels, float phase)
+    void PKSEFramebuffer::drawSpriteIdle(int spriteX, int spriteY, int boxWidth, int boxHeight, int sourceWidth, int sourceHeight, const unsigned char *data, int channels, float phase)
     {
         if (!data || boxWidth <= 0 || boxHeight <= 0)
             return;
@@ -959,8 +1009,7 @@ namespace UI
         drawRoundedRect(cardX, cardY, cardWidth, cardHeight, 14, Colors::Border, 1);
     }
 
-    void PKSEFramebuffer::drawSelectionHighlight(int highlightX, int highlightY, int highlightWidth,
-                                                 int highlightHeight)
+    void PKSEFramebuffer::drawSelectionHighlight(int highlightX, int highlightY, int highlightWidth, int highlightHeight)
     {
         drawFilledRoundedRect(highlightX, highlightY, highlightWidth, highlightHeight, 10, Colors::Selected);
         drawRoundedRect(highlightX, highlightY, highlightWidth, highlightHeight, 10, Colors::Accent, 2);
@@ -993,7 +1042,6 @@ namespace UI
         if (fadeProgress < 0.0 || fadeProgress >= 1.0)
             return;
         Uint8 fadeAlpha = static_cast<Uint8>((1.0 - fadeProgress) * 255.0);
-        drawFilledRect(0, 0, width, height,
-                       Color(Colors::Background.red, Colors::Background.green, Colors::Background.blue, fadeAlpha));
+        drawFilledRect(0, 0, width, height, Color(Colors::Background.red, Colors::Background.green, Colors::Background.blue, fadeAlpha));
     }
 }

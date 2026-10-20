@@ -28,6 +28,7 @@
 #ifndef UI_LIST_SEARCH_H
 #define UI_LIST_SEARCH_H
 
+#include <functional>
 #include <string>
 
 #include "UI/Common.h"
@@ -52,13 +53,23 @@ namespace UI
 
         bool matches(const char *label) const { return listSearchMatches(label, query); }
 
-        /// Opens the console keyboard seeded with the current query and stores what comes back.
+        enum class FilterTiming
+        {
+            /// The query updates with every key, and `queryChanged` runs after each update so the
+            /// list can re-filter under the keyboard while it is still open.
+            WhileTyping,
+            /// The query updates once, when the prompt is accepted.
+            OnAccept
+        };
+
+        /// Opens the keyboard seeded with the current query and stores what it produces.
         /// Returns true when the query changed, so a caller can re-clamp its selection.
         ///
-        /// A CANCEL LEAVES THE QUERY ALONE. Treating it as an empty string would silently drop a
-        /// filter the user had set and wanted to keep -- the same trap Keyboard.h warns about for
-        /// the fields it edits.
-        bool promptForQuery(const std::string &listName);
+        /// A CANCEL LEAVES THE QUERY ALONE -- or, while typing, PUTS IT BACK: the query the list
+        /// was filtered by before the keyboard opened is restored, and `queryChanged` runs once more
+        /// for it. Treating a cancel as an empty string would silently drop a filter the user had set
+        /// and wanted to keep -- the same trap Keyboard.h warns about for the fields it edits.
+        bool promptForQuery(const std::string &listName, FilterTiming timing, const std::function<void()> &queryChanged = nullptr);
     };
 
     /// Height of the row drawListSearchBox() draws, so a caller can lay its list out before
@@ -70,8 +81,7 @@ namespace UI
     /// `matchCount` / `totalCount` are shown because a filter that hides everything otherwise looks
     /// like an empty list -- "0 of 632" says the query is wrong, where a blank panel says the data
     /// is missing. That distinction is exactly what issue  turned on.
-    void drawListSearchBox(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth,
-                           const ListSearch &search, int matchCount, int totalCount);
+    void drawListSearchBox(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, const ListSearch &search, int matchCount, int totalCount);
 }
 
 #endif

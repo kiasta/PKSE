@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -34,9 +35,7 @@ namespace UI
             for (const char *start = label; *start != '\0'; ++start)
             {
                 size_t termIndex = 0;
-                while (termIndex < term.size() &&
-                       start[termIndex] != '\0' &&
-                       toLowerAscii(start[termIndex]) == toLowerAscii(term[termIndex]))
+                while (termIndex < term.size() && start[termIndex] != '\0' && toLowerAscii(start[termIndex]) == toLowerAscii(term[termIndex]))
                     ++termIndex;
                 if (termIndex == term.size())
                     return true;
@@ -71,35 +70,39 @@ namespace UI
         return true;
     }
 
-    bool ListSearch::promptForQuery(const std::string &listName)
+    bool ListSearch::promptForQuery(const std::string &listName, FilterTiming timing, const std::function<void()> &queryChanged)
     {
-        const Utils::KeyboardResult typed =
-            Utils::promptText("Search " + listName, "Type part of a name", query, 32);
-        if (!typed.accepted)
-            return false; // a cancel keeps the filter the user already had
-        if (typed.text == query)
-            return false;
-        query = typed.text;
-        return true;
+        const std::string queryBeforeTyping = query;
+        const auto followQuery = [this, &queryChanged](const std::string &typedText)
+        {
+            if (typedText == query)
+                return;
+            query = typedText;
+            if (queryChanged)
+                queryChanged();
+        };
+        std::function<void(const std::string &)> textChanged;
+        if (timing == FilterTiming::WhileTyping)
+            textChanged = followQuery;
+        const Utils::KeyboardResult typed = Utils::promptText("Search " + listName, "Type part of a name", query, 32, textChanged);
+        followQuery(typed.accepted ? typed.text : queryBeforeTyping);
+        return query != queryBeforeTyping;
     }
 
     int listSearchBoxHeight() noexcept { return 34; }
 
-    void drawListSearchBox(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth,
-                           const ListSearch &search, int matchCount, int totalCount)
+    void drawListSearchBox(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, const ListSearch &search, int matchCount, int totalCount)
     {
         const int boxHeight = listSearchBoxHeight() - 6;
         const bool filtering = search.isFiltering();
         framebuffer.drawFilledRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, Colors::PanelAlt);
-        framebuffer.drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 8,
-                                    filtering ? Colors::Accent : Colors::Border, filtering ? 2 : 1);
+        framebuffer.drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, filtering ? Colors::Accent : Colors::Border, filtering ? 2 : 1);
 
         // The magnifier. Drawn rather than set in text -- the UI font has no such glyph -- and sized off
         // the box so the two cannot drift apart. See PKSEFramebuffer::drawSearchIcon for why it is a whole
         // icon rather than a circle beside a stub.
         const int iconSize = std::max(12, boxHeight - 10);
-        framebuffer.drawSearchIcon(boxX + 7, boxY + (boxHeight - iconSize) / 2, iconSize,
-                                   filtering ? Colors::Accent : Colors::TextDim);
+        framebuffer.drawSearchIcon(boxX + 7, boxY + (boxHeight - iconSize) / 2, iconSize, filtering ? Colors::Accent : Colors::TextDim);
 
         const int textX = boxX + 32;
         const int textY = boxY + (boxHeight - framebuffer.lineHeight(TextStyle::Body)) / 2;
@@ -119,9 +122,7 @@ namespace UI
             const std::string tally = std::to_string(matchCount) + " of " + std::to_string(totalCount);
             int tallyWidth = 0, tallyHeight = 0;
             framebuffer.measureText(tally, tallyWidth, tallyHeight, TextStyle::Caption);
-            framebuffer.drawText(boxX + boxWidth - 12 - tallyWidth, boxY + (boxHeight - tallyHeight) / 2,
-                                 tally, matchCount == 0 ? Colors::ShinyStar : Colors::TextDim,
-                                 TextStyle::Caption);
+            framebuffer.drawText(boxX + boxWidth - 12 - tallyWidth, boxY + (boxHeight - tallyHeight) / 2, tally, matchCount == 0 ? Colors::ShinyStar : Colors::TextDim, TextStyle::Caption);
         }
     }
 }

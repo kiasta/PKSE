@@ -117,8 +117,7 @@ namespace Pokemon
         }
 
         int hitPoints = ((2 * baseHP() + effectiveIV(HT_HP) + (evHP() / 4)) * levelValue) / 100 + levelValue + 10;
-        const uint16_t oldMax =
-            readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x14A)); // before it is overwritten
+        const uint16_t oldMax = readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x14A)); // before it is overwritten
         writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x14A), static_cast<uint16_t>(hitPoints));
         if (oldMax != static_cast<uint16_t>(hitPoints))
             writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x8A), static_cast<uint16_t>(hitPoints));
@@ -136,15 +135,13 @@ namespace Pokemon
 
         for (int index = 0; index < 5; index++)
         {
-            int baseStat =
-                ((2 * baseStats[index] + individualValues[index] + (effortValues[index] / 4)) * levelValue) / 100 + 5;
+            int baseStat = ((2 * baseStats[index] + individualValues[index] + (effortValues[index] / 4)) * levelValue) / 100 + 5;
 
             int modifier = getNatureModifier(index);
             stats[index] = (baseStat * modifier) / 100;
         }
 
-        writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x14C),
-                                static_cast<uint16_t>(stats[0])); // ATK
+        writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x14C), static_cast<uint16_t>(stats[0])); // ATK
         // DEF
         writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x14E), static_cast<uint16_t>(stats[1]));
         // SPE
@@ -246,8 +243,7 @@ namespace Pokemon
         {
             uint32_t newPID = (basePID & 0xFFFFFF00) | genderByte;
 
-            uint32_t xorValue =
-                ((newPID >> 16) ^ (newPID & 0xFFFF) ^ (trainerID32 >> 16) ^ (trainerID32 & 0xFFFF)) & 0xFFFF;
+            uint32_t xorValue = ((newPID >> 16) ^ (newPID & 0xFFFF) ^ (trainerID32 >> 16) ^ (trainerID32 & 0xFFFF)) & 0xFFFF;
             if (xorValue < 16)
             {
                 newPID ^= 0x100;

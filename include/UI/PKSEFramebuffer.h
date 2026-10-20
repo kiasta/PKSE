@@ -44,12 +44,9 @@ namespace UI
         // Draw a symbol (gender ♂/♀, star ★, heart ♥, ◀ ▶, …) via the fallback symbol font,
         // since the primary UI font (Nunito) doesn't include these glyphs. `style` picks the size,
         // so a symbol placed inside a small badge can be measured and drawn at the same (Caption) size.
-        void drawSymbol(int symbolX, int symbolY, const std::string &symbol, Color color,
-                        TextStyle style = TextStyle::Body);
-        void drawImage(int imageX, int imageY, int sourceWidth, int sourceHeight, const unsigned char *imageData,
-                       int channels);
-        void drawImageScaled(int imageX, int imageY, int sourceWidth, int sourceHeight, int destWidth, int destHeight,
-                             const unsigned char *imageData, int channels);
+        void drawSymbol(int symbolX, int symbolY, const std::string &symbol, Color color, TextStyle style = TextStyle::Body);
+        void drawImage(int imageX, int imageY, int sourceWidth, int sourceHeight, const unsigned char *imageData, int channels);
+        void drawImageScaled(int imageX, int imageY, int sourceWidth, int sourceHeight, int destWidth, int destHeight, const unsigned char *imageData, int channels);
         void flush();
 
         // Textures are cached under the ADDRESS of the pixel buffer they were built from, so when
@@ -75,8 +72,7 @@ namespace UI
         // Anti-aliased on the horizontal edges of rounded corners (fractional coverage);
         // straight edges are exact. `r` is the corner radius (clamped to min(w,h)/2).
         void drawFilledRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color);
-        void drawRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color,
-                             int thickness = 1);
+        void drawRoundedRect(int rectX, int rectY, int rectWidth, int rectHeight, int cornerRadius, Color color, int thickness = 1);
         void drawFilledCircle(int centerX, int centerY, int radius, Color color);
         void drawCircle(int centerX, int centerY, int radius, Color color, int thickness = 1);
         // Draws a Pokemon egg (cream oval + teal spots) centered at (cx,cy), ~size px tall.
@@ -126,6 +122,16 @@ namespace UI
          * caller centres the icon by centring its box -- the contract every icon here keeps.
          */
         void drawEvolveArrow(int iconX, int iconY, int size, Color color);
+        /**
+         * The on-screen keyboard's two function-key marks: backspace, a tag pointing left with a
+         * cross in it, and shift, an upward arrow drawn in outline -- or `filled` while shift is on.
+         *
+         * Drawn rather than set in text: neither the UI font nor its symbol fallbacks carry the
+         * keyboard glyphs. Anchored top-left in a `size` x `size` box with symmetric extents, like
+         * every icon here, so a caller centres one by centring its box.
+         */
+        void drawBackspaceIcon(int iconX, int iconY, int size, Color color);
+        void drawShiftIcon(int iconX, int iconY, int size, Color color, bool filled);
         // Storage-grid cursor: a wide arrowhead pointing straight down, no shaft. Its POINT lands on
         // (tipX, tipY) with the head above, symmetric about that x. `headHeight` sizes the head --
         // the visible arrow; the mitred outline runs on below it to the point at tipY, adding ~27%
@@ -137,20 +143,17 @@ namespace UI
         // Soft drop shadow / elevation under a card, pill, or bar (layered translucent rounded rects).
         void drawSoftShadow(int shadowX, int shadowY, int shadowWidth, int shadowHeight, int cornerRadius);
         // Vertical two-stop gradient (screen backdrops, header/pill fills).
-        void drawVerticalGradient(int gradientX, int gradientY, int gradientWidth, int gradientHeight, Color top,
-                                  Color bottom);
+        void drawVerticalGradient(int gradientX, int gradientY, int gradientWidth, int gradientHeight, Color top, Color bottom);
         // The signature stat radar. `values` must be in HOME vertex order
         // [HP, Attack, Defense, Speed, Sp.Def, Sp.Atk] (HP at top, clockwise). Draws the
         // web + spokes, a translucent filled polygon, and the outline. Labels are the caller's job.
-        void drawStatHexagon(int centerX, int centerY, int hexRadius, const float *values, int count,
-                             float maxValue, Color fill, Color webColor, Color outline);
+        void drawStatHexagon(int centerX, int centerY, int hexRadius, const float *values, int count, float maxValue, Color fill, Color webColor, Color outline);
         // Two-tone rounded type badge (HOME style): colored icon chip + name. Returns total width drawn.
         int drawTypeBadge(int badgeX, int badgeY, const std::string &typeName, Color typeColor);
         // Draw a sprite with a gentle idle animation (bob + breathe) and a soft ground
         // shadow, driven by the frame tick. (x,y,boxW,boxH) is the nominal placement box;
         // (srcW,srcH) the sprite's native size; `phase` offsets the timing per sprite.
-        void drawSpriteIdle(int spriteX, int spriteY, int boxWidth, int boxHeight, int sourceWidth, int sourceHeight,
-                            const unsigned char *data, int channels, float phase);
+        void drawSpriteIdle(int spriteX, int spriteY, int boxWidth, int boxHeight, int sourceWidth, int sourceHeight, const unsigned char *data, int channels, float phase);
 
         int getWidth() const { return width; }
         int getHeight() const { return height; }

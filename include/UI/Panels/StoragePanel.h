@@ -16,11 +16,12 @@ namespace UI
          * and once grabbed the whole block rides the cursor -- drawn on top of both panes so the
          * Pokemon stay visible the entire way across the screen.
          */
-        void drawStorageView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int storageViewX,
-                             int storageViewY, int storageViewWidth, int storageViewHeight);
+        void drawStorageView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int storageViewX, int storageViewY, int storageViewWidth, int storageViewHeight);
 
-        /// Red-mode per-Pokemon action menu (Move / Edit / Release / Cancel).
+        /// Per-Pokemon action menu (Move / Edit / Clone / Export / Release / Cancel).
         void drawStorageActionMenu(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer);
+        /// The box menu (Sort / Search / Cancel), opened with X in the Boxes and Storage views.
+        void drawStorageBoxMenu(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer);
         /// Options for the block in hand (Release all / Put back / Cancel), opened with Minus.
         void drawStorageGroupMenu(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer);
         /// Release confirmation (single Pokemon or the whole carried block).

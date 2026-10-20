@@ -52567,12 +52567,9 @@ namespace Legality {
             case ENCOUNTER_LOCATION_SWSH_WILDAREA:
                 return metLocation >= 122 && metLocation <= 154;
             case ENCOUNTER_LOCATION_SWSH_WILDAREA_ISLE_OF_ARMOR:
-                return (metLocation >= 122 && metLocation <= 154)
-                    || (metLocation >= 164 && metLocation <= 194);
+                return (metLocation >= 122 && metLocation <= 154) || (metLocation >= 164 && metLocation <= 194);
             case ENCOUNTER_LOCATION_SWSH_WILDAREA_ALL:
-                return (metLocation >= 122 && metLocation <= 154)
-                    || (metLocation >= 164 && metLocation <= 194)
-                    || (metLocation >= 204 && metLocation <= 234 && metLocation != 206);
+                return (metLocation >= 122 && metLocation <= 154) || (metLocation >= 164 && metLocation <= 194) || (metLocation >= 204 && metLocation <= 234 && metLocation != 206);
             // A roamer is met where it was cornered. EncounterStatic3 tests one flat
             // range; EncounterStatic4 tests a bitmask per region, and takes the union
             // of its grass and water sets here because PKSE does not read GroundTile --
@@ -52580,14 +52577,11 @@ namespace Legality {
             case ENCOUNTER_LOCATION_ROAMER3:
                 return metLocation >= 16 && metLocation <= 49;
             case ENCOUNTER_LOCATION_ROAMER4_SINNOH:
-                return metLocation >= 16 && metLocation < 50
-                    && ((0x2803FFFFFULL >> (metLocation - 16)) & 1) != 0;
+                return metLocation >= 16 && metLocation < 50 && ((0x2803FFFFFULL >> (metLocation - 16)) & 1) != 0;
             case ENCOUNTER_LOCATION_ROAMER4_JOHTO:
-                return metLocation >= 177 && metLocation < 195
-                    && ((0x3E7FFULL >> (metLocation - 177)) & 1) != 0;
+                return metLocation >= 177 && metLocation < 195 && ((0x3E7FFULL >> (metLocation - 177)) & 1) != 0;
             case ENCOUNTER_LOCATION_ROAMER4_KANTO:
-                return metLocation >= 149 && metLocation < 177
-                    && ((0xABFFFFFULL >> (metLocation - 149)) & 1) != 0;
+                return metLocation >= 149 && metLocation < 177 && ((0xABFFFFFULL >> (metLocation - 149)) & 1) != 0;
             case ENCOUNTER_LOCATION_ROAMER5:
                 return metLocation < 32 && ((0xBFFF8000U >> metLocation) & 1) != 0;
             case ENCOUNTER_LOCATION_ROAMER2:

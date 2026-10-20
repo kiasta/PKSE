@@ -102,8 +102,7 @@ namespace Conversion
         }
 
         // Encrypt a decrypted buffer with the destination format's crypto (all four use Encrypt8).
-        std::byte *encryptFor(GameVersion gameVersion, std::span<const std::byte> decryptedRecord,
-                              uint32_t encryptionConstant)
+        std::byte *encryptFor(GameVersion gameVersion, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant)
         {
             switch (gameVersion)
             {
@@ -207,8 +206,7 @@ namespace Conversion
             // (LGPE = Kanto + Meltan/Melmetal + Alolan forms).
             auto inFamily = [](GameVersion gameVersion)
             {
-                return isG8(gameVersion) || isG9(gameVersion) || isG7(gameVersion) || gameVersion == GameVersion::PLA ||
-                       gameVersion == GameVersion::GG || isGen3Group(gameVersion);
+                return isG8(gameVersion) || isG9(gameVersion) || isG7(gameVersion) || gameVersion == GameVersion::PLA || gameVersion == GameVersion::GG || isGen3Group(gameVersion);
             };
             // Gen 1 and Gen 2 join the family ONE WAY. They leave through Poke Transporter, which
             // builds a Gen 7 record -- that is the only route out of those games that has ever
@@ -275,8 +273,7 @@ namespace Conversion
             // That is exactly the "the game can hold it but shouldn't" case g_allowIllegalEdits exists
             // for, so the setting lifts it. Left on by default, since the arriving Pokemon really would
             // be flagged illegal.
-            if (destination == GameVersion::BDSP && (species == 327 /*Spinda*/ || species == 290 /*Nincada*/) &&
-                !g_allowIllegalEdits)
+            if (destination == GameVersion::BDSP && (species == 327 /*Spinda*/ || species == 290 /*Nincada*/) && !g_allowIllegalEdits)
                 return Result::Blocked;
             return Result::Ok;
         }
@@ -320,13 +317,11 @@ namespace Conversion
         }
         inline uint16_t rd16(const std::vector<std::byte> &recordBytes, size_t offset)
         {
-            return static_cast<uint16_t>(rd8(recordBytes, offset)) |
-                   (static_cast<uint16_t>(rd8(recordBytes, offset + 1)) << 8);
+            return static_cast<uint16_t>(rd8(recordBytes, offset)) | (static_cast<uint16_t>(rd8(recordBytes, offset + 1)) << 8);
         }
         inline uint32_t rd32(const std::vector<std::byte> &recordBytes, size_t offset)
         {
-            return static_cast<uint32_t>(rd16(recordBytes, offset)) |
-                   (static_cast<uint32_t>(rd16(recordBytes, offset + 2)) << 16);
+            return static_cast<uint32_t>(rd16(recordBytes, offset)) | (static_cast<uint32_t>(rd16(recordBytes, offset + 2)) << 16);
         }
         inline void wr16(std::vector<std::byte> &recordBytes, size_t offset, uint16_t value)
         {
@@ -356,9 +351,7 @@ namespace Conversion
         // so the name simply ends at the first character it cannot place.
 
         // Gen 3 name (maxG3 bytes @ s+soff) -> UTF-16LE (dstBytes @ d+doff, zero-terminated + zero-padded).
-        void g3NameToUtf16(std::vector<std::byte> &destinationBytes, size_t doff,
-                           const std::vector<std::byte> &sourceBytes, size_t soff, int maxG3, int dstBytes,
-                           uint8_t languageId)
+        void g3NameToUtf16(std::vector<std::byte> &destinationBytes, size_t doff, const std::vector<std::byte> &sourceBytes, size_t soff, int maxG3, int dstBytes, uint8_t languageId)
         {
             int destinationIndex = 0;
             for (int index = 0; index < maxG3 && destinationIndex + 2 <= dstBytes; ++index)
@@ -393,9 +386,7 @@ namespace Conversion
          *   letters. An empty field is at least honestly empty, and the legality checker already
          *   reports it.
          */
-        bool utf16ToG3Name(std::vector<std::byte> &destinationBytes, size_t doff,
-                           const std::vector<std::byte> &sourceBytes, size_t soff, int srcBytes, int maxG3,
-                           uint8_t languageId)
+        bool utf16ToG3Name(std::vector<std::byte> &destinationBytes, size_t doff, const std::vector<std::byte> &sourceBytes, size_t soff, int srcBytes, int maxG3, uint8_t languageId)
         {
             // The name is staged here rather than written straight out, so a character with no glyph
             // can discard the whole thing instead of leaving a prefix in the field. Gen 3's widest
@@ -436,8 +427,7 @@ namespace Conversion
         // (Nidoran♀/♂, Farfetch'd) and a per-byte walk would encode their continuation bytes as
         // garbage or drop the character. Only ASCII is uppercased; ♀/♂, kana and the accented
         // letters have no case, so the Japanese and European tables pass through untouched.
-        void utf8UpperToG3Name(std::vector<std::byte> &destinationBytes, size_t doff, const char *text, int maxG3,
-                               uint8_t languageId)
+        void utf8UpperToG3Name(std::vector<std::byte> &destinationBytes, size_t doff, const char *text, int maxG3, uint8_t languageId)
         {
             const std::u16string utf16Text = Utils::utf8ToUtf16(std::string(text));
             int gen3Index = 0;
@@ -490,8 +480,7 @@ namespace Conversion
                 // SV, not the source game: the Tera type is being written INTO a PK9, so it has
                 // to name a type Scarlet/Violet has (and the source here is PK8 either way).
                 Pokemon::TypePair typePair = Pokemon::getPokemonTypes(species, form, Enums::GameVersion::SV);
-                uint8_t tera =
-                    (typePair.type1 == 0 /*Normal*/ && typePair.type2 != 255) ? typePair.type2 : typePair.type1;
+                uint8_t tera = (typePair.type1 == 0 /*Normal*/ && typePair.type2 != 255) ? typePair.type2 : typePair.type1;
                 wr8(recordBytes, 0x94, tera);
                 wr8(recordBytes, 0x95, tera);
             }
@@ -499,10 +488,8 @@ namespace Conversion
             //            AffixedRibbon(0xE8) -> PK9 Version(0xCE)/BattleVer(0xCF)/FormArg(0xD0)/Affixed(0xD4)/
             //            Language(0xD5). Capture, wipe the whole block, rewrite at PK9 offsets.
             {
-                uint8_t version = rd8(recordBytes, 0xDE), battleVer = rd8(recordBytes, 0xDF),
-                        language = rd8(recordBytes, 0xE2), affixed = rd8(recordBytes, 0xE8);
-                uint8_t formArgument0 = rd8(recordBytes, 0xE4), f1 = rd8(recordBytes, 0xE5),
-                        f2 = rd8(recordBytes, 0xE6), f3 = rd8(recordBytes, 0xE7);
+                uint8_t version = rd8(recordBytes, 0xDE), battleVer = rd8(recordBytes, 0xDF), language = rd8(recordBytes, 0xE2), affixed = rd8(recordBytes, 0xE8);
+                uint8_t formArgument0 = rd8(recordBytes, 0xE4), f1 = rd8(recordBytes, 0xE5), f2 = rd8(recordBytes, 0xE6), f3 = rd8(recordBytes, 0xE7);
                 zeroRange(recordBytes, 0xCE, 0x2A); // 0xCE..0xF7
                 wr8(recordBytes, 0xCE, version);
                 wr8(recordBytes, 0xCF, battleVer);
@@ -555,10 +542,8 @@ namespace Conversion
             // 0xCE-0xF7 Block C: PK9 Version(0xCE)/BattleVer(0xCF)/FormArg(0xD0)/Affixed(0xD4)/Language(0xD5)
             //            -> PK8 Version(0xDE)/BattleVer(0xDF)/Language(0xE2)/FormArg(0xE4)/Affixed(0xE8).
             {
-                uint8_t version = rd8(recordBytes, 0xCE), battleVer = rd8(recordBytes, 0xCF),
-                        affixed = rd8(recordBytes, 0xD4), language = rd8(recordBytes, 0xD5);
-                uint8_t formArgument0 = rd8(recordBytes, 0xD0), f1 = rd8(recordBytes, 0xD1),
-                        f2 = rd8(recordBytes, 0xD2), f3 = rd8(recordBytes, 0xD3);
+                uint8_t version = rd8(recordBytes, 0xCE), battleVer = rd8(recordBytes, 0xCF), affixed = rd8(recordBytes, 0xD4), language = rd8(recordBytes, 0xD5);
+                uint8_t formArgument0 = rd8(recordBytes, 0xD0), f1 = rd8(recordBytes, 0xD1), f2 = rd8(recordBytes, 0xD2), f3 = rd8(recordBytes, 0xD3);
                 zeroRange(recordBytes, 0xCE, 0x2A); // 0xCE..0xF7
                 wr8(recordBytes, 0xDE, version);
                 wr8(recordBytes, 0xDF, battleVer);
@@ -587,12 +572,9 @@ namespace Conversion
         // fixup. PA8-only data (GVs, Alpha flag/move, move-mastery/purchase records, absolute size) is
         // dropped; PK8<->PK9 legs are handled by composing with transformG8toG9 / transformG9toG8. Offsets
         // per PKHeX PA8.cs / G8PKM.cs. Party stats are recomputed on load, so 0x148+/0x168+ is left zero.
-        inline void copyBytes(std::vector<std::byte> &destinationBytes, size_t doff,
-                              const std::vector<std::byte> &sourceBytes, size_t soff, size_t byteCount)
+        inline void copyBytes(std::vector<std::byte> &destinationBytes, size_t doff, const std::vector<std::byte> &sourceBytes, size_t soff, size_t byteCount)
         {
-            for (size_t index = 0;
-                 index < byteCount && (soff + index) < sourceBytes.size() && (doff + index) < destinationBytes.size();
-                 ++index)
+            for (size_t index = 0; index < byteCount && (soff + index) < sourceBytes.size() && (doff + index) < destinationBytes.size(); ++index)
                 destinationBytes[doff + index] = sourceBytes[soff + index];
         }
 
@@ -788,15 +770,11 @@ namespace Conversion
             // scalar and compute the absolute on the fly. Recompute from the carried scalars + the
             // species/form base size, per PKHeX PB7.GetHeightAbsolute / GetWeightAbsolute.
             {
-                const uint16_t species = static_cast<uint16_t>(rd8(destinationBytes, 0x08)) |
-                                         (static_cast<uint16_t>(rd8(destinationBytes, 0x09)) << 8);
-                const uint8_t form =
-                    static_cast<uint8_t>(rd8(destinationBytes, 0x1D) >> 3); // PB7 packs form in 0x1D bits 3+
+                const uint16_t species = static_cast<uint16_t>(rd8(destinationBytes, 0x08)) | (static_cast<uint16_t>(rd8(destinationBytes, 0x09)) << 8);
+                const uint8_t form = static_cast<uint8_t>(rd8(destinationBytes, 0x1D) >> 3); // PB7 packs form in 0x1D bits 3+
                 const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(species, form);
-                const float heightRatio =
-                    (rd8(destinationBytes, 0x3A) / 255.0f) * 0.79999995f + 0.6f; // height ratio (+40% / -20%)
-                const float weightRatio =
-                    (rd8(destinationBytes, 0x3B) / 255.0f) * 0.40000004f + 0.8f; // weight ratio (+/- 20%)
+                const float heightRatio = (rd8(destinationBytes, 0x3A) / 255.0f) * 0.79999995f + 0.6f; // height ratio (+40% / -20%)
+                const float weightRatio = (rd8(destinationBytes, 0x3B) / 255.0f) * 0.40000004f + 0.8f; // weight ratio (+/- 20%)
                 wrf32(destinationBytes, 0x2C, heightRatio * static_cast<float>(pi.height));            // HeightAbsolute
                 // WeightAbsolute
                 wrf32(destinationBytes, 0xE4, heightRatio * weightRatio * static_cast<float>(pi.weight));
@@ -829,8 +807,10 @@ namespace Conversion
         //     Red/Blue/Green and Gold/Silver are indistinguishable; the group's representative title
         //     is stamped and the UI says so before the transfer runs. Gen 2 is the one exception --
         //     a record carrying Crystal's caught data names Crystal outright.
-        //  2. The NICKNAME and the substituted trade OT are written in ENGLISH, because PKSE ships
-        //     one species-name table. A Japanese record still transfers; its name is the English one.
+        //  2. The substituted in-game-trade OT is only half localised. The species name an
+        //     un-nicknamed Pokemon arrives with is taken in the RECORD's language, but the trade OT
+        //     is トレーナー for a Japanese record and the English "Trainer" for every other language,
+        //     where Bank would write that language's own word.
         //     A name that IS carried (a real nickname, an ordinary OT) goes through PKSE's own Gen
         //     1/2 character table rather than Bank's transporter one, which differs for Japanese:
         //     PKHeX's StringConverter12Transporter shifts katakana to hiragana when a name mixes
@@ -880,11 +860,9 @@ namespace Conversion
         }
 
         /// Writes a Gen 6/7 name field: `unitCount` UTF-16LE code units, zero-filled past the text.
-        void writeUtf16Field(std::vector<std::byte> &destinationBytes, size_t offset, size_t unitCount,
-                             const std::u16string &text)
+        void writeUtf16Field(std::vector<std::byte> &destinationBytes, size_t offset, size_t unitCount, const std::u16string &text)
         {
-            Utils::setString(reinterpret_cast<uint8_t *>(destinationBytes.data()) + offset, unitCount * 2, text,
-                             unitCount - 1);
+            Utils::setString(reinterpret_cast<uint8_t *>(destinationBytes.data()) + offset, unitCount * 2, text, unitCount - 1);
         }
 
         /// Species Bank will not hand its hidden ability to. Gen 2 adds Misdreavus, Unown and Celebi
@@ -912,8 +890,7 @@ namespace Conversion
         // Builds the PK7 a Transporter run would produce. Returns a 260-byte PARTY record; the caller
         // fills its stat tail with recalculateStats(). `originVersion` is the Gen 1/2 title to stamp
         // (see virtualConsoleOriginVersion, and note 1 above).
-        std::vector<std::byte> transportVirtualConsoleToPK7(const Pokemon::Pokemon &source, uint8_t originVersion,
-                                                            const ReceivingTrainer *receivingTrainer)
+        std::vector<std::byte> transportVirtualConsoleToPK7(const Pokemon::Pokemon &source, uint8_t originVersion, const ReceivingTrainer *receivingTrainer)
         {
             const bool fromGen2 = source.getGameGroup() == GameVersion::GSC;
             const uint16_t species = source.speciesID();
@@ -942,18 +919,15 @@ namespace Conversion
             // Bank hands almost everything its HIDDEN ability -- the well-known Virtual Console
             // quirk, and the reason a transferred Gengar is a Cursed Body Gengar. A species with no
             // hidden ability in the table falls back to slot 1 rather than writing ability 0.
-            const bool useFirstAbility =
-                hiddenAbilityDisallowedOnTransfer(species, fromGen2) || gen7Personal.abilityHidden == 0;
-            wr8(destinationBytes, 0x14,
-                static_cast<uint8_t>(useFirstAbility ? gen7Personal.ability1 : gen7Personal.abilityHidden));
+            const bool useFirstAbility = hiddenAbilityDisallowedOnTransfer(species, fromGen2) || gen7Personal.abilityHidden == 0;
+            wr8(destinationBytes, 0x14, static_cast<uint8_t>(useFirstAbility ? gen7Personal.ability1 : gen7Personal.abilityHidden));
             wr8(destinationBytes, 0x15, useFirstAbility ? 1 : 4); // AbilityNumber: 1 = slot 1, 4 = hidden
 
             // FatefulEncounter(bit0) + Gender(bits1-2) + Form(bits3+). Gen 1 has no gender field at
             // all -- gender() derives it from the Attack DV against the species ratio, which is what
             // the games themselves do on transfer -- and no forms; Gen 2's only form is Unown's
             // letter, likewise derived from the DVs.
-            wr8(destinationBytes, 0x1D,
-                static_cast<uint8_t>((isEventPair ? 1 : 0) | ((source.gender() & 3) << 1) | (form << 3)));
+            wr8(destinationBytes, 0x1D, static_cast<uint8_t>((isEventPair ? 1 : 0) | ((source.gender() & 3) << 1) | (form << 3)));
 
             // IVs are rerolled, not carried: a Gen 1/2 DV is 4 bits and also drives the shininess
             // pattern, so there is no honest widening of it. Three stats come out flawless (five for
@@ -1015,8 +989,7 @@ namespace Conversion
                 const uint8_t powerPointUps = moveId == 0 ? 0 : source.movePPUps(slot);
                 wr16(destinationBytes, 0x5A + slot * 2, moveId);
                 wr8(destinationBytes, 0x66 + slot, powerPointUps);
-                wr8(destinationBytes, 0x62 + slot,
-                    moveId == 0 ? 0 : Names::getMoveMaxPP(moveId, powerPointUps, GameVersion::SM));
+                wr8(destinationBytes, 0x62 + slot, moveId == 0 ? 0 : Names::getMoveMaxPP(moveId, powerPointUps, GameVersion::SM));
             }
 
             // The record's own language, which both name fields below are written in. A Game Boy
@@ -1032,11 +1005,7 @@ namespace Conversion
             // Pikachu that was never nicknamed is ピカチュウ, and calling it "Pikachu" would both
             // read wrong and make it look deliberately nicknamed to anything comparing the two.
             const bool keepNickname = !isEventPair && source.isNicknamed();
-            writeUtf16Field(destinationBytes, 0x40, 13,
-                            keepNickname ? source.nickname()
-                                         : Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(
-                                               source.speciesID(),
-                                               Names::languageIndexFor(static_cast<Enums::LanguageID>(language)))));
+            writeUtf16Field(destinationBytes, 0x40, 13, keepNickname ? source.nickname() : Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(source.speciesID(), Names::languageIndexFor(static_cast<Enums::LanguageID>(language)))));
             if (keepNickname)
                 // IsNicknamed rides IV32 bit 31
                 wr32(destinationBytes, 0x74, rd32(destinationBytes, 0x74) | 0x80000000u);
@@ -1190,8 +1159,7 @@ namespace Conversion
             // One buffer serves both Gen 7 destinations. Each game group owns its own size constant
             // by design, so pin the fact that they agree rather than assuming it -- if Ultra Sun's
             // ever moved, this would quietly hand a Pokemon7USUM a buffer of the wrong length.
-            static_assert(Encryption::SIZE_PARTY7_SM == Encryption::SIZE_PARTY7_USUM,
-                          "Sun/Moon and Ultra Sun/Moon party records must be the same length");
+            static_assert(Encryption::SIZE_PARTY7_SM == Encryption::SIZE_PARTY7_USUM, "Sun/Moon and Ultra Sun/Moon party records must be the same length");
             std::vector<std::byte> destinationBytes(Encryption::SIZE_PARTY7_SM, std::byte{0});
             copyBytes(destinationBytes, 0x00, sourceBytes, 0x00, 0x08); // EC + Sanity + Checksum
             copyBytes(destinationBytes, 0x08, sourceBytes, 0x08, 0x0C); // Species / HeldItem / ID32 / EXP
@@ -1202,8 +1170,7 @@ namespace Conversion
             wr8(destinationBytes, 0x1C, rd8(sourceBytes, 0x20));        // Nature (the mint at 0x21 is dropped)
             {
                 const uint8_t genderByte = rd8(sourceBytes, 0x22);
-                const uint8_t fateful = genderByte & 0x01, gender = (genderByte >> 2) & 0x03,
-                              form = rd8(sourceBytes, 0x24);
+                const uint8_t fateful = genderByte & 0x01, gender = (genderByte >> 2) & 0x03, form = rd8(sourceBytes, 0x24);
                 wr8(destinationBytes, 0x1D, static_cast<uint8_t>(fateful | (gender << 1) | (form << 3)));
             }
             copyBytes(destinationBytes, 0x1E, sourceBytes, 0x26, 0x06); // EVs
@@ -1367,8 +1334,7 @@ namespace Conversion
         /// is rerolled besides (it will not match a real Gen 3 RNG frame). The goal is a location that is
         /// POSSIBLE in the destination instead of one that is provably not -- and where no encounter
         /// exists, to leave the legality checker free to say so.
-        Gen3Landing gen3LandingFor(uint16_t national, uint8_t form, uint8_t destOriginVersion,
-                                   uint8_t sourceMetLevel, uint8_t currentLevel)
+        Gen3Landing gen3LandingFor(uint16_t national, uint8_t form, uint8_t destOriginVersion, uint8_t sourceMetLevel, uint8_t currentLevel)
         {
             // Fallback: the destination's own first town. Ruby/Sapphire/Emerald have no encounter
             // table in PKSE, and not every Gen 3 species is catchable in the game being written to.
@@ -1380,10 +1346,8 @@ namespace Conversion
             // location 0, the top of the met-location picker, and the checker says so loudly.
             // With the toggle ON the fallback is the destination's own first town, because by then
             // PKSE is rebuilding the pokemon and a real place in the right region is the floor.
-            const bool intoKanto = (destOriginVersion == static_cast<uint8_t>(GameVersion::FR) ||
-                                    destOriginVersion == static_cast<uint8_t>(GameVersion::LG));
-            const uint8_t placeholderLocation =
-                g_autoLegalizeTransfers ? static_cast<uint8_t>(intoKanto ? 88 : 0) : 0;
+            const bool intoKanto = (destOriginVersion == static_cast<uint8_t>(GameVersion::FR) || destOriginVersion == static_cast<uint8_t>(GameVersion::LG));
+            const uint8_t placeholderLocation = g_autoLegalizeTransfers ? static_cast<uint8_t>(intoKanto ? 88 : 0) : 0;
             //                                               Pallet Town  Littleroot Town
             Gen3Landing landing{placeholderLocation, sourceMetLevel, destOriginVersion, currentLevel};
 
@@ -1430,8 +1394,7 @@ namespace Conversion
                     {
                         if (candidateVersion == destOriginVersion)
                             continue;
-                        const bool sharesSaveFormat =
-                            Enums::getGameGroup(static_cast<GameVersion>(candidateVersion)) == destinationGroup;
+                        const bool sharesSaveFormat = Enums::getGameGroup(static_cast<GameVersion>(candidateVersion)) == destinationGroup;
                         if (sharesSaveFormat != (pass == 0))
                             continue;
                         attemptVersion[attemptCount++] = candidateVersion;
@@ -1451,11 +1414,7 @@ namespace Conversion
             chainForm[0] = form;
             // Only the rebuild walks the chain, tries the sibling version, or claims an egg. Off,
             // PKSE does the plain same-species lookup and nothing more.
-            const int chainLength =
-                g_autoLegalizeTransfers
-                    ? 1 + Pokemon::getPreEvolutionChain(destVersion, national, form, chainSpecies + 1,
-                                                        chainForm + 1, Pokemon::EVO_MAX_CHAIN)
-                    : 1;
+            const int chainLength = g_autoLegalizeTransfers ? 1 + Pokemon::getPreEvolutionChain(destVersion, national, form, chainSpecies + 1, chainForm + 1, Pokemon::EVO_MAX_CHAIN) : 1;
 
             // Deterministic pick, because a conversion that answered differently each run could
             // not be tested and would hand a user a different pokemon every time they undid and
@@ -1499,19 +1458,16 @@ namespace Conversion
             // THE TABLE IS PER ATTEMPT, NOT PER DESTINATION, now that a candidate can belong to the
             // other Gen 3 group: Ruby/Sapphire/Emerald and FireRed/LeafGreen have separate tables,
             // and asking the destination's for an Emerald row finds nothing at all.
-            const Legality::EncounterTable *attemptTable =
-                Legality::getEncounterTable(static_cast<GameVersion>(tryVersion));
+            const Legality::EncounterTable *attemptTable = Legality::getEncounterTable(static_cast<GameVersion>(tryVersion));
             if (attemptTable == nullptr || attemptTable->speciesIndex == nullptr)
                 continue;
-            const uint8_t versionBit =
-                Legality::encounterVersionBit(static_cast<GameVersion>(tryVersion));
+            const uint8_t versionBit = Legality::encounterVersionBit(static_cast<GameVersion>(tryVersion));
             for (int link = 0; link < chainLength; ++link)
             {
                 const uint16_t species = chainSpecies[link];
                 if (species == 0 || species + 1 >= attemptTable->speciesIndexLength)
                     continue;
-                for (uint16_t rowIndex = attemptTable->speciesIndex[species];
-                     rowIndex < attemptTable->speciesIndex[species + 1]; ++rowIndex)
+                for (uint16_t rowIndex = attemptTable->speciesIndex[species]; rowIndex < attemptTable->speciesIndex[species + 1]; ++rowIndex)
                 {
                     const Legality::EncounterRow &row = attemptTable->rows[rowIndex];
                     if (versionBit != 0 && (row.versions & versionBit) == 0)
@@ -1535,9 +1491,7 @@ namespace Conversion
                     // search stops at the first game with any row at all: Ruby's only Bulbasaur is the
                     // level 70 10th-anniversary distribution, so a level 6 Bulbasaur was raised to 70
                     // there and never reached FireRed's Pallet Town gift, which explains it as it is.
-                    if (row.kind == Legality::ENCOUNTER_KIND_EVENT ||
-                        (row.flags & Legality::ENCOUNTER_FLAG_FATEFUL) != 0 ||
-                        row.location == Legality::ENCOUNTER_LOCATION_EVENT3)
+                    if (row.kind == Legality::ENCOUNTER_KIND_EVENT || (row.flags & Legality::ENCOUNTER_FLAG_FATEFUL) != 0 || row.location == Legality::ENCOUNTER_LOCATION_EVENT3)
                         continue;
                     // THE FORM HAS TO MATCH, and Unown is why. Its 28 letters are 28 SEPARATE rows,
                     // each pinned to one Tanoby chamber -- Monean holds only A and ?, Liptoo only
@@ -1552,8 +1506,7 @@ namespace Conversion
                     // never negative -- and for those rows, ranking by it is the same as ranking by
                     // levelMin. Spelled as the distance anyway, because that stays the right
                     // question if levelFits ever becomes two-sided.
-                    const uint8_t levelShortfall =
-                        levelFits ? 0 : static_cast<uint8_t>(row.levelMin - sourceMetLevel);
+                    const uint8_t levelShortfall = levelFits ? 0 : static_cast<uint8_t>(row.levelMin - sourceMetLevel);
                     if (haveRow)
                     {
                         if (haveLevelFit && !levelFits)
@@ -1580,11 +1533,7 @@ namespace Conversion
                     // row fits at all the level is left alone rather than raised above the current
                     // level, which would trade one finding for another. (With the toggle on, the
                     // rebuild below lifts it to the chosen row's floor -- never above the level.)
-                    landing.metLevel = levelFits
-                                           ? static_cast<uint8_t>(sourceMetLevel > row.levelMax
-                                                                      ? row.levelMax
-                                                                      : sourceMetLevel)
-                                           : sourceMetLevel;
+                    landing.metLevel = levelFits ? static_cast<uint8_t>(sourceMetLevel > row.levelMax ? row.levelMax : sourceMetLevel) : sourceMetLevel;
                     haveRow = true;
                     haveLevelFit = levelFits;
                     haveWild = isWild;
@@ -1640,16 +1589,10 @@ namespace Conversion
             // story anywhere, and claiming one would swap "no encounter" for a finding that is just
             // as true and harder to read. The checker asks the same question from the other side
             // (EncounterMatch::checkEgg), which is what keeps the two halves agreeing.
-            const uint8_t evolutionFloor =
-                Pokemon::getEvolutionLevelFloor(destVersion, national, form, chainLength - 1);
-            if (!haveRow && g_autoLegalizeTransfers && table->egg.hasBreeding != 0 &&
-                table->egg.hatchLocation != 0 &&
-                table->breedable != nullptr && eggSpecies != 0 &&
-                ((table->breedable[eggSpecies >> 3] >> (eggSpecies & 7)) & 1u) != 0 &&
-                (evolutionFloor == 0 || currentLevel >= evolutionFloor) &&
-                // Gen 3 stamps a hatched egg at met level 0, so there is no floor left to clear --
-                // but the id has to fit the byte a PK3 keeps its met location in.
-                table->egg.hatchLocation <= 0xFF)
+            const uint8_t evolutionFloor = Pokemon::getEvolutionLevelFloor(destVersion, national, form, chainLength - 1);
+            // Gen 3 stamps a hatched egg at met level 0, so there is no floor left to clear --
+            // but the id has to fit the byte a PK3 keeps its met location in.
+            if (!haveRow && g_autoLegalizeTransfers && table->egg.hasBreeding != 0 && table->egg.hatchLocation != 0 && table->breedable != nullptr && eggSpecies != 0 && ((table->breedable[eggSpecies >> 3] >> (eggSpecies & 7)) & 1u) != 0 && (evolutionFloor == 0 || currentLevel >= evolutionFloor) && table->egg.hatchLocation <= 0xFF)
             {
                 // THE DAY CARE'S OWN MAP, NOT THE LOWEST PERMITTED ID. Over a hundred Kanto places
                 // are legal hatch locations and the lowest of them is the Ferry, which is a true
@@ -1670,8 +1613,7 @@ namespace Conversion
         // `destOriginVersion` is the exact destination game's origin byte (FR = 4, LG = 5). It has to be
         // passed in: a game GROUP collapses the pair into one value by design, so FRLG alone cannot say
         // which of the two the save actually is.
-        std::vector<std::byte> remapPK8toPK3(const std::vector<std::byte> &sourceBytes, uint8_t destOriginVersion,
-                                             GameVersion destGroup)
+        std::vector<std::byte> remapPK8toPK3(const std::vector<std::byte> &sourceBytes, uint8_t destOriginVersion, GameVersion destGroup)
         {
             std::vector<std::byte> destinationBytes(0x64, std::byte{0});
             const uint32_t pidValue = rd32(sourceBytes, 0x1C);
@@ -1690,8 +1632,7 @@ namespace Conversion
             {
                 const uint8_t natWant = rd8(sourceBytes, 0x20) % 25;                              // source nature
                 const uint8_t genWant = static_cast<uint8_t>((rd8(sourceBytes, 0x22) >> 2) & 3); // 0=M,1=F,2=genderless
-                const uint8_t genderRatioValue =
-                    getPersonalInfo(national, rd8(sourceBytes, 0x24)).genderRatio; // by species+form
+                const uint8_t genderRatioValue = getPersonalInfo(national, rd8(sourceBytes, 0x24)).genderRatio; // by species+form
                 const uint8_t abilBit = (rd8(sourceBytes, 0x16) == 2) ? 1u : 0u;   // AbilityNumber 2 -> slot 2
                 // UNOWN'S LETTER IS THE PID IN GEN 3, so a reroll that ignores it RENAMES the
                 // pokemon -- and worse, the letter decides which Tanoby chamber it can have been
@@ -1715,24 +1656,18 @@ namespace Conversion
                 }
                 const uint32_t tid32 = rd32(sourceBytes, 0x0C);
                 const uint16_t trainerShinyValue = static_cast<uint16_t>((tid32 & 0xFFFF) ^ (tid32 >> 16));
-                const bool shWant = (static_cast<uint16_t>(((pidValue & 0xFFFF) ^ (pidValue >> 16)) ^
-                                                           trainerShinyValue) < 16); // source threshold
+                const bool shWant = (static_cast<uint16_t>(((pidValue & 0xFFFF) ^ (pidValue >> 16)) ^ trainerShinyValue) < 16); // source threshold
                 uint32_t cand = pidValue;
                 for (int index = 0; index < 1000000; ++index)
                 {
                     // Stamp the letter before ANY test: every constraint below reads the whole PID,
                     // so this has to happen first or they judge a PID that will not be stored.
                     if (letterPatternCount > 0)
-                        cand = withUnownFormValue(
-                            cand, letterPatterns[(cand >> 2) % static_cast<uint32_t>(letterPatternCount)]);
-                    const uint8_t genderValue = (genderRatioValue == 255) ? 2 : (genderRatioValue == 254) ? 1
-                                                    : (genderRatioValue == 0)     ? 0
-                                                                    : (((cand & 0xFF) < genderRatioValue) ? 1 : 0);
+                        cand = withUnownFormValue(cand, letterPatterns[(cand >> 2) % static_cast<uint32_t>(letterPatternCount)]);
+                    const uint8_t genderValue = (genderRatioValue == 255) ? 2 : (genderRatioValue == 254) ? 1 : (genderRatioValue == 0) ? 0 : (((cand & 0xFF) < genderRatioValue) ? 1 : 0);
                     const uint16_t pokemonShinyValue = static_cast<uint16_t>((cand & 0xFFFF) ^ (cand >> 16));
-                    const bool isShiny =
-                        (static_cast<uint16_t>(pokemonShinyValue ^ trainerShinyValue) < 8); // Gen 3 shiny threshold
-                    if ((cand % 25) == natWant && genderValue == genWant && isShiny == shWant &&
-                        (isUnown || (cand & 1u) == abilBit))
+                    const bool isShiny = (static_cast<uint16_t>(pokemonShinyValue ^ trainerShinyValue) < 8); // Gen 3 shiny threshold
+                    if ((cand % 25) == natWant && genderValue == genWant && isShiny == shWant && (isUnown || (cand & 1u) == abilBit))
                     {
                         outPid = cand;
                         break;
@@ -1751,8 +1686,7 @@ namespace Conversion
             // cartridge has, and be read back through a font that cannot spell it. English is the
             // substitute for the reason PKHeX picks it (Language.cs `SafeLanguage`): it is the one
             // language every generation shipped and every table can write.
-            const uint8_t destinationLanguage =
-                Enums::safeLanguageForGroup(destGroup, rd8(sourceBytes, 0xE2));
+            const uint8_t destinationLanguage = Enums::safeLanguageForGroup(destGroup, rd8(sourceBytes, 0xE2));
             wr8(destinationBytes, 0x12, destinationLanguage);                                       // Language
             wr8(destinationBytes, 0x13, static_cast<uint8_t>(0x02 | (isEgg ? 0x04 : 0))); // Flags: HasSpecies (+ IsEgg)
             wr16(destinationBytes, 0x20, Pokemon::gen3NationalToInternal(national));      // Species (INTERNAL Gen 3 id)
@@ -1770,16 +1704,10 @@ namespace Conversion
             // species name rather than storing its mappable prefix, because half a name is not the name the
             // player gave it.
             const bool sourceIsNicknamed = ((rd32(sourceBytes, 0x8C) >> 31) & 1) != 0;
-            const bool nicknameCarried =
-                sourceIsNicknamed &&
-                utf16ToG3Name(destinationBytes, 0x08, sourceBytes, 0x58, 26, GEN3_NICKNAME_CHARS, destinationLanguage);
+            const bool nicknameCarried = sourceIsNicknamed && utf16ToG3Name(destinationBytes, 0x08, sourceBytes, 0x58, 26, GEN3_NICKNAME_CHARS, destinationLanguage);
             if (!nicknameCarried)
             {
-                utf8UpperToG3Name(
-                    destinationBytes, 0x08,
-                    Names::getSpeciesNameLocalized(
-                        national, Names::languageIndexFor(static_cast<Enums::LanguageID>(destinationLanguage))),
-                    GEN3_NICKNAME_CHARS, destinationLanguage);
+                utf8UpperToG3Name(destinationBytes, 0x08, Names::getSpeciesNameLocalized(national, Names::languageIndexFor(static_cast<Enums::LanguageID>(destinationLanguage))), GEN3_NICKNAME_CHARS, destinationLanguage);
             }
 
             // OT NAME. The one field here that cannot be reconstructed when it does not fit: a
@@ -1793,13 +1721,10 @@ namespace Conversion
             // would not be visible -- "Trainer" is a real Gen 3 in-game-trade OT that PKSE already
             // writes to mean exactly that, and the receiving player's own name would silently turn
             // a traded Pokemon into a self-caught one while its trainer id still said otherwise.
-            const bool originalTrainerNameCarried =
-                utf16ToG3Name(destinationBytes, 0x14, sourceBytes, 0xF8, 26, GEN3_OT_NAME_CHARS, destinationLanguage);
+            const bool originalTrainerNameCarried = utf16ToG3Name(destinationBytes, 0x14, sourceBytes, 0xF8, 26, GEN3_OT_NAME_CHARS, destinationLanguage);
             if (!originalTrainerNameCarried && g_debugLogging)
             {
-                Utils::logEventToFile("CONVERT action=GEN3 species=" + std::to_string(national) +
-                                      " language=" + std::to_string(destinationLanguage) +
-                                      " result=OT_NAME_DROPPED");
+                Utils::logEventToFile("CONVERT action=GEN3 species=" + std::to_string(national) + " language=" + std::to_string(destinationLanguage) + " result=OT_NAME_DROPPED");
             }
 
             copyBytes(destinationBytes, 0x2C, sourceBytes, 0x72, 8); // Moves 1-4
@@ -1860,10 +1785,8 @@ namespace Conversion
                 // Gen 3 party record has no level byte, only EXP, and the EXP was copied across
                 // verbatim a few lines up. The egg branch needs it, because an evolution level is
                 // a claim about the CURRENT level rather than the met one.
-                const uint8_t gen3Level = Pokemon::getLevelFromExp(rd32(destinationBytes, 0x24),
-                                                                   Pokemon::getGrowthRate(national));
-                const Gen3Landing landing =
-                    gen3LandingFor(national, gen3Form, destOriginVersion, sourceMetLevel, gen3Level);
+                const uint8_t gen3Level = Pokemon::getLevelFromExp(rd32(destinationBytes, 0x24), Pokemon::getGrowthRate(national));
+                const Gen3Landing landing = gen3LandingFor(national, gen3Form, destOriginVersion, sourceMetLevel, gen3Level);
                 metLocation = landing.metLocation;
                 metLevel = landing.metLevel;
                 version = landing.originVersion;
@@ -1872,13 +1795,10 @@ namespace Conversion
                 // that changed; with the toggle off landing.currentLevel is what came in.
                 if (landing.currentLevel != gen3Level)
                 {
-                    wr32(destinationBytes, 0x24,
-                         Pokemon::getExpForLevel(landing.currentLevel, Pokemon::getGrowthRate(national)));
+                    wr32(destinationBytes, 0x24, Pokemon::getExpForLevel(landing.currentLevel, Pokemon::getGrowthRate(national)));
                 }
             }
-            wr16(destinationBytes, 0x46,
-                 static_cast<uint16_t>((metLevel & 0x7F) | ((version & 0x0F) << 7) | ((ball & 0x0F) << 11) |
-                                       ((otGender & 1) << 15)));
+            wr16(destinationBytes, 0x46, static_cast<uint16_t>((metLevel & 0x7F) | ((version & 0x0F) << 7) | ((ball & 0x0F) << 11) | ((otGender & 1) << 15)));
             wr8(destinationBytes, 0x45, metLocation);
 
             // IVs: keep bits 0-29 (IVs) + bit30 (isEgg); set bit31 = ability slot from the PK8 ability number.
@@ -1909,8 +1829,7 @@ namespace Conversion
         return result == Result::Ok || result == Result::SameGroup;
     }
 
-    std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon &source, GameVersion destGroup, Result &result,
-                                              uint8_t destOriginVersion, const ReceivingTrainer *receivingTrainer)
+    std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon &source, GameVersion destGroup, Result &result, uint8_t destOriginVersion, const ReceivingTrainer *receivingTrainer)
     {
         result = gate(source, destGroup);
         // SameGroup / NotInDex / Blocked / Unsupported
@@ -1941,8 +1860,7 @@ namespace Conversion
         GameVersion layoutFrom = from;
         if (isVirtualConsole(from))
         {
-            buffer = transportVirtualConsoleToPK7(source, static_cast<uint8_t>(virtualConsoleOriginVersion(source)),
-                                                  receivingTrainer);
+            buffer = transportVirtualConsoleToPK7(source, static_cast<uint8_t>(virtualConsoleOriginVersion(source)), receivingTrainer);
             layoutFrom = GameVersion::SM;
             // The PK7 was built from nothing, so its battle-stat tail is still zeros -- including the
             // level byte that PK7's level() reads straight out of it. Without this the pokemon arrives at
@@ -2036,10 +1954,8 @@ namespace Conversion
         }
 
         // Re-key into the destination format, rebuild the entity, refresh its checksum.
-        const uint32_t encryptionConstant =
-            Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(buffer.data()));
-        std::byte *encryptedRecord =
-            encryptFor(destGroup, std::span<const std::byte>(buffer.data(), buffer.size()), encryptionConstant);
+        const uint32_t encryptionConstant = Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(buffer.data()));
+        std::byte *encryptedRecord = encryptFor(destGroup, std::span<const std::byte>(buffer.data(), buffer.size()), encryptionConstant);
         if (!encryptedRecord)
         {
             result = Result::Unsupported;
@@ -2063,6 +1979,13 @@ namespace Conversion
         // has to clamp BEFORE it writes a name, because the language is what picks the character
         // table the name is written through.
         out->setLanguage(Enums::safeLanguageForGroup(destGroup, out->language()));
+
+        // The PA8 remap leaves the absolute height and weight zero. PKHeX recalculates them from the
+        // size scalars on the way into Legends: Arceus, and the game shows and researches them.
+        if (destGroup == GameVersion::PLA)
+        {
+            static_cast<Pokemon::Pokemon8LA &>(*out).resetSizeAbsolutes();
+        }
 
         // Sanitize the moveset to what the destination game's species can legally learn: any move (or
         // relearn move) it can't -- illegal for the species, OR not present in that game at all -- is
@@ -2091,14 +2014,11 @@ namespace Conversion
             // tutor move has to survive a move into a FireRed save even though FireRed's own pool is
             // narrower, exactly as the cartridges behave.
             const bool sameGenerationTrade = isGen3Group(from) && isGen3Group(destGroup);
-            const bool rebuildingIntoGen3 =
-                isVirtualConsole(from) && isGen3Group(destGroup) && g_autoLegalizeTransfers;
-            const bool transporterMoveset =
-                (isVirtualConsole(from) && !rebuildingIntoGen3) || sameGenerationTrade;
+            const bool rebuildingIntoGen3 = isVirtualConsole(from) && isGen3Group(destGroup) && g_autoLegalizeTransfers;
+            const bool transporterMoveset = (isVirtualConsole(from) && !rebuildingIntoGen3) || sameGenerationTrade;
             auto moveSurvives = [&](uint16_t moveId)
             {
-                return transporterMoveset ? Names::isMovePresent(moveId, destGroup)
-                                          : Pokemon::isLearnable(speciesId, formValue, destGroup, moveId);
+                return transporterMoveset ? Names::isMovePresent(moveId, destGroup) : Pokemon::isLearnable(speciesId, formValue, destGroup, moveId);
             };
             for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
             {
@@ -2108,9 +2028,8 @@ namespace Conversion
                     out->setMovePP(moveIndex, 0);
                     out->setMovePPUps(moveIndex, 0);
                 }
-                if (!isGen3Group(destGroup) && out->relearnMove(moveIndex) != 0 &&
-                    // Gen 3 has no relearn moves (remap leaves them 0)
-                    !moveSurvives(out->relearnMove(moveIndex))) out->setRelearnMove(moveIndex, 0);
+                // Gen 3 has no relearn moves (remap leaves them 0)
+                if (!isGen3Group(destGroup) && out->relearnMove(moveIndex) != 0 && !moveSurvives(out->relearnMove(moveIndex))) out->setRelearnMove(moveIndex, 0);
             }
 
             // Compact the surviving moves upward. Clearing slot 2 of 4 otherwise leaves a HOLE,
@@ -2143,8 +2062,7 @@ namespace Conversion
             {
                 if (out->move(moveIndex) == 0)
                     continue;
-                const uint8_t maxPowerPoints =
-                    Names::getMoveMaxPP(out->move(moveIndex), out->movePPUps(moveIndex), destGroup);
+                const uint8_t maxPowerPoints = Names::getMoveMaxPP(out->move(moveIndex), out->movePPUps(moveIndex), destGroup);
                 if (out->movePP(moveIndex) > maxPowerPoints)
                     out->setMovePP(moveIndex, maxPowerPoints);
             }
@@ -2163,8 +2081,7 @@ namespace Conversion
         // there, so a zeroed tail shows Level/CP 0), a Gen 8/9 pokemon arriving through a hub remap had its tail
         // seeded above, and a PA8 built by remapPK8toPA8 starts with a zeroed tail too. A same-generation *sibling*
         // pairing carries the source's tail verbatim and needs nothing.
-        const bool freshTail =
-            seededPartyTail || builtFreshRecord || (viaHub && (destGroup == GameVersion::PLA || isG7(destGroup)));
+        const bool freshTail = seededPartyTail || builtFreshRecord || (viaHub && (destGroup == GameVersion::PLA || isG7(destGroup)));
         if (destGroup == GameVersion::GG || isGen3Group(destGroup) || freshTail)
             out->recalculateStats();
 
@@ -2183,9 +2100,7 @@ namespace Conversion
             if (hpOfs != 0 && hpOfs + 1 < out->getDataSize())
             {
                 std::span<std::byte> destinationBytes = out->getData();
-                const uint16_t currentHP =
-                    static_cast<uint16_t>(static_cast<uint8_t>(destinationBytes[hpOfs])) |
-                    (static_cast<uint16_t>(static_cast<uint8_t>(destinationBytes[hpOfs + 1])) << 8);
+                const uint16_t currentHP = static_cast<uint16_t>(static_cast<uint8_t>(destinationBytes[hpOfs])) | (static_cast<uint16_t>(static_cast<uint8_t>(destinationBytes[hpOfs + 1])) << 8);
                 if (currentHP == 0)
                 {
                     const uint16_t full = out->statHPMax();
@@ -2256,8 +2171,7 @@ namespace Conversion
         // The clamp has to happen here too, and for the same reason the conversion does it: the
         // language chooses the table, so asking the SOURCE's language would test a Korean record
         // against a table it will never actually be written through.
-        const uint8_t destinationLanguage =
-            Enums::safeLanguageForGroup(destGroup, source.language());
+        const uint8_t destinationLanguage = Enums::safeLanguageForGroup(destGroup, source.language());
         int characterCount = 0;
         for (const char16_t character : originalTrainerName)
         {

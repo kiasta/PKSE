@@ -2,6 +2,8 @@
 #include <cstring>
 
 #include "Pokemon/Pokemon5BW.h"
+#include "Pokemon/PIDSearch.h"
+#include "Enums/GameVersion.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PokemonTypes.h"
 #include "Utils/HelperUtilities.h"
@@ -191,48 +193,62 @@ namespace Pokemon
         return ((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0; // Gen 3-5 threshold is 8
     }
 
+    // Gen 5 builds shininess, gender and the ability slot from the PID, and also stores the gender at
+    // 0x40, which PKHeX requires to agree with the PID's. The nature is its own byte, except on a
+    // Pokemon from Gens 3-4, whose nature is still `PID % 25` and whose ability slot is bit 0 rather
+    // than Gen 5's bit 16 (PKHeX PKM.PIDAbility). Each caller names what it changes and holds the
+    // rest; the stored gender is written to match the new PID.
+    bool Pokemon5BW::rerollPID(int wantShiny, int wantGender, uint32_t trainerID32) noexcept
+    {
+        const int originGeneration = Enums::getVersionGeneration(originGame());
+        const bool pidHoldsNature = originGeneration == 3 || originGeneration == 4;
+        PIDRequirements requirements;
+        requirements.trainerID32 = trainerID32;
+        requirements.shinyThreshold = 8; // Gen 3-5
+        requirements.wantShiny = wantShiny;
+        requirements.genderRatio = personal().genderRatio;
+        requirements.wantGender = wantGender;
+        requirements.wantNature = pidHoldsNature ? static_cast<int>(pid() % 25) : -1;
+        requirements.abilityBitIndex = pidHoldsNature ? 0 : 16;
+        requirements.wantAbilityBit = static_cast<int>((pid() >> requirements.abilityBitIndex) & 1);
+        uint32_t pidValue = 0;
+        if (!findPID(requirements, pidValue))
+        {
+            Utils::logErrorToFile("Pokemon5BW::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + "; the Pokemon is unchanged");
+            return false;
+        }
+        wr32(0x00, pidValue);
+        writeStoredGender(genderFromPID(pidValue, requirements.genderRatio));
+        recalculateStats();
+        refreshChecksum();
+        return true;
+    }
+
+    // A legality touch-up asked for nothing to change, so it holds everything the PID decides.
     void Pokemon5BW::regeneratePID(uint32_t trainerID32) noexcept
     {
-        // Preserve nature and the ability slot, which are BOTH PID-derived in Gen 4 -- the same
-        // constraint the Gen 3 path already works under.
-        const uint8_t wantNature = nature();
-        const uint32_t wantSlot = pid() & 1;
-        for (int index = 0; index < 100000; ++index)
-        {
-            const uint32_t candidate = Utils::rand32();
-            if (candidate % 25 != wantNature)
-                continue;
-            if ((candidate & 1) != wantSlot)
-                continue;
-            wr32(0x00, candidate);
-            recalculateStats();
-            refreshChecksum();
-            return;
-        }
+        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), trainerID32);
     }
 
     void Pokemon5BW::setShiny(bool makeShiny, uint32_t trainerID32) noexcept
     {
         if (isShiny(trainerID32, "") == makeShiny)
             return;
-        const uint8_t wantNature = nature();
-        const uint32_t wantSlot = pid() & 1;
-        for (int index = 0; index < 1000000; ++index)
+        rerollPID(makeShiny ? 1 : 0, gender(), trainerID32);
+    }
+
+    void Pokemon5BW::setGender(uint8_t genderValue) noexcept
+    {
+        // A species whose gender is fixed, or a PID that already gives this gender: the stored bits
+        // are all that change. Otherwise the PID has to give the new gender too.
+        const uint8_t genderRatio = personal().genderRatio;
+        if (genderValue > 1 || genderRatio == 0 || genderRatio == 254 || genderRatio == 255 || genderFromPID(pid(), genderRatio) == genderValue)
         {
-            const uint32_t candidate = Utils::rand32();
-            if (candidate % 25 != wantNature)
-                continue;
-            if ((candidate & 1) != wantSlot)
-                continue;
-            const uint32_t trainerShinyValue = ((trainerID32 >> 16) ^ (trainerID32 & 0xFFFF));
-            const uint32_t pokemonShinyValue = ((candidate >> 16) ^ (candidate & 0xFFFF));
-            if ((((trainerShinyValue ^ pokemonShinyValue) >> 3) == 0) != makeShiny)
-                continue;
-            wr32(0x00, candidate);
-            recalculateStats();
+            writeStoredGender(genderValue);
             refreshChecksum();
             return;
         }
+        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, id32());
     }
 
 }

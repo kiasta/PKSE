@@ -1,4 +1,3 @@
-#include <cstdlib> // std::free -> readAllBytes returns a malloc'd buffer (PKSM bank import)
 #include <cstring>
 #include <ctime> // std::time / std::localtime -> a created pokemon's met date = today
 #include <algorithm>
@@ -33,6 +32,7 @@
 #include "UI/Dialogs/StatEditDialog.h"
 #include "UI/Dialogs/FileBrowserDialog.h"
 #include "UI/Dialogs/PKSMImportDialog.h"
+#include "UI/Dialogs/KeyboardDialog.h"
 #include "UI/Modals/PokemonDetailsModal.h"
 #include "Utils/HelperUtilities.h"
 #include "Utils/Keyboard.h"
@@ -50,6 +50,7 @@
 #include "Trainer/Inventory3FRLG.h"
 #include "Trainer/Inventory3RSE.h"
 #include "Trainer/Trainer3RSE.h" // hoennLayout(): Ruby/Sapphire and Emerald size their pouches differently
+#include "Trainer/PokemonFile.h" // standalone native Pokemon import/export
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PersonalInfoTable.h"
@@ -62,6 +63,7 @@
 #include "Pokemon/LearnsetTable.h"
 #include "Pokemon/Gen1Tables.h"    // MAX_SPECIES_GEN1 -- the Gen 1 dex bound
 #include "Pokemon/Pokemon2GSC.h"   // MAX_SPECIES_GEN2
+#include "Pokemon/Pokemon8LA.h"   // resetSizeAbsolutes -> a created Pokemon's size
 #include "Pokemon/PersonalInfo3FRLG.h"  // the per-group species ceilings this picker filters by
 #include "Pokemon/PersonalInfo4HGSS.h"
 #include "Pokemon/PersonalInfo5B2W2.h"
@@ -106,11 +108,8 @@ namespace UI
     // all -- a greyed-out control still reads as something the user ought to be able to reach. It is
     // trimmed off the END of the table, which is why the count is the whole mechanism and there is
     // no gap to skip over in the drawing loop, the touch targets or the Up/Down wrap.
-    constexpr int SETTINGS_ROW_VISIBLE_COUNT =
-        Names::DISPLAY_LANGUAGE_SELECTABLE ? SETTINGS_ROW_COUNT : SETTINGS_ROW_LANGUAGE;
-    static_assert(SETTINGS_ROW_LANGUAGE == SETTINGS_ROW_COUNT - 1,
-                  "Hiding the Language row works by trimming the LAST row -- a row added after it "
-                  "would be hidden instead. Move Language back to the end, or hide it by index.");
+    constexpr int SETTINGS_ROW_VISIBLE_COUNT = Names::DISPLAY_LANGUAGE_SELECTABLE ? SETTINGS_ROW_COUNT : SETTINGS_ROW_LANGUAGE;
+    static_assert(SETTINGS_ROW_LANGUAGE == SETTINGS_ROW_COUNT - 1, "Hiding the Language row works by trimming the LAST row -- a row added after it would be hidden instead. Move Language back to the end, or hide it by index.");
 
     // Creator: build a valid, game-accepted default Pokemon in the current save's format. Species-
     // correct ability / gender / friendship come from the personal table; the user refines the rest
@@ -266,8 +265,7 @@ namespace UI
                 continue;
             if (Pokemon::isLordForm(species, static_cast<uint8_t>(fIndex)))
                 continue;
-            if (byPresence &&
-                (Pokemon::getPersonalInfo(species, static_cast<uint8_t>(fIndex)).presence & bit) == 0)
+            if (byPresence && (Pokemon::getPersonalInfo(species, static_cast<uint8_t>(fIndex)).presence & bit) == 0)
                 continue;
             out.push_back(fIndex);
         }
@@ -370,20 +368,17 @@ namespace UI
         pokemon.setForm(form);
         // Maushold and Dudunsparce read their form from EC % 100, so the form has to be re-tied to
         // the encryption constant or the game overrides what was just set.
-        pokemon.setEncryptionConstant(
-            Pokemon::correctEncryptionConstantForForm(species, form, pokemon.encryptionConstant()));
+        pokemon.setEncryptionConstant(Pokemon::correctEncryptionConstantForForm(species, form, pokemon.encryptionConstant()));
 
         const std::vector<int> genders = selectableGenders(species, form);
-        if (!genders.empty() &&
-            std::find(genders.begin(), genders.end(), static_cast<int>(pokemon.gender())) == genders.end())
+        if (!genders.empty() && std::find(genders.begin(), genders.end(), static_cast<int>(pokemon.gender())) == genders.end())
             pokemon.setGender(static_cast<uint8_t>(genders.front()));
 
         if (pokemon.hasAbility())
         {
             const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(species, form, group);
             // abilityNumber is a BITMASK in the modern formats: 1 = slot 1, 2 = slot 2, 4 = hidden.
-            int want = (oldAbilityNumber == 4) ? 2 : (oldAbilityNumber == 2) ? 1
-                                                                             : 0;
+            int want = (oldAbilityNumber == 4) ? 2 : (oldAbilityNumber == 2) ? 1 : 0;
             if (want >= slots.count || slots.slot[want] == 0)
                 want = 0;
             if (slots.slot[want] != 0)
@@ -398,8 +393,7 @@ namespace UI
         pokemon.refreshChecksum();
     }
 
-    static std::unique_ptr<Pokemon::Pokemon> buildDefaultMon(Trainer::Trainer &tr, uint16_t species,
-                                                             uint8_t version)
+    static std::unique_ptr<Pokemon::Pokemon> buildDefaultMon(Trainer::Trainer &tr, uint16_t species, uint8_t version)
     {
         auto pokemon = tr.createBlankPokemon();
         if (!pokemon)
@@ -419,8 +413,7 @@ namespace UI
         // and would otherwise undo it. Maushold and Dudunsparce read their form from EC % 100, so a
         // freshly rolled EC has a 99-in-100 chance of contradicting the form just set. A no-op for
         // every other species; see FormInfo.
-        pokemon->setEncryptionConstant(
-            Pokemon::correctEncryptionConstantForForm(species, form, pokemon->encryptionConstant()));
+        pokemon->setEncryptionConstant(Pokemon::correctEncryptionConstantForForm(species, form, pokemon->encryptionConstant()));
         // Starting level. Gen 3 has NO level-1 Pokemon: its eggs hatch at 5 and its lowest wild
         // encounters are 2, so level 1 is unobtainable there -- and it is the one level whose total EXP
         // is **0**, the degenerate input to the game's level-from-EXP lookup. Gen 8+ eggs really do hatch
@@ -436,16 +429,13 @@ namespace UI
         // Random gender, constrained by the species ratio: fixed for genderless (255) / female-only (254);
         // otherwise rolled against the female threshold (genderRatio 0 -> always male).
         {
-            uint8_t genderValue = (pi.genderRatio == 255)   ? 2
-                        : (pi.genderRatio == 254) ? 1
-                                                  : (((Utils::rand32() & 0xFF) < pi.genderRatio) ? 1 : 0);
+            uint8_t genderValue = (pi.genderRatio == 255) ? 2 : (pi.genderRatio == 254) ? 1 : (((Utils::rand32() & 0xFF) < pi.genderRatio) ? 1 : 0);
             pokemon->setGender(genderValue);
         }
         // Slot-1 ability, from the table for the game being created into (Gen 3's slot pair is
         // its own; pi is the modern one). setAbility resolves the slot; Gen 3 also re-rolls the PID.
         {
-            const Pokemon::AbilitySlots slots =
-                Pokemon::getAbilitySlots(species, form, tr.getGameGroup());
+            const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(species, form, tr.getGameGroup());
             pokemon->setAbility(slots.slot[0]);
             if (!Enums::isGen3Group(tr.getGameGroup()))
                 pokemon->setAbilityNumber(1);
@@ -541,8 +531,7 @@ namespace UI
         // in the one game that Bad-Eggs it. A missing table is not an empty movepool.
         uint16_t defMove = 0;
         for (uint16_t moveIndex = 1; moveIndex < Names::getMoveCount(); ++moveIndex)
-            if (Pokemon::isLearnable(species, form, tr.getGameGroup(), moveIndex) &&
-                Names::isMovePresent(moveIndex, tr.getGameGroup()))
+            if (Pokemon::isLearnable(species, form, tr.getGameGroup(), moveIndex) && Names::isMovePresent(moveIndex, tr.getGameGroup()))
             {
                 defMove = moveIndex;
                 break;
@@ -553,9 +542,7 @@ namespace UI
             // leave the slot EMPTY rather than write a plausible-looking wrong one: an empty slot is
             // visible in the editor and harmless in-game, where a wrong move is neither. Log it --
             // reaching here means the learnset table is missing a row the creator can offer.
-            Utils::logErrorToFile("buildDefaultMon: no learnable move for species " +
-                                  std::to_string(species) + " form " + std::to_string(form) +
-                                  " -- leaving move 1 empty");
+            Utils::logErrorToFile("buildDefaultMon: no learnable move for species " + std::to_string(species) + " form " + std::to_string(form) + " -- leaving move 1 empty");
         }
         pokemon->setMove(0, defMove);
         pokemon->setMovePP(0, Names::getMoveBasePP(defMove, tr.getGameGroup()));
@@ -587,6 +574,12 @@ namespace UI
                 std::memcpy(dataBytes.data() + 0xE4, &wAbs, sizeof(float));
             }
         }
+        // Legends: Arceus also stores its absolutes, and its Pokedex researches them: left at 0, a
+        // created Pokemon would count as the smallest and lightest of its species.
+        if (tr.getGameGroup() == Enums::GameVersion::PLA)
+        {
+            static_cast<Pokemon::Pokemon8LA &>(*pokemon).resetSizeAbsolutes();
+        }
         // Roll a random IV spread at birth (same routine as the L-button randomizer, which is unchanged);
         // this recalculates stats and refreshes the checksum, so it stands in for the final pass.
         randomizeIVs(pokemon.get());
@@ -595,21 +588,14 @@ namespace UI
     }
 
     // Settings view (the toggle rows), reached from the HOME menu's Settings icon.
-    static void drawSettingsView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int settingsViewX,
-                                 int settingsViewY, int settingsViewWidth, int settingsViewHeight)
+    static void drawSettingsView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int settingsViewX, int settingsViewY, int settingsViewWidth, int settingsViewHeight)
     {
-        framebuffer.drawFilledRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, settingsViewHeight, 16,
-                                          Colors::Panel);
-        framebuffer.drawRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, settingsViewHeight, 16,
-                                    Colors::Border, 1);
+        framebuffer.drawFilledRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, settingsViewHeight, 16, Colors::Panel);
+        framebuffer.drawRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, settingsViewHeight, 16, Colors::Border, 1);
         constexpr int headerHeight = 46;
-        framebuffer.drawFilledRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, headerHeight, 16,
-                                          Colors::AccentDim);
-        framebuffer.drawFilledRect(settingsViewX, settingsViewY + headerHeight - 16, settingsViewWidth, 16,
-                                   Colors::AccentDim);
-        framebuffer.drawText(settingsViewX + 22,
-                             settingsViewY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2,
-                             "Settings", Colors::Text, TextStyle::Heading);
+        framebuffer.drawFilledRoundedRect(settingsViewX, settingsViewY, settingsViewWidth, headerHeight, 16, Colors::AccentDim);
+        framebuffer.drawFilledRect(settingsViewX, settingsViewY + headerHeight - 16, settingsViewWidth, 16, Colors::AccentDim);
+        framebuffer.drawText(settingsViewX + 22, settingsViewY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2, "Settings", Colors::Text, TextStyle::Heading);
 
         screen.touchButtons.clear();
         // Every row DEFINED, including the Language row the loop below stops short of. Sizing the
@@ -667,20 +653,17 @@ namespace UI
         // holding on the day the Language row comes back, and an assert that only covers what is on
         // screen today would pass right up until then.
         constexpr int rowW = 720, rowH = 50, rowGap = 8, rowsTop = 22, footerH = 26;
-        static_assert(headerHeight + rowsTop + rowCount * (rowH + rowGap) + footerH <= CONTENT_PANEL_HEIGHT,
-                      "Settings rows no longer fit the content panel -- shrink the rows or add scrolling");
+        static_assert(headerHeight + rowsTop + rowCount * (rowH + rowGap) + footerH <= CONTENT_PANEL_HEIGHT, "Settings rows no longer fit the content panel -- shrink the rows or add scrolling");
         const int rowX = settingsViewX + (settingsViewWidth - rowW) / 2;
         int rectY = settingsViewY + headerHeight + rowsTop;
         for (int index = 0; index < SETTINGS_ROW_VISIBLE_COUNT; ++index)
         {
             const bool selectedIndex = (screen.settingsSelectedRow == index);
             framebuffer.drawSoftShadow(rowX, rectY, rowW, rowH, 14);
-            framebuffer.drawFilledRoundedRect(rowX, rectY, rowW, rowH, 14,
-                                              selectedIndex ? Colors::Selected : Colors::PanelAlt);
+            framebuffer.drawFilledRoundedRect(rowX, rectY, rowW, rowH, 14, selectedIndex ? Colors::Selected : Colors::PanelAlt);
             if (selectedIndex)
                 framebuffer.drawRoundedRect(rowX, rectY, rowW, rowH, 14, Colors::Accent, 2);
-            framebuffer.drawText(rowX + 24, rectY + (rowH - framebuffer.lineHeight(TextStyle::Body)) / 2, labels[index],
-                                 Colors::Text, TextStyle::Body);
+            framebuffer.drawText(rowX + 24, rectY + (rowH - framebuffer.lineHeight(TextStyle::Body)) / 2, labels[index], Colors::Text, TextStyle::Body);
             int valueWidth, vh;
             framebuffer.measureText(values[index], valueWidth, vh, TextStyle::Body);
             const int pillW = valueWidth + 48, pillH = 40;
@@ -692,8 +675,7 @@ namespace UI
                 pillText = rowIsDestructive[index] ? Colors::White : Colors::PrimaryText;
             }
             framebuffer.drawPill(panelX, py, pillW, pillH, pillFill);
-            framebuffer.drawText(panelX + (pillW - valueWidth) / 2, py + (pillH - vh) / 2, values[index], pillText,
-                                 TextStyle::Body);
+            framebuffer.drawText(panelX + (pillW - valueWidth) / 2, py + (pillH - vh) / 2, values[index], pillText, TextStyle::Body);
             screen.touchButtons.push_back({index, rowX, rectY, rowW, rowH});
             rectY += rowH + rowGap;
         }
@@ -703,22 +685,15 @@ namespace UI
     // Trainer view (HOME-style ID card), reached from the HOME menu's Trainer icon. The first two
     // rows (Name / Money) are editable; the rows below are informational -- editing TID/SID would
     // re-own every Pokemon already in the save, so it is deliberately left out.
-    static void drawTrainerView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int trainerViewX,
-                                int trainerViewY, int trainerViewWidth, int trainerViewHeight)
+    static void drawTrainerView(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer, int trainerViewX, int trainerViewY, int trainerViewWidth, int trainerViewHeight)
     {
         Trainer::Trainer &t = screen.trainer;
-        framebuffer.drawFilledRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, trainerViewHeight, 16,
-                                          Colors::Panel);
-        framebuffer.drawRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, trainerViewHeight, 16, Colors::Border,
-                                    1);
+        framebuffer.drawFilledRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, trainerViewHeight, 16, Colors::Panel);
+        framebuffer.drawRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, trainerViewHeight, 16, Colors::Border, 1);
         constexpr int headerHeight = 46;
-        framebuffer.drawFilledRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, headerHeight, 16,
-                                          Colors::AccentDim);
-        framebuffer.drawFilledRect(trainerViewX, trainerViewY + headerHeight - 16, trainerViewWidth, 16,
-                                   Colors::AccentDim);
-        framebuffer.drawText(trainerViewX + 22,
-                             trainerViewY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2, "Trainer",
-                             Colors::Text, TextStyle::Heading);
+        framebuffer.drawFilledRoundedRect(trainerViewX, trainerViewY, trainerViewWidth, headerHeight, 16, Colors::AccentDim);
+        framebuffer.drawFilledRect(trainerViewX, trainerViewY + headerHeight - 16, trainerViewWidth, 16, Colors::AccentDim);
+        framebuffer.drawText(trainerViewX + 22, trainerViewY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2, "Trainer", Colors::Text, TextStyle::Heading);
 
         screen.touchButtons.clear();
 
@@ -739,19 +714,16 @@ namespace UI
         {
             const bool selectedIndex = (screen.trainerSelectedRow == index);
             framebuffer.drawSoftShadow(cardX, centerY, cardW, rowH, 14);
-            framebuffer.drawFilledRoundedRect(cardX, centerY, cardW, rowH, 14,
-                                              selectedIndex ? Colors::Selected : Colors::PanelAlt);
+            framebuffer.drawFilledRoundedRect(cardX, centerY, cardW, rowH, 14, selectedIndex ? Colors::Selected : Colors::PanelAlt);
             if (selectedIndex)
                 framebuffer.drawRoundedRect(cardX, centerY, cardW, rowH, 14, Colors::Accent, 2);
-            framebuffer.drawText(cardX + 24, centerY + (rowH - framebuffer.lineHeight(TextStyle::Body)) / 2,
-                                 labels[index], Colors::TextDim, TextStyle::Body);
+            framebuffer.drawText(cardX + 24, centerY + (rowH - framebuffer.lineHeight(TextStyle::Body)) / 2, labels[index], Colors::TextDim, TextStyle::Body);
             int valueWidth, vh;
             framebuffer.measureText(values[index], valueWidth, vh, TextStyle::Body);
             const int pillW = valueWidth + 44, pillH = 38;
             const int panelX = cardX + cardW - pillW - 20, py = centerY + (rowH - pillH) / 2;
             framebuffer.drawPill(panelX, py, pillW, pillH, selectedIndex ? Colors::Primary : Colors::Background);
-            framebuffer.drawText(panelX + (pillW - valueWidth) / 2, py + (pillH - vh) / 2, values[index],
-                                 selectedIndex ? Colors::PrimaryText : Colors::Text, TextStyle::Body);
+            framebuffer.drawText(panelX + (pillW - valueWidth) / 2, py + (pillH - vh) / 2, values[index], selectedIndex ? Colors::PrimaryText : Colors::Text, TextStyle::Body);
             screen.touchButtons.push_back({index, cardX, centerY, cardW, rowH});
             centerY += rowH + 14;
         }
@@ -763,12 +735,10 @@ namespace UI
         auto infoRow = [&](const char *label, const std::string &value)
         {
             framebuffer.drawFilledRoundedRect(cardX, centerY, cardW, 46, 12, Colors::PanelAlt);
-            framebuffer.drawText(cardX + 24, centerY + (46 - framebuffer.lineHeight(TextStyle::Body)) / 2, label,
-                                 Colors::TextDim, TextStyle::Body);
+            framebuffer.drawText(cardX + 24, centerY + (46 - framebuffer.lineHeight(TextStyle::Body)) / 2, label, Colors::TextDim, TextStyle::Body);
             int valueWidth, vh;
             framebuffer.measureText(value, valueWidth, vh, TextStyle::Body);
-            framebuffer.drawText(cardX + cardW - 24 - valueWidth, centerY + (46 - vh) / 2, value, Colors::Text,
-                                 TextStyle::Body);
+            framebuffer.drawText(cardX + cardW - 24 - valueWidth, centerY + (46 - vh) / 2, value, Colors::Text, TextStyle::Body);
             centerY += 54;
         };
         infoRow("Gender", t.trainerGender == 0 ? "Male" : "Female");
@@ -777,11 +747,7 @@ namespace UI
         infoRow("Full SID", std::to_string(t.SID));
     }
 
-    TrainerViewScreen::TrainerViewScreen(Trainer::Trainer &trainer, const std::string &titleName,
-                                         const std::string &backupDir, u64 titleId, AccountUid userUid,
-                                         bool loadedFromCart)
-        : trainer(trainer), titleName(titleName), backupDir(backupDir), gameVersion(Utils::getTitleVersion(titleId)),
-          titleId(titleId), userUid(userUid)
+    TrainerViewScreen::TrainerViewScreen(Trainer::Trainer &trainer, const std::string &titleName, const std::string &backupDir, u64 titleId, AccountUid userUid, bool loadedFromCart) : trainer(trainer), titleName(titleName), backupDir(backupDir), gameVersion(Utils::getTitleVersion(titleId)), titleId(titleId), userUid(userUid)
     {
         // No title id means nobody installed this save -- the user browsed to a file. `backupDir`
         // then holds that file's PATH rather than a directory, which is what the Gen 1 write-back
@@ -811,32 +777,20 @@ namespace UI
             stBankBox = static_cast<int>(bank->currentBox);
         // A damaged bank file drops slots silently otherwise -- the user would just find Pokemon
         // missing with no explanation.
-        if (bank && bank->lastLoadRejects() > 0)
+        if (bank && !bank->lastLoadProblem().empty())
         {
-            postStatus(std::to_string(bank->lastLoadRejects()) +
-                           " damaged bank slot(s) could not be read and were skipped.",
-                       480);
+            postStatus(bank->lastLoadProblem(), 600);
+            Utils::logEventToFile("BANK action=LOAD result=SET-ASIDE " + Utils::logField("reason", bank->lastLoadProblem()));
+        }
+        else if (bank && bank->lastLoadRejects() > 0)
+        {
+            postStatus(std::to_string(bank->lastLoadRejects()) + " damaged bank slot(s) could not be read and were skipped.", 480);
         }
 
         // Open the test trace with everything needed to interpret the rest of the run: which build,
         // which game, where the save came from, and the state of every setting that changes
         // behaviour. Without this a trace is a list of actions with no way to judge them.
-        const std::string sessionInfo =
-            "pkse=" + VERSION_STRING +
-            " game=\"" + titleName + "\" gamever=" + (gameVersion.empty() ? "?" : gameVersion) +
-            " src=" + (this->loadedFromCart ? "CART" : "BACKUP") +
-            " backup=\"" + leafName(backupDir) + "\"" +
-            " rev=\"" + (trainer.saveRevisionString.empty() ? "Base" : trainer.saveRevisionString) + "\"" +
-            " " + Utils::logField("ot", trainer.trainerName) +
-            " otid32=" + std::to_string(trainer.ID32) +
-            " tid=" + std::to_string(trainer.TID16) + " sid=" + std::to_string(trainer.SID16) +
-            " party=" + std::to_string(trainer.getPartySize()) +
-            " boxes=" + std::to_string(trainer.getBoxCount()) +
-            " inject=" + (g_injectToGameSave ? "ON" : "OFF") +
-            " illegal=" + (g_allowIllegalEdits ? "ON" : "OFF") +
-            " autobackup=" + (g_autoBackupEnabled ? "ON" : "OFF") +
-            " movewarn=" + (g_moveWarn ? "ON" : "OFF") +
-            " theme=" + (g_themeMode == ThemeMode::Dark ? "dark" : "light");
+        const std::string sessionInfo = "pkse=" + VERSION_STRING + " game=\"" + titleName + "\" gamever=" + (gameVersion.empty() ? "?" : gameVersion) + " src=" + (this->loadedFromCart ? "CART" : "BACKUP") + " backup=\"" + leafName(backupDir) + "\"" + " rev=\"" + (trainer.saveRevisionString.empty() ? "Base" : trainer.saveRevisionString) + "\"" + " " + Utils::logField("ot", trainer.trainerName) + " otid32=" + std::to_string(trainer.ID32) + " tid=" + std::to_string(trainer.TID16) + " sid=" + std::to_string(trainer.SID16) + " party=" + std::to_string(trainer.getPartySize()) + " boxes=" + std::to_string(trainer.getBoxCount()) + " inject=" + (g_injectToGameSave ? "ON" : "OFF") + " illegal=" + (g_allowIllegalEdits ? "ON" : "OFF") + " autobackup=" + (g_autoBackupEnabled ? "ON" : "OFF") + " movewarn=" + (g_moveWarn ? "ON" : "OFF") + " theme=" + (g_themeMode == ThemeMode::Dark ? "dark" : "light");
         Utils::logTestSession(sessionInfo);
         Utils::logEventToFile("SESSION " + sessionInfo);
         if (bank)
@@ -874,10 +828,8 @@ namespace UI
         const int pane = heldPane;
         if (pane == 1 && !bank)
             return;
-        const int slots = (pane == 0) ? static_cast<int>(trainer.getSlotsPerBox())
-                                      : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
-        const int boxCount = (pane == 0) ? static_cast<int>(trainer.getBoxCount())
-                                         : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
+        const int slots = (pane == 0) ? static_cast<int>(trainer.getSlotsPerBox()) : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
+        const int boxCount = (pane == 0) ? static_cast<int>(trainer.getBoxCount()) : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
         const int cols = boxGridColumns(slots);
         auto place = [&](int box, int slot, std::unique_ptr<Pokemon::Pokemon> &pokemon) -> bool
         {
@@ -898,8 +850,7 @@ namespace UI
         {
             if (!moveMon[moveMonIndex])
                 continue;
-            const int columnOffset = static_cast<int>(moveMonIndex) % carriedColumns,
-                      rowOffset = static_cast<int>(moveMonIndex) / carriedColumns;
+            const int columnOffset = static_cast<int>(moveMonIndex) % carriedColumns, rowOffset = static_cast<int>(moveMonIndex) / carriedColumns;
             int box = heldFromBox, slot = heldFromSlot + columnOffset + rowOffset * cols;
             while (slot >= slots)
             {
@@ -955,6 +906,9 @@ namespace UI
     // still advertising Edit / Ribbons / Save while none of them did anything.
     std::string TrainerViewScreen::overlayNavHint() const
     {
+        // The keyboard is drawn over whatever raised it and takes every press until it closes.
+        if (const Dialogs::KeyboardState *keyboard = Dialogs::activeKeyboard())
+            return keyboard->navHint();
         if (pksmImport.resultActive)
             return "A: OK";
         if (pksmImport.previewActive)
@@ -964,9 +918,7 @@ namespace UI
         if (pickerActive)
             return "Up/Down: Move  |  L/R: Page  |  A: Select  |  Y: Search  |  B: Cancel";
         if (statEdit.dialogActive)
-            return statEdit.mode != Dialogs::StatEditMode::IV
-                       ? "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel"
-                       : "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  A: Confirm  |  B: Cancel";
+            return statEdit.mode != Dialogs::StatEditMode::IV ? "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel" : "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  A: Confirm  |  B: Cancel";
         if (itemEditDialogActive)
             return "Left/Right: +/-1  |  Up/Down: +/-10  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel";
         if (itemRemoveConfirmActive)
@@ -975,6 +927,9 @@ namespace UI
             return "Up/Down: Choose  |  A: Save  |  B: Cancel";
         if (releaseConfirmActive)
             return "A: Release  |  B: Cancel";
+        // The popup menus, which the Boxes view raises as well as the Storage view.
+        if (storageMenuActive || boxMenuActive || groupMenuActive)
+            return "Up/Down: Choose  |  A: Select  |  B: Cancel";
         // The lossy-transfer notices. These had no entry at all, so the bar behind them kept
         // advertising the storage controls while a Cancel/Continue prompt held input.
         if (moveConfirmActive())
@@ -1028,21 +983,16 @@ namespace UI
         const Conversion::ReceivingTrainer receiving{Utils::utf8ToUtf16(trainer.trainerName), trainer.trainerGender};
         // The exact destination game, not just its group: a pokemon transferred down into Gen 3 cannot keep a
         // modern origin (4-bit field) and gets restamped, and "FRLG" alone can't say which half it is.
-        auto converted = Conversion::convert(*pokemon, trainer.getGameGroup(), conversionResult,
-                                             saveOriginVersion(trainer, titleId), &receiving);
+        auto converted = Conversion::convert(*pokemon, trainer.getGameGroup(), conversionResult, saveOriginVersion(trainer, titleId), &receiving);
         if (converted)
         {
             // Cross-generation conversion is where the subtle transfer bugs have historically lived
             // (fainted arrivals, deleted moves, garbage levels), so every one gets a line.
-            Utils::logTest("CONVERT  species=\"" + species + "\" -> " +
-                           std::to_string(static_cast<int>(trainer.getGameGroup())) +
-                           " lvl=" + std::to_string(converted->level()) +
-                           " hp=" + std::to_string(converted->statHPMax()) + " result=OK");
+            Utils::logTest("CONVERT  species=\"" + species + "\" -> " + std::to_string(static_cast<int>(trainer.getGameGroup())) + " lvl=" + std::to_string(converted->level()) + " hp=" + std::to_string(converted->statHPMax()) + " result=OK");
             pokemon = std::move(converted);
             return true; // convert in place
         }
-        Utils::logTest("CONVERT  species=\"" + species + "\" result=REFUSED msg=\"" +
-                       Conversion::resultMessage(conversionResult) + "\"");
+        Utils::logTest("CONVERT  species=\"" + species + "\" result=REFUSED msg=\"" + Conversion::resultMessage(conversionResult) + "\"");
         storageStatus = Conversion::resultMessage(conversionResult);
         storageStatusFrames = 150; // ~2.5s at 60fps
         return false;
@@ -1141,8 +1091,7 @@ namespace UI
     {
         for (const auto &p : moveMon)
         {
-            if (p && gen3DowngradeInvolved(0, p.get()) &&
-                !Conversion::canStoreOriginalTrainerName(*p, trainer.getGameGroup()))
+            if (p && gen3DowngradeInvolved(0, p.get()) && !Conversion::canStoreOriginalTrainerName(*p, trainer.getGameGroup()))
                 return true;
         }
         return false;
@@ -1164,8 +1113,7 @@ namespace UI
     // expressible there and offering more would just be a no-op the user can't see.
     // The pokemon's current ability is always listed even when it is not legal, so an existing bad
     // value stays visible and reversible instead of vanishing from its own picker.
-    void TrainerViewScreen::buildAbilityPickerOrder(uint16_t species, uint8_t form,
-                                                    Enums::GameVersion group, uint16_t current)
+    void TrainerViewScreen::buildAbilityPickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current)
     {
         pickerOrder.clear();
         const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(species, form, group);
@@ -1250,9 +1198,7 @@ namespace UI
             // ANY form present, not just form 0 -- see speciesPresentIn. Creating one of these picks
             // up the right form automatically: buildDefaultMon starts a pokemon on the first form the
             // game has, so a Braviary made in Legends: Arceus is Hisuian.
-            const bool passed = (bit != 0)             ? speciesPresentIn(static_cast<uint16_t>(sIndex), bit)
-                                : (highestSpeciesId != 0) ? (sIndex <= static_cast<int>(highestSpeciesId))
-                                                          : true;
+            const bool passed = (bit != 0) ? speciesPresentIn(static_cast<uint16_t>(sIndex), bit) : (highestSpeciesId != 0) ? (sIndex <= static_cast<int>(highestSpeciesId)) : true;
             if (passed)
                 pickerOrder.push_back(sIndex);
         }
@@ -1275,8 +1221,7 @@ namespace UI
 
     // (move half): fill the move picker with the pokemon's LEARNABLE moves first (green + top), then
     // every other move. Learnability is the per-game single-stage pool from the learnset table.
-    void TrainerViewScreen::buildMovePickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group,
-                                                 uint16_t current)
+    void TrainerViewScreen::buildMovePickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current)
     {
         pickerOrder.clear();
         const int total = Dialogs::pickerOptionCount(Dialogs::PickerKind::Move);
@@ -1430,8 +1375,7 @@ namespace UI
         const std::vector<int> selectableGenderList = selectableGenders(p.speciesID(), p.form());
         // a real choice
         if (selectableGenderList.size() > 1) return true;
-        return selectableGenderList.empty() ||
-               selectableGenderList[0] != static_cast<int>(p.gender()); // wrong gender -> fixable
+        return selectableGenderList.empty() || selectableGenderList[0] != static_cast<int>(p.gender()); // wrong gender -> fixable
     }
 
     // Resolve the Pokemon the details editor is currently targeting.
@@ -1444,14 +1388,12 @@ namespace UI
                 return trainer.party[details.partyIndex].get();
             return nullptr;
         case EditSource::Bank:
-            if (bank && details.bankBox >= 0 && details.bankBox < static_cast<int>(bank->boxes.size()) &&
-                details.bankSlot >= 0 && details.bankSlot < static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX))
+            if (bank && details.bankBox >= 0 && details.bankBox < static_cast<int>(bank->boxes.size()) && details.bankSlot >= 0 && details.bankSlot < static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX))
                 return bank->boxes[details.bankBox][details.bankSlot].get();
             return nullptr;
         case EditSource::Box:
         default:
-            if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) &&
-                selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
+            if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) && selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
                 return trainer.boxes[selectedBoxIndex][selectedItemIndex].get();
             return nullptr;
         }
@@ -1464,8 +1406,7 @@ namespace UI
     {
         if (details.source == EditSource::Box)
         {
-            trainer.mirrorPartyMemberFromBox(static_cast<size_t>(selectedBoxIndex),
-                                             static_cast<size_t>(selectedItemIndex));
+            trainer.mirrorPartyMemberFromBox(static_cast<size_t>(selectedBoxIndex), static_cast<size_t>(selectedItemIndex));
         }
         else if (details.source == EditSource::Party)
         {
@@ -1483,6 +1424,7 @@ namespace UI
     void TrainerViewScreen::snapshotEditTarget()
     {
         details.editSnapshot.clear();
+        details.unsavedChangesAtSnapshot = hasUnsavedChanges;
         if (const Pokemon::Pokemon *t = detailsTargetPokemon())
         {
             const auto dataBytes = t->getData();
@@ -1498,8 +1440,7 @@ namespace UI
         if (!t)
             return false;
         const auto dataBytes = t->getData();
-        return dataBytes.size() != details.editSnapshot.size() ||
-               !std::equal(dataBytes.begin(), dataBytes.end(), details.editSnapshot.begin());
+        return dataBytes.size() != details.editSnapshot.size() || !std::equal(dataBytes.begin(), dataBytes.end(), details.editSnapshot.begin());
     }
 
     // Roll the details target back to the snapshot: copy the baseline bytes over the live pokemon, then
@@ -1519,6 +1460,7 @@ namespace UI
         if (dataBytes.size() != details.editSnapshot.size()) return;
         std::copy(details.editSnapshot.begin(), details.editSnapshot.end(), dataBytes.begin());
         mirrorEditedPartyMember();
+        hasUnsavedChanges = details.unsavedChangesAtSnapshot;
     }
 
     void TrainerViewScreen::closeDetailsModal()
@@ -1547,8 +1489,7 @@ namespace UI
             return -1;
         for (const auto &b : touchButtons)
         {
-            if (touch.x() >= b.hitX && touch.x() < b.hitX + b.hitWidth &&
-                touch.y() >= b.hitY && touch.y() < b.hitY + b.hitHeight)
+            if (touch.x() >= b.hitX && touch.x() < b.hitX + b.hitWidth && touch.y() >= b.hitY && touch.y() < b.hitY + b.hitHeight)
                 return b.buttonId;
         }
         return -1;
@@ -1567,8 +1508,7 @@ namespace UI
             return;
 
         const std::string current = trainer.boxNames[boxIndex];
-        const Utils::KeyboardResult promptResult =
-            Utils::promptText("Rename Box", "Box name", current, static_cast<int>(maxChars));
+        const Utils::KeyboardResult promptResult = Utils::promptText("Rename Box", "Box name", current, static_cast<int>(maxChars));
         // cancel means "leave it alone", NOT "clear it"
         if (!promptResult.accepted) return;
         if (promptResult.text == current)
@@ -1578,8 +1518,7 @@ namespace UI
         // the keyboard was happy to produce may be unwritable there.
         if (!trainer.canStoreBoxName(promptResult.text))
         {
-            Utils::logTest("BOXNAME  box=" + std::to_string(boxIndex + 1) +
-                           " new=\"" + promptResult.text + "\" result=REFUSED_CHARSET");
+            Utils::logTest("BOXNAME  box=" + std::to_string(boxIndex + 1) + " new=\"" + promptResult.text + "\" result=REFUSED_CHARSET");
             storageStatus = "This game can't store one of those characters.";
             storageStatusFrames = 240;
             return;
@@ -1587,15 +1526,13 @@ namespace UI
 
         // An empty name is legitimate: the games treat a blank as "use the default", and
         // parseBoxNames already turns a blank back into "Box N" on reload.
-        Utils::logTest("BOXNAME  box=" + std::to_string(boxIndex + 1) +
-                       " old=\"" + current + "\" new=\"" + promptResult.text + "\" result=OK");
+        Utils::logTest("BOXNAME  box=" + std::to_string(boxIndex + 1) + " old=\"" + current + "\" new=\"" + promptResult.text + "\" result=OK");
         trainer.boxNames[boxIndex] = promptResult.text;
         // Only a box marked here is written on save. boxNames also holds display defaults for boxes
         // the save leaves unnamed, and persisting those would invent names the player never set.
         trainer.markBoxNameDirty(static_cast<size_t>(boxIndex));
         hasUnsavedChanges = true;
-        storageStatus =
-            promptResult.text.empty() ? "Box name cleared." : ("Box renamed to \"" + promptResult.text + "\".");
+        storageStatus = promptResult.text.empty() ? "Box name cleared." : ("Box renamed to \"" + promptResult.text + "\".");
         storageStatusFrames = 180;
     }
 
@@ -1608,9 +1545,7 @@ namespace UI
         if (!bank || box < 0 || box >= static_cast<int>(Trainer::Bank::BANK_BOX_COUNT))
             return;
         const std::string current = bank->boxNames[box];
-        const Utils::KeyboardResult promptResult =
-            Utils::promptText("Rename Bank Box", "Bank box name", current,
-                              static_cast<int>(Trainer::Bank::MAX_BOX_NAME_LEN));
+        const Utils::KeyboardResult promptResult = Utils::promptText("Rename Bank Box", "Bank box name", current, static_cast<int>(Trainer::Bank::MAX_BOX_NAME_LEN));
         // cancel = leave it alone
         if (!promptResult.accepted) return;
         if (promptResult.text == current)
@@ -1620,10 +1555,8 @@ namespace UI
         // A bank rename is an unsaved BANK change: it feeds serialize()/hasChanged(), so leaving the
         // storage view now raises the Save/Discard prompt just like a deposit does. (Not tied to the
         // trainer's hasUnsavedChanges, which is the save file's dirty flag.)
-        Utils::logTest("BANKBOXNAME  box=" + std::to_string(box + 1) +
-                       " new=\"" + promptResult.text + "\" result=OK");
-        storageStatus = promptResult.text.empty() ? "Bank box name reset to default."
-                                         : ("Bank box renamed to \"" + promptResult.text + "\".");
+        Utils::logTest("BANKBOXNAME  box=" + std::to_string(box + 1) + " new=\"" + promptResult.text + "\" result=OK");
+        storageStatus = promptResult.text.empty() ? "Bank box name reset to default." : ("Bank box renamed to \"" + promptResult.text + "\".");
         storageStatusFrames = 180;
     }
 
@@ -1652,18 +1585,20 @@ namespace UI
         if (!bank)
             return;
         pksmImport.reset();
-        // Start where the file most likely is. PKSM keeps banks under /3ds/PKSM/banks on the SD
-        // card, and its own backup feature mirrors the extdata layout one level deeper -- both are
-        // worth trying before dropping the user at the root of a card with hundreds of folders.
-        // Every candidate is probed for existence, so a card without PKSM on it just opens at the root.
+        // PKSM folders come first so existing PKSM users still land on their bank files.
+        // Native imports use the same browser, but always stage into the in-memory Bank
+        // and leave persistence to Storage's existing Save/Discard prompt.
         fileBrowserPurpose = FileBrowserPurpose::PKSMBank;
-        fileBrowser.open("Select a PKSM Bank File",
-                         {"sdmc:/3ds/PKSM/banks",
+        std::vector<std::string> importExtensions = Trainer::PokemonFile::extensions();
+        importExtensions.push_back(".bnk");
+        importExtensions.push_back(".bin"); // hand-copied pre-2019 PKSM bank.bin
+        fileBrowser.open("Import Pokemon / PKSM Bank", "Pokemon or bank files", {"sdmc:/3ds/PKSM/banks",
                           "sdmc:/3ds/PKSM/extDataBackup/banks",
                           "sdmc:/3ds/PKSM",
                           "sdmc:/PKSM/banks",
-                          "sdmc:/PKSE"},
-                         {".bnk", ".bin"}); // .bin catches a hand-copied pre-2019 bank.bin, which is named on sight
+                          POKEMON_EXPORT_DIRECTORY,
+                          "sdmc:/PKSE",
+                          "sdmc:/"}, importExtensions);
         Utils::logEventToFile("PKSMIMPORT action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
 
@@ -1673,10 +1608,8 @@ namespace UI
         fileBrowserPurpose = FileBrowserPurpose::TradePartner;
         // The same filters the save picker uses, so the list is exactly what openExternalSave can
         // open -- including a 3DS `main`, which has no extension and is matched by whole name.
-        fileBrowser.open("Select a Save to Trade With",
-                         {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
-                          "sdmc:/emulators/", "sdmc:/"},
-                         Save::saveFileExtensions(), Save::saveFileExactNames());
+        fileBrowser.open("Select a Save to Trade With", "Save files", {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
+                          "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
         Utils::logEventToFile("TRADEPARTNER action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
 
@@ -1689,18 +1622,17 @@ namespace UI
             return;
 
         size_t size = 0;
-        // readAllBytes hands back a malloc'd buffer, so it is freed with free().
         uint8_t *file = Utils::readAllBytes(path.c_str(), &size);
         if (!file || size == 0)
         {
             if (file)
-                std::free(file);
+                delete[] file;
             tradePartnerPick.refusalText = "Could not read";
             Utils::logErrorToFile("trade partner: could not read file", path.c_str());
             return;
         }
         std::vector<uint8_t> bytes(file, file + size);
-        std::free(file);
+        delete[] file;
 
         std::string label;
         std::unique_ptr<Trainer::Trainer> donorSave = Save::openExternalSave(std::move(bytes), path, &label);
@@ -1718,9 +1650,7 @@ namespace UI
             tradePartnerPick.refusalText = Trainer::tradeDonorRefusalText(donor.refusal);
             if (g_debugLogging)
             {
-                Utils::logEventToFile(std::string("TRADEPARTNER action=REFUSED ") +
-                                      Utils::logField("save", label) + " " +
-                                      Utils::logField("reason", tradePartnerPick.refusalText));
+                Utils::logEventToFile(std::string("TRADEPARTNER action=REFUSED ") + Utils::logField("save", label) + " " + Utils::logField("reason", tradePartnerPick.refusalText));
             }
             return;
         }
@@ -1743,16 +1673,14 @@ namespace UI
             // it, so buildTradeDonor would refuse it -- listing it would be a row that exists only
             // to say no. A DIFFERENT USER'S copy of the same title is still a real partner, which
             // is the only donor a single-title game like Legends: Z-A can have.
-            const bool isTheOpenSave = entry.titleId == titleId &&
-                                       std::memcmp(&entry.accountUid, &userUid, sizeof(AccountUid)) == 0;
+            const bool isTheOpenSave = entry.titleId == titleId && std::memcmp(&entry.accountUid, &userUid, sizeof(AccountUid)) == 0;
             if (isTheOpenSave)
                 continue;
             if (Trainer::titleCanTradeWith(entry.gameVersion, *pokemon))
                 tradePartnerTitles.candidates.push_back(entry);
         }
         tradePartnerTitles.active = true;
-        Utils::logEventToFile("TRADEPARTNER action=TITLES offered=" +
-                              std::to_string(tradePartnerTitles.candidates.size()));
+        Utils::logEventToFile("TRADEPARTNER action=TITLES offered=" + std::to_string(tradePartnerTitles.candidates.size()));
     }
 
     void TrainerViewScreen::tradeEvolveWithChosenTitle(const ConsoleSaveEntry &entry)
@@ -1773,8 +1701,7 @@ namespace UI
         if (mkdir(scratchDirectory.c_str(), 0777) != 0 && errno != EEXIST)
         {
             tradePartnerPick.refusalText = "Could not read that save";
-            Utils::logErrorToFile("trade partner: could not create the scratch directory",
-                                  scratchDirectory.c_str());
+            Utils::logErrorToFile("trade partner: could not create the scratch directory", scratchDirectory.c_str());
             return;
         }
         if (!Utils::copySaveDataTo(entry.accountUid, entry.titleId, scratchDirectory.c_str()))
@@ -1784,8 +1711,7 @@ namespace UI
             return;
         }
 
-        std::unique_ptr<Trainer::Trainer> donorSave =
-            Save::readTitleSaveAsTrainer(scratchDirectory.c_str(), entry.titleId);
+        std::unique_ptr<Trainer::Trainer> donorSave = Save::readTitleSaveAsTrainer(scratchDirectory.c_str(), entry.titleId);
         if (!donorSave)
         {
             tradePartnerPick.refusalText = "Could not read that save";
@@ -1798,17 +1724,13 @@ namespace UI
                 tradePartnerPick.refusalText = Trainer::tradeDonorRefusalText(donor.refusal);
                 if (g_debugLogging)
                 {
-                    Utils::logEventToFile(std::string("TRADEPARTNER action=REFUSED ") +
-                                          Utils::logField("title", entry.label) + " " +
-                                          Utils::logField("reason", tradePartnerPick.refusalText));
+                    Utils::logEventToFile(std::string("TRADEPARTNER action=REFUSED ") + Utils::logField("title", entry.label) + " " + Utils::logField("reason", tradePartnerPick.refusalText));
                 }
             }
             else
             {
                 if (g_debugLogging)
-                    Utils::logEventToFile(std::string("TRADEPARTNER action=TITLE ") +
-                                          Utils::logField("title", entry.label) + " " +
-                                          Utils::logField("user", entry.userName));
+                    Utils::logEventToFile(std::string("TRADEPARTNER action=TITLE ") + Utils::logField("title", entry.label) + " " + Utils::logField("user", entry.userName));
                 finishTradeEvolve(*pokemon, donor.partner);
             }
         }
@@ -1838,10 +1760,7 @@ namespace UI
         // Logged AFTER, so the line describes the pokemon as it landed.
         if (g_debugLogging)
         {
-            Utils::logEventToFile(std::string("MON action=TRADE_EVOLVE ") +
-                                  Utils::logField("from", Trainer::getSpeciesName(previousSpeciesId)) + " " +
-                                  Utils::logField("to", Trainer::getSpeciesName(pokemon->speciesID())) + " " +
-                                  Utils::briefPokemon(*pokemon));
+            Utils::logEventToFile(std::string("MON action=TRADE_EVOLVE ") + Utils::logField("from", Trainer::getSpeciesName(previousSpeciesId)) + " " + Utils::logField("to", Trainer::getSpeciesName(pokemon->speciesID())) + " " + Utils::briefPokemon(*pokemon));
         }
         hasUnsavedChanges = true;
         mirrorEditedPartyMember();
@@ -1875,12 +1794,7 @@ namespace UI
         mirrorEditedPartyMember();
         if (g_debugLogging)
         {
-            Utils::logEventToFile(std::string("MON action=TRADE_EVOLVE ") +
-                                  Utils::logField("from", Trainer::getSpeciesName(previousSpeciesId)) + " " +
-                                  Utils::logField("to", Trainer::getSpeciesName(pokemon.speciesID())) + " " +
-                                  Utils::logField("handler", Utils::utf16ToUtf8(partner.trainerName)) + " " +
-                                  Utils::logField("handlerStamped", traded ? "Y" : "N") + " " +
-                                  Utils::briefPokemon(pokemon));
+            Utils::logEventToFile(std::string("MON action=TRADE_EVOLVE ") + Utils::logField("from", Trainer::getSpeciesName(previousSpeciesId)) + " " + Utils::logField("to", Trainer::getSpeciesName(pokemon.speciesID())) + " " + Utils::logField("handler", Utils::utf16ToUtf8(partner.trainerName)) + " " + Utils::logField("handlerStamped", traded ? "Y" : "N") + " " + Utils::briefPokemon(pokemon));
         }
     }
 
@@ -1890,13 +1804,11 @@ namespace UI
         pksmImport.fileName = leafName(path);
 
         size_t size = 0;
-        // readAllBytes hands back a malloc'd buffer, so it is freed with free() rather than the
-        // delete[] most of the older call sites use.
         uint8_t *file = Utils::readAllBytes(path.c_str(), &size);
         if (!file || size == 0)
         {
             if (file)
-                std::free(file);
+                delete[] file;
             pksmImport.importer.fail("Couldn't read that file from the SD card.");
             pksmImport.resultActive = true;
             Utils::logErrorToFile("PKSM import: could not read file", path.c_str());
@@ -1904,7 +1816,7 @@ namespace UI
         }
 
         const bool passed = pksmImport.importer.scan(std::span<const uint8_t>(file, size));
-        std::free(file);
+        delete[] file;
 
         // Box names live in a `<name>.json` sidecar beside the .bnk. Optional -- a missing or
         // unreadable one just means the imported boxes keep their default "Bank N" labels.
@@ -1919,21 +1831,14 @@ namespace UI
                 uint8_t *json = Utils::readAllBytes(sidecar.c_str(), &jsonSize);
                 if (json)
                 {
-                    pksmImport.importer.setBoxNames(
-                        Trainer::parsePKSMBoxNames(std::span<const uint8_t>(json, jsonSize)));
-                    std::free(json);
+                    pksmImport.importer.setBoxNames(Trainer::parsePKSMBoxNames(std::span<const uint8_t>(json, jsonSize)));
+                    delete[] json;
                 }
             }
         }
 
         const auto &r = pksmImport.importer.report();
-        Utils::logEventToFile("PKSMIMPORT action=SCAN file=\"" + pksmImport.fileName + "\"" +
-                              " result=" + (passed ? "OK" : "REJECTED") +
-                              " boxes=" + std::to_string(r.sourceBoxes) +
-                              " occupied=" + std::to_string(r.occupied) +
-                              " importable=" + std::to_string(r.importable) +
-                              " unsupported=" + std::to_string(r.unsupported) +
-                              " damaged=" + std::to_string(r.damaged));
+        Utils::logEventToFile("PKSMIMPORT action=SCAN file=\"" + pksmImport.fileName + "\"" + " result=" + (passed ? "OK" : "REJECTED") + " boxes=" + std::to_string(r.sourceBoxes) + " occupied=" + std::to_string(r.occupied) + " importable=" + std::to_string(r.importable) + " unsupported=" + std::to_string(r.unsupported) + " damaged=" + std::to_string(r.damaged));
 
         // A file we cannot use, and a file with nothing PKSE can store, both go straight to the
         // result screen -- there is no decision left to offer.
@@ -2026,9 +1931,39 @@ namespace UI
             const std::string picked = fileBrowser.chosenPath;
             fileBrowser.chosenPath.clear();
             if (fileBrowserPurpose == FileBrowserPurpose::TradePartner)
+            {
                 tradeEvolveWithChosenSave(picked);
+            }
+            else if (Trainer::PokemonFile::supportsFileName(picked))
+            {
+                size_t importBox = 0;
+                size_t importSlot = 0;
+                std::string error;
+                if (bank && Trainer::PokemonFile::importIntoBank(*bank, picked, &importBox, &importSlot, &error))
+                {
+                    stBankBox = static_cast<int>(importBox);
+                    stBankSlot = static_cast<int>(importSlot);
+                    storageFocusPane = 1;
+                    fileBrowser.close();
+                    pksmImport.reset();
+                    postStatus("Pokemon imported - choose Save when you leave Storage.", 480);
+                    if (g_debugLogging)
+                    {
+                        Utils::logEventToFile("POKEMONFILE action=IMPORT result=OK " + Utils::logField("file", leafName(picked)) + " " + Utils::logSlot("to", 1, stBankBox, stBankSlot) + " " + Utils::describePokemon(*bank->boxes[importBox][importSlot], trainer));
+                    }
+                }
+                else
+                {
+                    if (!bank)
+                        error = "the Bank is not loaded";
+                    postStatus("Import failed: " + error, 480);
+                    Utils::logEventToFile("POKEMONFILE action=IMPORT result=FAILED " + Utils::logField("file", leafName(picked)) + " " + Utils::logField("reason", error));
+                }
+            }
             else
+            {
                 scanChosenPKSMBank(picked);
+            }
         }
     }
 
@@ -2040,14 +1975,8 @@ namespace UI
         pksmImport.committed = true;
 
         const auto &r = pksmImport.importer.report();
-        Utils::logEventToFile("PKSMIMPORT action=COMMIT file=\"" + pksmImport.fileName + "\"" +
-                              " placed=" + std::to_string(placed) +
-                              " boxes=" + std::to_string(r.boxesUsed) +
-                              " scattered=" + std::to_string(r.scattered) +
-                              " overflow=" + std::to_string(r.overflow) +
-                              " names=" + std::to_string(r.namesCarried));
-        Utils::logTest("PKSMIMPORT placed=" + std::to_string(placed) +
-                       " overflow=" + std::to_string(r.overflow));
+        Utils::logEventToFile("PKSMIMPORT action=COMMIT file=\"" + pksmImport.fileName + "\"" + " placed=" + std::to_string(placed) + " boxes=" + std::to_string(r.boxesUsed) + " scattered=" + std::to_string(r.scattered) + " overflow=" + std::to_string(r.overflow) + " names=" + std::to_string(r.namesCarried));
+        Utils::logTest("PKSMIMPORT placed=" + std::to_string(placed) + " overflow=" + std::to_string(r.overflow));
 
         // Land the cursor on the first imported box so the result is visible the moment the dialog
         // closes -- an import that appears to do nothing is indistinguishable from one that failed.
@@ -2169,9 +2098,7 @@ namespace UI
     void TrainerViewScreen::editTrainerName()
     {
         const std::string current = trainer.trainerName;
-        const Utils::KeyboardResult promptResult =
-            Utils::promptText("Trainer Name", "OT name", current,
-                              static_cast<int>(trainer.getMaxTrainerNameLength()));
+        const Utils::KeyboardResult promptResult = Utils::promptText("Trainer Name", "OT name", current, static_cast<int>(trainer.getMaxTrainerNameLength()));
         // cancel means "leave it alone", not "clear it"
         if (!promptResult.accepted) return;
         if (promptResult.text == current)
@@ -2186,9 +2113,7 @@ namespace UI
         if (nameHasTooManyDigits(Utils::utf8ToUtf16(promptResult.text), maxDigits))
         {
             Utils::logTest("TRAINERNAME new=\"" + promptResult.text + "\" result=REFUSED_DIGITS");
-            postStatus("This game allows at most " + std::to_string(maxDigits) +
-                           " numbers in a trainer name.",
-                       240);
+            postStatus("This game allows at most " + std::to_string(maxDigits) + " numbers in a trainer name.", 240);
             return;
         }
         Utils::logTest("TRAINERNAME old=\"" + current + "\" new=\"" + promptResult.text + "\" result=OK");
@@ -2198,25 +2123,20 @@ namespace UI
         const int count = restampCaughtPokemonIdentity(caughtName);
         hasUnsavedChanges = true;
         Utils::logTest("TRAINERNAME restamped=" + std::to_string(count));
-        postStatus(
-            withOtRestampNote(promptResult.text.empty() ? "Trainer name cleared." : "Trainer name updated.", count),
-            200);
+        postStatus(withOtRestampNote(promptResult.text.empty() ? "Trainer name cleared." : "Trainer name updated.", count), 200);
     }
 
     // Edit the trainer's money via the number pad, clamped to this game's cap. promptNumber both
     // widths the keypad to the max and clamps the returned value, so an out-of-range entry can't slip in.
     void TrainerViewScreen::editTrainerMoney()
     {
-        const Utils::NumberResult promptResult =
-            Utils::promptNumber("Money", static_cast<int>(trainer.money), 0,
-                                static_cast<int>(trainer.getMaxMoney()));
+        const Utils::NumberResult promptResult = Utils::promptNumber("Money", static_cast<int>(trainer.money), 0, static_cast<int>(trainer.getMaxMoney()));
         if (!promptResult.accepted)
             return;
         const uint32_t newMoney = static_cast<uint32_t>(promptResult.value);
         if (newMoney == trainer.money)
             return;
-        Utils::logTest("TRAINERMONEY old=" + std::to_string(trainer.money) +
-                       " new=" + std::to_string(newMoney) + " result=OK");
+        Utils::logTest("TRAINERMONEY old=" + std::to_string(trainer.money) + " new=" + std::to_string(newMoney) + " result=OK");
         trainer.money = newMoney;
         hasUnsavedChanges = true;
         postStatus("Money set to $" + std::to_string(newMoney) + ".", 150);
@@ -2246,12 +2166,7 @@ namespace UI
         saveConfirmActive = false;
 
         // The single most important trace line: what was written, where, and whether it worked.
-        const std::string saveInfo =
-            std::string("dest=") + (injectToTitle ? "GAME" : "BACKUP") +
-            " folder=\"" + leafName(destDir) + "\"" +
-            " inject=" + (injectToTitle ? "1" : "0") +
-            " illegaldata=" + (illegalDataWritten ? "1" : "0") +
-            " result=" + (passed ? "OK" : "FAILED");
+        const std::string saveInfo = std::string("dest=") + (injectToTitle ? "GAME" : "BACKUP") + " folder=\"" + leafName(destDir) + "\"" + " inject=" + (injectToTitle ? "1" : "0") + " illegaldata=" + (illegalDataWritten ? "1" : "0") + " result=" + (passed ? "OK" : "FAILED");
         Utils::logTest("SAVE     " + saveInfo);
         Utils::logEventToFile("SAVE " + saveInfo + " party=" + std::to_string(trainer.getPartySize()));
 
@@ -2265,9 +2180,7 @@ namespace UI
             creator.keepConfirmActive = false; // committed by the save
             // Name the destination back to the user: with three of them, "saved" alone is ambiguous
             // and the whole point of the picker is knowing WHERE it went.
-            postStatus(injectToTitle ? "Written to the game save."
-                                     : ("Written to backup \"" + leafName(destDir) + "\"."),
-                       200);
+            postStatus(injectToTitle ? "Written to the game save." : ("Written to backup \"" + leafName(destDir) + "\"."), 200);
             // A new backup becomes the session's working copy, so a second save goes to the same
             // place instead of silently forking another folder off the original.
             backupDir = destDir;
@@ -2293,8 +2206,7 @@ namespace UI
         std::string leaf;
         for (const char character : name)
         {
-            if (std::isalnum(static_cast<unsigned char>(character)) || character == ' ' || character == '-' ||
-                character == '_')
+            if (std::isalnum(static_cast<unsigned char>(character)) || character == ' ' || character == '-' || character == '_')
                 leaf += character;
         }
         // FAT32 dislikes trailing spaces
@@ -2357,9 +2269,11 @@ namespace UI
             return false;
         // The focused pane first, from the box the user is already looking at, then wrapping, then
         // the other pane -- so a match near the cursor wins over one at the start of the bank.
-        for (int paneStep = 0; paneStep < 2; ++paneStep)
+        const bool searchesBank = selectedMode == ViewMode::Storage;
+        const int firstPane = searchesBank ? storageFocusPane : 0;
+        for (int paneStep = 0; paneStep < (searchesBank ? 2 : 1); ++paneStep)
         {
-            const int pane = (storageFocusPane + paneStep) % 2;
+            const int pane = (firstPane + paneStep) % 2;
             const int boxCount = paneBoxes(pane);
             const int slotCount = paneSlots(pane);
             const int startBox = (paneStep == 0) ? (pane == 0 ? selectedBoxIndex : stBankBox) : 0;
@@ -2370,6 +2284,12 @@ namespace UI
                 {
                     if (!storageSlotMatchesSearch(pane, box, slot))
                         continue;
+                    if (!searchesBank)
+                    {
+                        selectedBoxIndex = box;
+                        selectedItemIndex = slot;
+                        return true;
+                    }
                     storageFocusPane = pane;
                     if (pane == 0)
                     {
@@ -2386,6 +2306,27 @@ namespace UI
             }
         }
         return false;
+    }
+
+    void TrainerViewScreen::searchStorage()
+    {
+        // The grids highlight straight from the query, so matches light up while it is typed. The
+        // cursor jumps only once it is accepted: jumping per key would move the bank's current box,
+        // which is an unsaved bank change.
+        const char *searchTitle = selectedMode == ViewMode::Storage ? "Box and Bank" : "Boxes";
+        if (storageSearch.promptForQuery(searchTitle, ListSearch::FilterTiming::WhileTyping))
+        {
+            if (storageSearch.isFiltering() && !jumpToFirstStorageMatch())
+                postStatus("No Pokemon here match that search.", 240);
+        }
+    }
+
+    void TrainerViewScreen::openBoxMenu(int pane, int box)
+    {
+        boxMenuActive = true;
+        boxMenuIndex = BOX_MENU_ROW_SORT;
+        boxMenuPane = pane;
+        boxMenuBox = box;
     }
 
     bool TrainerViewScreen::armTap(int buttonId, u64 button)
@@ -2460,9 +2401,7 @@ namespace UI
             pickerFilteredRows.reserve(static_cast<size_t>(pickerCount));
             for (int row = 0; row < pickerCount; ++row)
             {
-                const int value = (pickerUsesOrder() && row < static_cast<int>(pickerOrder.size()))
-                                      ? pickerOrder[row]
-                                      : row;
+                const int value = (pickerUsesOrder() && row < static_cast<int>(pickerOrder.size())) ? pickerOrder[row] : row;
                 // Matched against the label the row DRAWS -- see pickerRowLabel().
                 if (pickerSearch.matches(Dialogs::pickerRowLabel(*this, pickerKind, value).c_str()))
                     pickerFilteredRows.push_back(row);
@@ -2482,9 +2421,7 @@ namespace UI
             for (int visibleIndex = 0; visibleIndex < visibleCount; ++visibleIndex)
             {
                 const int row = pickerRowForVisibleIndex(visibleIndex);
-                const int value = (pickerUsesOrder() && row >= 0 && row < static_cast<int>(pickerOrder.size()))
-                                      ? pickerOrder[row]
-                                      : row;
+                const int value = (pickerUsesOrder() && row >= 0 && row < static_cast<int>(pickerOrder.size())) ? pickerOrder[row] : row;
                 if (value == previouslySelectedValue)
                 {
                     pickerSel = visibleIndex;
@@ -2515,8 +2452,7 @@ namespace UI
                 // which, which is the failure a second index space would invite.
                 if (itemSearch.isFiltering())
                 {
-                    const char *itemName =
-                        Names::getItemNameFor(trainer.getGameGroup(), pouch[pouchIndex].itemId);
+                    const char *itemName = Names::getItemNameFor(trainer.getGameGroup(), pouch[pouchIndex].itemId);
                     if (!itemSearch.matches(itemName))
                         continue;
                 }
@@ -2531,7 +2467,8 @@ namespace UI
     // Two storage models. The id-indexed games (BDSP / S-V / Z-A) build their pouch vector by
     // walking every legal id, so an entry already exists for anything addable and nothing is ever
     // appended -- they report a bound large enough to never block. The slot-based games store only
-    // what the bag holds, so a new item really does append and must respect the pouch's capacity.
+    // what the bag holds, so a new item really does append and must respect the pouch's capacity;
+    // a group with no case below answers through its trainer, whose writer drops anything past it.
     // Legends: Arceus reports 0 (appending unsupported): its PouchInfo8LA carries no capacity and
     // its item block is resized on write, so appending without a documented bound could overflow it.
     int TrainerViewScreen::currentPouchCapacity() const
@@ -2543,29 +2480,23 @@ namespace UI
         switch (trainer.getGameGroup())
         {
         case Enums::GameVersion::FRLG:
-            return (categoryIndex < static_cast<int>(POUCH_COUNT3_FRLG))
-                       ? getPouchInfo3FRLG(static_cast<PouchType3FRLG>(categoryIndex)).maxSlots
-                       : 0;
+            return (categoryIndex < static_cast<int>(POUCH_COUNT3_FRLG)) ? getPouchInfo3FRLG(static_cast<PouchType3FRLG>(categoryIndex)).maxSlots : 0;
         case Enums::GameVersion::RSE:
             // The one place the Hoenn layout has to be asked for: Emerald's Items and Key Items
             // pouches hold 30 where Ruby/Sapphire's hold 20, so a shared number would either
             // truncate an Emerald bag or offer ten slots a Ruby bag does not have.
-            return (categoryIndex < static_cast<int>(POUCH_COUNT3_RSE))
-                       ? getPouchInfo3RSE(static_cast<PouchType3RSE>(categoryIndex), hoennLayout(trainer)).maxSlots
-                       : 0;
+            return (categoryIndex < static_cast<int>(POUCH_COUNT3_RSE)) ? getPouchInfo3RSE(static_cast<PouchType3RSE>(categoryIndex), hoennLayout(trainer)).maxSlots : 0;
         case Enums::GameVersion::GG:
-            return (categoryIndex < static_cast<int>(PouchType7LGPE::Count))
-                       ? getPouchInfo7LGPE(static_cast<PouchType7LGPE>(categoryIndex)).maxSlots
-                       : 0;
+            return (categoryIndex < static_cast<int>(PouchType7LGPE::Count)) ? getPouchInfo7LGPE(static_cast<PouchType7LGPE>(categoryIndex)).maxSlots : 0;
         case Enums::GameVersion::SWSH:
-            return (categoryIndex < static_cast<int>(PouchType8SWSH::Count))
-                       ? getPouchInfo8SWSH(static_cast<PouchType8SWSH>(categoryIndex)).maxCount
-                       : 0;
+            return (categoryIndex < static_cast<int>(PouchType8SWSH::Count)) ? getPouchInfo8SWSH(static_cast<PouchType8SWSH>(categoryIndex)).maxCount : 0;
         case Enums::GameVersion::PLA:
             // Fixed-capacity packed pouches; the general bag grows with Satchel Upgrades.
             return static_cast<int>(trainer.getItemPouchCapacity(categoryIndex));
         default:
-            return 1 << 20; // id-indexed: the entry is already there, so this never binds
+            if (trainer.itemsAreIdIndexed())
+                return 1 << 20; // id-indexed: the entry is already there, so this never binds
+            return static_cast<int>(trainer.getItemPouchCapacity(categoryIndex));
         }
     }
 
@@ -2605,23 +2536,31 @@ namespace UI
             return (categoryIndex == static_cast<int>(Trainer::PouchType8SWSH::KeyItems)) ? 1 : 999;
         // PLA caps Key Items AND Recipes at 1 (possession flags), like PKHeX PlayerBag8a.
         case Version::PLA:
-            return (categoryIndex == static_cast<int>(Trainer::PouchType8LA::KeyItems) ||
-                    categoryIndex == static_cast<int>(Trainer::PouchType8LA::Recipes))
-                       ? 1
-                       : 999;
+            return (categoryIndex == static_cast<int>(Trainer::PouchType8LA::KeyItems) || categoryIndex == static_cast<int>(Trainer::PouchType8LA::Recipes)) ? 1 : 999;
         case Version::BDSP:
             return (categoryIndex == static_cast<int>(Trainer::PouchType8BDSP::KeyItems)) ? 1 : 999;
         case Version::SV:
             return (categoryIndex == static_cast<int>(Trainer::PouchType9SV::KeyItems)) ? 1 : 999;
         case Version::ZA:
-            return (categoryIndex == static_cast<int>(Trainer::PouchType9LZA::KeyItems) ||
-                    categoryIndex == static_cast<int>(Trainer::PouchType9LZA::TMs) ||
-                    categoryIndex == static_cast<int>(Trainer::PouchType9LZA::MegaStones))
-                       ? 1
-                       : 999;
+            return (categoryIndex == static_cast<int>(Trainer::PouchType9LZA::KeyItems) || categoryIndex == static_cast<int>(Trainer::PouchType9LZA::TMs) || categoryIndex == static_cast<int>(Trainer::PouchType9LZA::MegaStones)) ? 1 : 999;
         default:
-            return 999;
+        {
+            const int pouchMaxCount = trainer.getItemMaxCount(categoryIndex);
+            return pouchMaxCount > 0 ? pouchMaxCount : 999;
         }
+        }
+    }
+
+    // Wraps on the pouches the trainer actually loaded, so every group pages through its own bag
+    // with no list of games to fall out of step with.
+    void TrainerViewScreen::stepItemPouch(int pouchStep)
+    {
+        const int pouchCount = static_cast<int>(trainer.items.size());
+        if (pouchCount == 0)
+            return;
+        selectedCategory = ((selectedCategory + pouchStep) % pouchCount + pouchCount) % pouchCount;
+        currentPage = 0;
+        selectedItemIndex = 0;
     }
 
     // Open the details modal on a storage slot (reuses the Box path for the save pane).
@@ -2661,14 +2600,12 @@ namespace UI
 
     int TrainerViewScreen::paneSlots(int pane) const
     {
-        return pane == 0 ? static_cast<int>(trainer.getSlotsPerBox())
-                         : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
+        return pane == 0 ? static_cast<int>(trainer.getSlotsPerBox()) : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
     }
 
     int TrainerViewScreen::paneBoxes(int pane) const
     {
-        return pane == 0 ? static_cast<int>(trainer.getBoxCount())
-                         : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
+        return pane == 0 ? static_cast<int>(trainer.getBoxCount()) : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
     }
 
     void TrainerViewScreen::cancelSelection()
@@ -2837,8 +2774,7 @@ namespace UI
         int selectionColumns = selectDimensions.first, selectionRows = selectDimensions.second;
         if (selectionColumns <= 1 && selectionRows <= 1)
             return;
-        if (selectionColumns <= 0 || selectionRows <= 0 ||
-            static_cast<int>(moveMon.size()) != selectionColumns * selectionRows)
+        if (selectionColumns <= 0 || selectionRows <= 0 || static_cast<int>(moveMon.size()) != selectionColumns * selectionRows)
             return;
 
         auto colEmpty = [&](int columnIndex)
@@ -2897,8 +2833,7 @@ namespace UI
         const int slots = paneSlots(pane);
         const int rows = (slots + cols - 1) / cols;
         const int columnIndex = slot % cols, r = slot / cols;
-        return columnIndex + selectDimensions.first <= cols && r + selectDimensions.second <= rows &&
-               slot + (selectDimensions.first - 1) + (selectDimensions.second - 1) * cols < slots;
+        return columnIndex + selectDimensions.first <= cols && r + selectDimensions.second <= rows && slot + (selectDimensions.first - 1) + (selectDimensions.second - 1) * cols < slots;
     }
 
     // Put the block down at the cursor: cell (x, y) -> slot + x + y*cols, exactly. Each cell SWAPS
@@ -2933,8 +2868,7 @@ namespace UI
         {
             for (int columnOffset = 0; columnOffset < selectionColumns; ++columnOffset)
             {
-                const size_t index = static_cast<size_t>(yIndex) * static_cast<size_t>(selectionColumns) +
-                                     static_cast<size_t>(columnOffset);
+                const size_t index = static_cast<size_t>(yIndex) * static_cast<size_t>(selectionColumns) + static_cast<size_t>(columnOffset);
                 const int dSlot = slot + columnOffset + yIndex * cols;
                 if (dSlot < 0 || dSlot >= slots)
                     continue;
@@ -2953,24 +2887,18 @@ namespace UI
                     // save is what produces a Bad Egg in game, so a failure here must not fall through.
                     const bool foreign = (pane == 0 && moveMon[index]->getGameGroup() != trainer.getGameGroup());
                     Conversion::Result conversionResult{};
-                    const bool routed =
-                        !foreign || Conversion::canConvert(*moveMon[index], trainer.getGameGroup(), conversionResult);
+                    const bool routed = !foreign || Conversion::canConvert(*moveMon[index], trainer.getGameGroup(), conversionResult);
                     if (!routed || !convertForPane(moveMon[index], pane))
                     {
                         ++blocked;
                         if (!firstWhy)
                         {
-                            firstName = Names::getDisplayName(moveMon[index]->speciesID(), moveMon[index]->form(),
-                                                              Trainer::getSpeciesName(moveMon[index]->speciesID()));
+                            firstName = Names::getDisplayName(moveMon[index]->speciesID(), moveMon[index]->form(), Trainer::getSpeciesName(moveMon[index]->speciesID()));
                             firstWhy = routed ? "conversion failed" : Conversion::resultMessage(conversionResult);
                         }
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(
-                                "MOVE result=BLOCKED " + Utils::logSlot("to", pane, box, dSlot) + " " +
-                                Utils::logField("reason", routed ? "conversion failed"
-                                                                 : Conversion::resultMessage(conversionResult)) +
-                                " " + Utils::describePokemon(*moveMon[index], trainer));
+                            Utils::logEventToFile("MOVE result=BLOCKED " + Utils::logSlot("to", pane, box, dSlot) + " " + Utils::logField("reason", routed ? "conversion failed" : Conversion::resultMessage(conversionResult)) + " " + Utils::describePokemon(*moveMon[index], trainer));
                         }
                         continue; // leave it in hand, untouched
                     }
@@ -2981,10 +2909,7 @@ namespace UI
                 std::swap(destination, moveMon[index]); // block swap: the occupant comes up
                 if (g_debugLogging && destination)
                 {
-                    std::string line = "MOVE result=OK " + Utils::logSlot("from", heldPane, heldFromBox, heldFromSlot) +
-                                       " " + Utils::logSlot("to", pane, box, dSlot) +
-                                       (converted ? " converted=Y" : "") + " " +
-                                       Utils::describePokemon(*destination, trainer);
+                    std::string line = "MOVE result=OK " + Utils::logSlot("from", heldPane, heldFromBox, heldFromSlot) + " " + Utils::logSlot("to", pane, box, dSlot) + (converted ? " converted=Y" : "") + " " + Utils::describePokemon(*destination, trainer);
                     if (moveMon[index])
                         line += " displaced=[" + Utils::briefPokemon(*moveMon[index]) + "]";
                     Utils::logEventToFile(line);
@@ -3011,9 +2936,7 @@ namespace UI
 
         if (blocked > 0)
         {
-            postStatus(firstName + ": " + (firstWhy ? firstWhy : "no transfer route") +
-                           (blocked > 1 ? "  (+" + std::to_string(blocked - 1) + " more)" : "") + " - still in hand",
-                       240);
+            postStatus(firstName + ": " + (firstWhy ? firstWhy : "no transfer route") + (blocked > 1 ? "  (+" + std::to_string(blocked - 1) + " more)" : "") + " - still in hand", 240);
         }
         else if (lockedHit > 0)
         {
@@ -3054,8 +2977,7 @@ namespace UI
     // occupant stays exactly where it is and the sort flows around it.
     void TrainerViewScreen::sortStorageBox(int pane, int box)
     {
-        const int slots = (pane == 0) ? static_cast<int>(trainer.getSlotsPerBox())
-                                      : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
+        const int slots = (pane == 0) ? static_cast<int>(trainer.getSlotsPerBox()) : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
         std::vector<int> freeIdx; // slots the sort may write to
         std::vector<std::unique_ptr<Pokemon::Pokemon>> mons;
         for (int slotIndex = 0; slotIndex < slots; ++slotIndex)
@@ -3074,8 +2996,7 @@ namespace UI
             storageStatusFrames = 120;
             return;
         }
-        std::sort(mons.begin(), mons.end(),
-                  [](const std::unique_ptr<Pokemon::Pokemon> &a, const std::unique_ptr<Pokemon::Pokemon> &b)
+        std::sort(mons.begin(), mons.end(), [](const std::unique_ptr<Pokemon::Pokemon> &a, const std::unique_ptr<Pokemon::Pokemon> &b)
                   {
                       if (a->speciesID() != b->speciesID())
                           return a->speciesID() < b->speciesID();
@@ -3119,9 +3040,7 @@ namespace UI
         // so a mode switch can never orphan a carried block or a half-drawn selection.
         if ((buttonsDown & HidNpadButton_Y) && !holding && !currentlySelecting)
         {
-            cursorMode = cursorMode == CursorMode::Menu   ? CursorMode::Move
-                         : cursorMode == CursorMode::Move ? CursorMode::Multi
-                                                          : CursorMode::Menu;
+            cursorMode = cursorMode == CursorMode::Menu ? CursorMode::Move : cursorMode == CursorMode::Move ? CursorMode::Multi : CursorMode::Menu;
         }
 
         // L/R: change the focused pane's box (wrap); keep the cursor slot in range. Changing box
@@ -3280,8 +3199,8 @@ namespace UI
         }
 
         // X: while drawing a rectangle it DUPLICATES the selection (grab a copy
-        // and leave the originals in place). Otherwise it sorts the focused box. Suppressed while
-        // carrying, so a sort can never run with Pokemon held out of the grid and lose them.
+        // and leave the originals in place). Otherwise it opens the box menu (Sort / Search). Suppressed
+        // while carrying, so a sort can never run with Pokemon held out of the grid and lose them.
         if (buttonsDown & HidNpadButton_X)
         {
             if (currentlySelecting)
@@ -3293,7 +3212,7 @@ namespace UI
             }
             if (!holding)
             {
-                sortStorageBox(storageFocusPane, storageFocusPane == 0 ? selectedBoxIndex : stBankBox);
+                openBoxMenu(storageFocusPane, storageFocusPane == 0 ? selectedBoxIndex : stBankBox);
                 return;
             }
         }
@@ -3353,7 +3272,7 @@ namespace UI
                     // greyed rows). Start on Edit when Move is unavailable so the cursor doesn't
                     // land on a greyed row.
                     storageMenuActive = true;
-                    storageMenuIndex = isLocked(pane, box, slot) ? 1 : 0;
+                    storageMenuIndex = isLocked(pane, box, slot) && storageMenuRowNeedsUnlockedSlot(STORAGE_MENU_ROW_MOVE, selectedMode) ? STORAGE_MENU_ROW_EDIT : STORAGE_MENU_ROW_MOVE;
                     menuPane = pane;
                     menuBox = box;
                     menuSlot = slot;
@@ -3382,7 +3301,15 @@ namespace UI
 
     void TrainerViewScreen::update(const PadState &pad, const TouchInput &touch)
     {
-        u64 buttonsDown = padGetButtonsDown(&pad) | navTouchButton(touch); // nav-bar badges are tappable
+        const HidAnalogStickState stick = padGetStickPos(&pad, 0);
+
+        // L/R repeat only while they are navigation. On the Pokemon details page L randomizes IVs
+        // and R opens legality details, so those action bindings deliberately remain edge-triggered.
+        const bool fileBrowserNavigation = fileBrowser.active && !pksmImport.previewActive && !pksmImport.resultActive;
+        const bool viewShoulderNavigation = !pksmImportActive() && !details.active && (selectedMode == ViewMode::Storage || selectedMode == ViewMode::Items || selectedMode == ViewMode::Boxes);
+        const u64 repeatableShoulders = (pickerActive || fileBrowserNavigation || statEdit.dialogActive || itemEditDialogActive || viewShoulderNavigation) ? (HidNpadButton_L | HidNpadButton_R) : 0;
+
+        u64 buttonsDown = controllerNavigation.apply(padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right, repeatableShoulders) | navTouchButton(touch); // nav-bar badges are tappable
 
         // A dialog tap recorded earlier fires once its press has actually been on screen. See
         // pendingTapButton: acting in the tap's own frame is why a tapped option never once showed
@@ -3429,8 +3356,7 @@ namespace UI
         // than at save time is what makes it stick. The Boxes view and the Storage save pane read
         // the one selectedBoxIndex, so there is nothing to reconcile between them; gated on
         // detailViewActive so the HOME menu (which shows no box) can't overwrite it.
-        if (detailViewActive && (selectedMode == ViewMode::Storage || selectedMode == ViewMode::Boxes) &&
-            selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.getBoxCount()))
+        if (detailViewActive && (selectedMode == ViewMode::Storage || selectedMode == ViewMode::Boxes) && selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.getBoxCount()))
         {
             trainer.setCurrentBox(static_cast<uint8_t>(selectedBoxIndex));
         }
@@ -3526,12 +3452,15 @@ namespace UI
             const int page = 12;
 
             // Y opens the search box. Accepting an empty query clears the
-            // filter, which is why no second key is needed to get out of one.
+            // filter, which is why no second key is needed to get out of one. The rows re-filter
+            // with every key, and each pass starts from the value that was selected before typing,
+            // so a cancel -- which puts the old query back -- lands on it again.
             if (buttonsDown & HidNpadButton_Y)
             {
                 const int selectedValueBeforeSearch = pickerSelectedValue();
-                if (pickerSearch.promptForQuery(Dialogs::pickerTitle(pickerKind)))
-                    rebuildPickerFilter(selectedValueBeforeSearch);
+                const auto refilterRows = [this, selectedValueBeforeSearch]
+                { rebuildPickerFilter(selectedValueBeforeSearch); };
+                pickerSearch.promptForQuery(Dialogs::pickerTitle(pickerKind), ListSearch::FilterTiming::WhileTyping, refilterRows);
                 return;
             }
 
@@ -3588,9 +3517,7 @@ namespace UI
                 const int pickedSpecies = pickerSelectedValue();
                 if (pickedSpecies > 0)
                 {
-                    storageSlot(creator.pane, creator.box, creator.slot) =
-                        buildDefaultMon(trainer, static_cast<uint16_t>(pickedSpecies),
-                                        saveOriginVersion(trainer, titleId));
+                    storageSlot(creator.pane, creator.box, creator.slot) = buildDefaultMon(trainer, static_cast<uint16_t>(pickedSpecies), saveOriginVersion(trainer, titleId));
                     hasUnsavedChanges = true;
                     pickerActive = false;
                     creator.active = false;
@@ -3607,13 +3534,10 @@ namespace UI
 
             // Change item type: a pouch pick opened from the Edit Item dialog REPLACES the selected
             // item's type rather than adding a new one. Must come before the add handler (same kind).
-            if ((buttonsDown & HidNpadButton_A) && itemPickerReplace &&
-                (pickerKind == Dialogs::PickerKind::PouchItem || pickerKind == Dialogs::PickerKind::PouchItemG1 ||
-                 pickerKind == Dialogs::PickerKind::PouchItemG3))
+            if ((buttonsDown & HidNpadButton_A) && itemPickerReplace && (pickerKind == Dialogs::PickerKind::PouchItem || pickerKind == Dialogs::PickerKind::PouchItemG1 || pickerKind == Dialogs::PickerKind::PouchItemG3))
             {
                 itemPickerReplace = false;
-                if (pickerSelectedValue() >= 0 && selectedCategory >= 0 &&
-                    selectedCategory < static_cast<int>(trainer.items.size()))
+                if (pickerSelectedValue() >= 0 && selectedCategory >= 0 && selectedCategory < static_cast<int>(trainer.items.size()))
                 {
                     const uint16_t newId = static_cast<uint16_t>(pickerSelectedValue());
                     auto &pouch = trainer.items[selectedCategory];
@@ -3628,16 +3552,7 @@ namespace UI
                         // differently from an add followed by a remove.
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(
-                                std::string("ITEM action=RETYPE ") +
-                                Utils::logField("pouch",
-                                                Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) +
-                                " " +
-                                Utils::logField("from", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) +
-                                " fromid=" + std::to_string(pouch[rawIdx].itemId) + " " +
-                                Utils::logField("to", Utils::itemName(newId, trainer.getGameGroup())) +
-                                " toid=" + std::to_string(newId) + " count=" + std::to_string(keepCount) +
-                                " mode=" + (trainer.itemsAreIdIndexed() ? "idIndexed" : "slotBased"));
+                            Utils::logEventToFile(std::string("ITEM action=RETYPE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("from", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " fromid=" + std::to_string(pouch[rawIdx].itemId) + " " + Utils::logField("to", Utils::itemName(newId, trainer.getGameGroup())) + " toid=" + std::to_string(newId) + " count=" + std::to_string(keepCount) + " mode=" + (trainer.itemsAreIdIndexed() ? "idIndexed" : "slotBased"));
                         }
                         // The dialog we return to must show the NEW item's amount (its count carried
                         // over unchanged), so re-sync both the live value and the change-baseline.
@@ -3648,8 +3563,7 @@ namespace UI
                             // Zero the old id (KEEP the entry so its slot is written to 0), then set the
                             // new id -- reassigning itemId in place would ghost the old id's count.
                             pouch[rawIdx].count = 0;
-                            const auto existingEntry = std::find_if(pouch.begin(), pouch.end(),
-                                                        [newId](const Trainer::InventoryItem &newValue)
+                            const auto existingEntry = std::find_if(pouch.begin(), pouch.end(), [newId](const Trainer::InventoryItem &newValue)
                                                         { return newValue.itemId == newId; });
                             if (existingEntry != pouch.end())
                             {
@@ -3688,17 +3602,13 @@ namespace UI
 
             // Item creation: a pouch pick edits the trainer's BAG, not a Pokemon, so it has to
             // intercept before the apply-switch below -- pkPick is null in the items view.
-            if ((buttonsDown & HidNpadButton_A) &&
-                (pickerKind == Dialogs::PickerKind::PouchItem || pickerKind == Dialogs::PickerKind::PouchItemG1 ||
-                 pickerKind == Dialogs::PickerKind::PouchItemG3))
+            if ((buttonsDown & HidNpadButton_A) && (pickerKind == Dialogs::PickerKind::PouchItem || pickerKind == Dialogs::PickerKind::PouchItemG1 || pickerKind == Dialogs::PickerKind::PouchItemG3))
             {
-                if (pickerSelectedValue() >= 0 && selectedCategory >= 0 &&
-                    selectedCategory < static_cast<int>(trainer.items.size()))
+                if (pickerSelectedValue() >= 0 && selectedCategory >= 0 && selectedCategory < static_cast<int>(trainer.items.size()))
                 {
                     const uint16_t pickedItemId = static_cast<uint16_t>(pickerSelectedValue());
                     auto &pouch = trainer.items[selectedCategory];
-                    const auto existingEntry = std::find_if(pouch.begin(), pouch.end(),
-                                                [pickedItemId](const Trainer::InventoryItem &x)
+                    const auto existingEntry = std::find_if(pouch.begin(), pouch.end(), [pickedItemId](const Trainer::InventoryItem &x)
                                                 { return x.itemId == pickedItemId; });
                     const char *addVia = nullptr;
                     if (existingEntry != pouch.end())
@@ -3725,21 +3635,14 @@ namespace UI
                     }
                     if (g_debugLogging && addVia)
                     {
-                        Utils::logEventToFile(
-                            std::string("ITEM action=ADD ") +
-                            Utils::logField("pouch",
-                                            Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) +
-                            " " + Utils::logField("item", Utils::itemName(pickedItemId, trainer.getGameGroup())) +
-                            " id=" + std::to_string(pickedItemId) + " count=1 via=" + addVia + " pouchsize=" +
-                            std::to_string(pouch.size()) + "/" + std::to_string(currentPouchCapacity()));
+                        Utils::logEventToFile(std::string("ITEM action=ADD ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pickedItemId, trainer.getGameGroup())) + " id=" + std::to_string(pickedItemId) + " count=1 via=" + addVia + " pouchsize=" + std::to_string(pouch.size()) + "/" + std::to_string(currentPouchCapacity()));
                     }
                     // Land the cursor on the row that was just added so A edits its amount next --
                     // and FOLLOW IT TO ITS PAGE. The list is paged, and a new item usually sorts
                     // onto a later page, so selecting it without moving the page left the user
                     // staring at an unchanged screen having to go find it themselves.
                     const std::vector<int> visibleIndices = visibleItemIndices();
-                    int perPage =
-                        (CONTENT_PANEL_HEIGHT - 106 - listSearchBoxHeight()) / 52; // mirrors ItemsPanel's row fit
+                    int perPage = (CONTENT_PANEL_HEIGHT - 106 - listSearchBoxHeight()) / 52; // mirrors ItemsPanel's row fit
                     if (perPage < 1)
                         perPage = 1;
                     for (int viIndex = 0; viIndex < static_cast<int>(visibleIndices.size()); ++viIndex)
@@ -3773,8 +3676,7 @@ namespace UI
                         // Meowstic, Indeedee, Basculegion and Oinkologne store the gender AS the
                         // form, so the form has to move with it -- leaving a female Meowstic on
                         // the male form is the one combination the form picker will not produce.
-                        const uint8_t newForm =
-                            Pokemon::genderLinkedForm(pkPick->speciesID(), pkPick->form(), genderValue);
+                        const uint8_t newForm = Pokemon::genderLinkedForm(pkPick->speciesID(), pkPick->form(), genderValue);
                         if (newForm != pkPick->form())
                             pkPick->setForm(newForm);
                     }
@@ -3783,9 +3685,7 @@ namespace UI
                 {
                     const int moveId = pickerSelectedValue();
                     pkPick->setMove(pickerSlot, static_cast<uint16_t>(moveId));
-                    pkPick->setMovePP(pickerSlot,
-                                      Names::getMoveBasePP(static_cast<uint16_t>(moveId),
-                                                           pkPick->getGameGroup()));
+                    pkPick->setMovePP(pickerSlot, Names::getMoveBasePP(static_cast<uint16_t>(moveId), pkPick->getGameGroup()));
                     pkPick->setMovePPUps(pickerSlot, 0);
                     break;
                 }
@@ -3813,10 +3713,8 @@ namespace UI
                     // re-rolled the PID there, so re-deriving the number would undo that work.
                     if (!Enums::isGen3Group(pkPick->getGameGroup()))
                     {
-                        const Pokemon::AbilitySlots slots =
-                            Pokemon::getAbilitySlots(pkPick->speciesID(), pkPick->form(), pkPick->getGameGroup());
-                        const uint8_t abilityNumber =
-                            Pokemon::getAbilityNumberForId(slots, static_cast<uint16_t>(newValue));
+                        const Pokemon::AbilitySlots slots = Pokemon::getAbilitySlots(pkPick->speciesID(), pkPick->form(), pkPick->getGameGroup());
+                        const uint8_t abilityNumber = Pokemon::getAbilityNumberForId(slots, static_cast<uint16_t>(newValue));
                         if (abilityNumber != 0)
                             pkPick->setAbilityNumber(abilityNumber);
                     }
@@ -3885,11 +3783,7 @@ namespace UI
                         {
                             if (g_debugLogging)
                             {
-                                Utils::logEventToFile(
-                                    std::string("MON action=SPECIES ") +
-                                    Utils::logField("from", Trainer::getSpeciesName(pkPick->speciesID())) + " " +
-                                    Utils::logField("to", Trainer::getSpeciesName(pickedSpecies)) + " " +
-                                    Utils::briefPokemon(*pkPick));
+                                Utils::logEventToFile(std::string("MON action=SPECIES ") + Utils::logField("from", Trainer::getSpeciesName(pkPick->speciesID())) + " " + Utils::logField("to", Trainer::getSpeciesName(pickedSpecies)) + " " + Utils::briefPokemon(*pkPick));
                             }
                             applySpeciesChange(*pkPick, pickedSpecies, pkPick->getGameGroup());
                         }
@@ -3914,9 +3808,7 @@ namespace UI
         if (buttonsDown & HidNpadButton_X)
         {
             const bool onHomeMenu = !detailViewActive;
-            if (onHomeMenu && !saveConfirmActive && !itemEditDialogActive && !statEdit.dialogActive &&
-                !releaseConfirmActive && !storageMenuActive && !groupMenuActive &&
-                !storageExitConfirmActive && !details.active)
+            if (onHomeMenu && !saveConfirmActive && !itemEditDialogActive && !statEdit.dialogActive && !releaseConfirmActive && !storageMenuActive && !boxMenuActive && !groupMenuActive && !storageExitConfirmActive && !details.active)
             {
                 exitingWithUnsavedChanges = false; // Regular save, not exiting
                 exitingViaPlus = false;
@@ -4045,8 +3937,7 @@ namespace UI
                     std::string destDir = backupDir;
                     if (chosenDest == DestinationNewBackup)
                     {
-                        const Utils::KeyboardResult promptResult =
-                            Utils::promptText("New Backup", "Backup name", titleName, 40);
+                        const Utils::KeyboardResult promptResult = Utils::promptText("New Backup", "Backup name", titleName, 40);
                         // cancelled: leave the dialog up, nothing written
                         if (!promptResult.accepted) return;
                         destDir = createNamedBackupDir(promptResult.text);
@@ -4123,8 +4014,7 @@ namespace UI
                 // Let's Go uses Awakening Values (AVs), not EVs — EVs are inert there. So the
                 // second editable stat is AV for LGPE Pokemon, EV for everything else.
                 const bool usesAV = pokemon->hasAwakeningValues();
-                const Dialogs::StatEditMode secondMode = usesAV ? Dialogs::StatEditMode::AV
-                                                                : Dialogs::StatEditMode::EV;
+                const Dialogs::StatEditMode secondMode = usesAV ? Dialogs::StatEditMode::AV : Dialogs::StatEditMode::EV;
 
                 // Up/Down to switch between IV and the second stat (EV / AV)
                 if (buttonsDown & HidNpadButton_Up)
@@ -4160,9 +4050,7 @@ namespace UI
                 // A format whose EV field is wider than a byte has no separate legal cap below
                 // it: 65535 Stat Exp is the GAME's own maximum, not an illegal edit.
                 const int evCap = (fmtMaxEV > 255) ? fmtMaxEV : (g_allowIllegalEdits ? 255 : 252);
-                int maxValue = (statEdit.mode == Dialogs::StatEditMode::IV)   ? fmtMaxIV
-                               : (statEdit.mode == Dialogs::StatEditMode::AV) ? (g_allowIllegalEdits ? 255 : 200)
-                                                                              : evCap;
+                int maxValue = (statEdit.mode == Dialogs::StatEditMode::IV) ? fmtMaxIV : (statEdit.mode == Dialogs::StatEditMode::AV) ? (g_allowIllegalEdits ? 255 : 200) : evCap;
 
                 // Adjust value: Left/Right = -/+1, L/R = -/+10, ZL/ZR = -/+100. On a 0-31 IV the
                 // +/-100 steps just clamp, which is harmless.
@@ -4195,8 +4083,7 @@ namespace UI
                 // the saturating 8-bit accessors and be meaningless anyway.
                 if (statEdit.mode == Dialogs::StatEditMode::EV && !g_allowIllegalEdits && fmtMaxEV <= 255)
                 {
-                    int totalEVs = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() +
-                                   pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD();
+                    int totalEVs = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() + pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD();
                     int projectedTotal = totalEVs - statEdit.originalEV + statEdit.value;
                     if (projectedTotal > 510)
                     {
@@ -4214,9 +4101,7 @@ namespace UI
                     // 60000 is not an illegal edit, and the 8-bit sum below cannot represent it.
                     if (fmtMaxEV <= 255)
                     {
-                        const int evTotalAfter = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() +
-                                                 pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD() -
-                                                 statEdit.originalEV + statEdit.currentEV;
+                        const int evTotalAfter = pokemon->evHP() + pokemon->evATK() + pokemon->evDEF() + pokemon->evSPE() + pokemon->evSPA() + pokemon->evSPD() - statEdit.originalEV + statEdit.currentEV;
                         if (statEdit.currentEV > 252 || statEdit.currentAV > 200 || evTotalAfter > 510)
                             illegalDataWritten = true;
                     }
@@ -4232,13 +4117,11 @@ namespace UI
                     int dataStatIndex = statIndexMap[statEdit.selectedStat];
 
                     // Apply IV always; apply AV for Let's Go, EV otherwise.
-                    bool ivEvModified = false; // IV/EV changes want a PID refresh; AV doesn't
                     bool anyModified = false;
                     if (statEdit.currentIV != statEdit.originalIV)
                     {
                         pokemon->setIV(dataStatIndex, statEdit.currentIV);
                         hasUnsavedChanges = true;
-                        ivEvModified = true;
                         anyModified = true;
                     }
                     if (usesAV)
@@ -4256,15 +4139,12 @@ namespace UI
                         // forwards to setEV() for every format where the two are the same thing.
                         pokemon->setEVWide(dataStatIndex, static_cast<uint16_t>(statEdit.currentEV));
                         hasUnsavedChanges = true;
-                        ivEvModified = true;
                         anyModified = true;
                     }
 
-                    // Regenerate PID to maintain legality after IV/EV changes (AVs don't affect it).
-                    if (ivEvModified)
-                    {
-                        pokemon->regeneratePID(pokemon->id32());
-                    }
+                    // The PID is left alone. A new one cannot restore a PID-IV link the edit broke, and in
+                    // Gens 3-7 it decides shininess, so rerolling it made a shiny Pokemon plain.
+
                     // If this is an LGPE party member, mirror the edit to its party copy so the
                     // save's party overlay doesn't clobber it.
                     if (anyModified)
@@ -4321,9 +4201,7 @@ namespace UI
                         const auto &made = storageSlot(creator.pane, creator.box, creator.slot);
                         if (made)
                         {
-                            Utils::logEventToFile(std::string("CREATE result=") + (discard ? "DISCARDED" : "KEPT") +
-                                                  " " + Utils::logSlot("at", creator.pane, creator.box, creator.slot) +
-                                                  " " + Utils::describePokemon(*made, trainer));
+                            Utils::logEventToFile(std::string("CREATE result=") + (discard ? "DISCARDED" : "KEPT") + " " + Utils::logSlot("at", creator.pane, creator.box, creator.slot) + " " + Utils::describePokemon(*made, trainer));
                         }
                     }
                     if (discard)
@@ -4357,8 +4235,7 @@ namespace UI
                 if (candidateCount > 0)
                 {
                     if (buttonsDown & HidNpadButton_Up)
-                        tradePartnerTitles.selectedIndex =
-                            (tradePartnerTitles.selectedIndex + candidateCount - 1) % candidateCount;
+                        tradePartnerTitles.selectedIndex = (tradePartnerTitles.selectedIndex + candidateCount - 1) % candidateCount;
                     if (buttonsDown & HidNpadButton_Down)
                         tradePartnerTitles.selectedIndex = (tradePartnerTitles.selectedIndex + 1) % candidateCount;
                     // Keep the selection on screen; the list draws six rows at a time.
@@ -4388,8 +4265,7 @@ namespace UI
                 // is the same kind of question, and a second scheme for a two-row list would be a
                 // second thing to learn.
                 Pokemon::Pokemon *choosing = detailsTargetPokemon();
-                const int candidateCount =
-                    choosing ? Pokemon::getTradeEvolutionOffer(*choosing).candidateCount : 0;
+                const int candidateCount = choosing ? Pokemon::getTradeEvolutionOffer(*choosing).candidateCount : 0;
                 if ((buttonsDown & HidNpadButton_B) || candidateCount <= 0)
                 {
                     tradeEvolveChoiceActive = false;
@@ -4478,8 +4354,7 @@ namespace UI
                     if (g_debugLogging)
                     {
                         if (const Pokemon::Pokemon *t = detailsTargetPokemon())
-                            Utils::logEventToFile("MODIFY result=DISCARDED via=close-prompt " +
-                                                  Utils::briefPokemon(*t));
+                            Utils::logEventToFile("MODIFY result=DISCARDED via=close-prompt " + Utils::briefPokemon(*t));
                     }
                     restoreEditTarget();
                     closeDetailsModal();
@@ -4624,8 +4499,7 @@ namespace UI
                             position = lIndex;
                             break;
                         }
-                    return leftColumnOrder[(position + direction + static_cast<int>(leftColumnOrder.size())) %
-                                           static_cast<int>(leftColumnOrder.size())];
+                    return leftColumnOrder[(position + direction + static_cast<int>(leftColumnOrder.size())) % static_cast<int>(leftColumnOrder.size())];
                 };
                 // Center column: 0-9 in a fixed cycle, except that a read-only Gender row (8) is
                 // stepped over -- the same treatment the left column gives a read-only row by simply
@@ -4647,13 +4521,9 @@ namespace UI
                     return newForm;
                 };
                 if (buttonsDown & HidNpadButton_Up)
-                    fieldIndex = inRight  ? 10 + ((fieldIndex - 10 - 1 + 5) % 5)
-                        : inLeft ? leftMove(-1)
-                                 : centerMove(-1);
+                    fieldIndex = inRight ? 10 + ((fieldIndex - 10 - 1 + 5) % 5) : inLeft ? leftMove(-1) : centerMove(-1);
                 if (buttonsDown & HidNpadButton_Down)
-                    fieldIndex = inRight  ? 10 + ((fieldIndex - 10 + 1) % 5)
-                        : inLeft ? leftMove(+1)
-                                 : centerMove(+1);
+                    fieldIndex = inRight ? 10 + ((fieldIndex - 10 + 1) % 5) : inLeft ? leftMove(+1) : centerMove(+1);
                 if (buttonsDown & HidNpadButton_Right)
                 {
                     // left  -> center
@@ -4718,8 +4588,7 @@ namespace UI
                     pickerCount = Dialogs::pickerOptionCount(pickerKind);
                     uint8_t levelValue = pokemon->level();
                     if (levelValue == 0)
-                        levelValue =
-                            Pokemon::getLevelFromExp(pokemon->exp(), Pokemon::getGrowthRate(pokemon->speciesID()));
+                        levelValue = Pokemon::getLevelFromExp(pokemon->exp(), Pokemon::getGrowthRate(pokemon->speciesID()));
                     pickerSel = (levelValue > 0 ? levelValue : 1) - 1;
                     pickerActive = true;
                     clearPickerSearch();
@@ -4730,8 +4599,7 @@ namespace UI
                     pickerSlot = fieldIndex - 10;
                     // learnable moves first (green + top), for the pokemon's own game. Illegal moves are
                     // still offered (after the legal ones) and flagged by the legality check, PKHeX-style.
-                    buildMovePickerOrder(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup(),
-                                         pokemon->move(pickerSlot));
+                    buildMovePickerOrder(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup(), pokemon->move(pickerSlot));
                     pickerCount = static_cast<int>(pickerOrder.size());
                     pickerActive = true;
                     clearPickerSearch();
@@ -4741,9 +4609,7 @@ namespace UI
                     // Gen 3 held items are a separate, much smaller id space -- offering the modern
                     // list would both misname every entry and let an id be set that Gen 3 has no
                     // item for.
-                    pickerKind = (pokemon->getGameGroup() == GameVersion::RBY)    ? Dialogs::PickerKind::ItemG1
-                                 : Enums::isGen3Group(pokemon->getGameGroup())    ? Dialogs::PickerKind::ItemG3
-                                                                                  : Dialogs::PickerKind::Item;
+                    pickerKind = (pokemon->getGameGroup() == GameVersion::RBY) ? Dialogs::PickerKind::ItemG1 : Enums::isGen3Group(pokemon->getGameGroup()) ? Dialogs::PickerKind::ItemG3 : Dialogs::PickerKind::Item;
                     pickerCount = Dialogs::pickerOptionCount(pickerKind);
                     pickerSel = pokemon->heldItem();
                     pickerActive = true;
@@ -4754,8 +4620,7 @@ namespace UI
                     pickerKind = Dialogs::PickerKind::Ability;
                     // the species' legal ability slots for the pokemon's own game (green + top); sets
                     // pickerOrder, pickerLegalCount, pickerSel.
-                    buildAbilityPickerOrder(pokemon->speciesID(), pokemon->form(),
-                                            pokemon->getGameGroup(), pokemon->ability());
+                    buildAbilityPickerOrder(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup(), pokemon->ability());
                     pickerCount = static_cast<int>(pickerOrder.size());
                     pickerActive = true;
                     clearPickerSearch();
@@ -4809,8 +4674,7 @@ namespace UI
                     pickerFormSpecies = pokemon->speciesID();
                     // The MON's game group, not the save's: a bank slot holds a foreign pokemon, and the
                     // forms it can have are its own game's, not the open save's.
-                    buildFormPickerOrder(pokemon->speciesID(), pokemon->form(),
-                                         pokemon->getGameGroup()); // sets pickerOrder + pickerSel
+                    buildFormPickerOrder(pokemon->speciesID(), pokemon->form(), pokemon->getGameGroup()); // sets pickerOrder + pickerSel
                     pickerCount = static_cast<int>(pickerOrder.size());
                     pickerActive = true;
                     clearPickerSearch();
@@ -4829,8 +4693,7 @@ namespace UI
                 { // Nickname (blocking text keyboard)
                     // Field width is the format's, not a constant: Gen 3 holds 10 characters, the rest 12.
                     std::string currentText = Utils::utf16ToUtf8(pokemon->nickname());
-                    Utils::KeyboardResult keyboardResult = Utils::promptText("Nickname", "Nickname", currentText,
-                                                                 pokemon->getMaxNicknameLength());
+                    Utils::KeyboardResult keyboardResult = Utils::promptText("Nickname", "Nickname", currentText, pokemon->getMaxNicknameLength());
                     if (keyboardResult.accepted)
                     {
                         if (!keyboardResult.text.empty())
@@ -4863,8 +4726,7 @@ namespace UI
                 else if (fieldIndex == 24)
                 { // EXP (blocking numeric keypad)
                     uint32_t maxExp = Pokemon::getExpForLevel(100, Pokemon::getGrowthRate(pokemon->speciesID()));
-                    Utils::NumberResult numberResult = Utils::promptNumber("EXP", static_cast<int>(pokemon->exp()),
-                                                                 0, static_cast<int>(maxExp));
+                    Utils::NumberResult numberResult = Utils::promptNumber("EXP", static_cast<int>(pokemon->exp()), 0, static_cast<int>(maxExp));
                     if (numberResult.accepted)
                     {
                         pokemon->setExp(static_cast<uint32_t>(numberResult.value));
@@ -4876,15 +4738,11 @@ namespace UI
                 { // Met Date -- ONE numeric keypad (YYYYMMDD).
                     // Chaining several swkbd launches inside a single frame crashes on hardware (a library
                     // applet can't be relaunched back-to-back), so the whole date is one field.
-                    int currentText = (2000 + pokemon->metYear()) * 10000 +
-                                      (pokemon->metMonth() ? pokemon->metMonth() : 1) * 100 +
-                                      (pokemon->metDay() ? pokemon->metDay() : 1);
-                    Utils::NumberResult dateResult =
-                        Utils::promptNumber("Met Date (YYYYMMDD)", currentText, 20000101, 20991231);
+                    int currentText = (2000 + pokemon->metYear()) * 10000 + (pokemon->metMonth() ? pokemon->metMonth() : 1) * 100 + (pokemon->metDay() ? pokemon->metDay() : 1);
+                    Utils::NumberResult dateResult = Utils::promptNumber("Met Date (YYYYMMDD)", currentText, 20000101, 20991231);
                     if (dateResult.accepted)
                     {
-                        int year = dateResult.value / 10000, mm = (dateResult.value / 100) % 100,
-                            dd = dateResult.value % 100;
+                        int year = dateResult.value / 10000, mm = (dateResult.value / 100) % 100, dd = dateResult.value % 100;
                         if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)
                         {
                             pokemon->setMetYear(static_cast<uint8_t>((year - 2000) & 0xFF));
@@ -4915,8 +4773,7 @@ namespace UI
                     const Names::LocationTable eggSources = Names::getEggSourceLocationTable(originVersion);
                     for (uint16_t sourceIndex = 0; sourceIndex < eggSources.count; ++sourceIndex)
                         if (eggSources.names[sourceIndex][0] != '\0')
-                            pickerOrder.push_back(
-                                static_cast<int>(Names::EGG_SOURCE_LOCATION_BASE) + sourceIndex);
+                            pickerOrder.push_back(static_cast<int>(Names::EGG_SOURCE_LOCATION_BASE) + sourceIndex);
                     if (!pickerOrder.empty())
                     {
                         pickerMetVersion = originVersion;
@@ -4924,8 +4781,7 @@ namespace UI
                         pickerKind = Dialogs::PickerKind::MetLocation;
                         pickerCount = static_cast<int>(pickerOrder.size());
                         pickerSel = 0;
-                        for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size());
-                             ++pickerOrderIndex)
+                        for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size()); ++pickerOrderIndex)
                             if (pickerOrder[pickerOrderIndex] == pokemon->eggLocation())
                             {
                                 pickerSel = pickerOrderIndex;
@@ -4941,15 +4797,11 @@ namespace UI
                 }
                 else if (fieldIndex == 30)
                 { // Egg Date -- ONE numeric keypad (YYYYMMDD), see Met Date.
-                    int currentText = (2000 + pokemon->eggYear()) * 10000 +
-                                      (pokemon->eggMonth() ? pokemon->eggMonth() : 1) * 100 +
-                                      (pokemon->eggDay() ? pokemon->eggDay() : 1);
-                    Utils::NumberResult dateResult =
-                        Utils::promptNumber("Egg Date (YYYYMMDD)", currentText, 20000101, 20991231);
+                    int currentText = (2000 + pokemon->eggYear()) * 10000 + (pokemon->eggMonth() ? pokemon->eggMonth() : 1) * 100 + (pokemon->eggDay() ? pokemon->eggDay() : 1);
+                    Utils::NumberResult dateResult = Utils::promptNumber("Egg Date (YYYYMMDD)", currentText, 20000101, 20991231);
                     if (dateResult.accepted)
                     {
-                        int year = dateResult.value / 10000, mm = (dateResult.value / 100) % 100,
-                            dd = dateResult.value % 100;
+                        int year = dateResult.value / 10000, mm = (dateResult.value / 100) % 100, dd = dateResult.value % 100;
                         if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)
                         {
                             pokemon->setEggYear(static_cast<uint8_t>((year - 2000) & 0xFF));
@@ -4993,8 +4845,7 @@ namespace UI
                     pickerLegalCount = 0; // no green "legal" prefix for balls
                     pickerCount = static_cast<int>(pickerOrder.size());
                     pickerSel = 0; // land on the pokemon's current ball if it's in the list
-                    for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size());
-                         ++pickerOrderIndex)
+                    for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size()); ++pickerOrderIndex)
                         if (pickerOrder[pickerOrderIndex] == pokemon->ball())
                         {
                             pickerSel = pickerOrderIndex;
@@ -5047,8 +4898,7 @@ namespace UI
                         pickerKind = Dialogs::PickerKind::MetLocation;
                         pickerCount = static_cast<int>(pickerOrder.size());
                         pickerSel = 0; // land on the current location if it's in the list
-                        for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size());
-                             ++pickerOrderIndex)
+                        for (int pickerOrderIndex = 0; pickerOrderIndex < static_cast<int>(pickerOrder.size()); ++pickerOrderIndex)
                             if (pickerOrder[pickerOrderIndex] == pokemon->metLocation())
                             {
                                 pickerSel = pickerOrderIndex;
@@ -5198,8 +5048,7 @@ namespace UI
                     pickerOrder.clear();
                     for (uint16_t pickedItemId : legal)
                     {
-                        const auto existingEntry = std::find_if(pouch.begin(), pouch.end(),
-                                                    [pickedItemId](const Trainer::InventoryItem &newValue)
+                        const auto existingEntry = std::find_if(pouch.begin(), pouch.end(), [pickedItemId](const Trainer::InventoryItem &newValue)
                                                     { return newValue.itemId == pickedItemId; });
                         if (existingEntry == pouch.end() || existingEntry->count == 0)
                             pickerOrder.push_back(pickedItemId); // not currently held
@@ -5234,15 +5083,7 @@ namespace UI
                         const int rawIdx = visible[selectedItemIndex];
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(
-                                std::string("ITEM action=REMOVE ") +
-                                Utils::logField("pouch",
-                                                Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) +
-                                " " +
-                                Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) +
-                                " id=" + std::to_string(pouch[rawIdx].itemId) +
-                                " count=" + std::to_string(pouch[rawIdx].count) +
-                                " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased") + " via=dialog");
+                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased") + " via=dialog");
                         }
                         if (trainer.itemsAreIdIndexed())
                         {
@@ -5280,16 +5121,7 @@ namespace UI
                         if (g_debugLogging && itemEditDialogValue != itemEditDialogOriginalValue)
                         {
                             const bool removing = (itemEditDialogValue == 0);
-                            Utils::logEventToFile(
-                                std::string("ITEM action=") + (removing ? "REMOVE" : "SETCOUNT") + " " +
-                                Utils::logField("pouch",
-                                                Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) +
-                                " " +
-                                Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) +
-                                " id=" + std::to_string(pouch[rawIdx].itemId) +
-                                " from=" + std::to_string(itemEditDialogOriginalValue) +
-                                " to=" + std::to_string(itemEditDialogValue) +
-                                (removing ? (trainer.itemsAreIdIndexed() ? " mode=zeroed" : " mode=erased") : ""));
+                            Utils::logEventToFile(std::string("ITEM action=") + (removing ? "REMOVE" : "SETCOUNT") + " " + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " from=" + std::to_string(itemEditDialogOriginalValue) + " to=" + std::to_string(itemEditDialogValue) + (removing ? (trainer.itemsAreIdIndexed() ? " mode=zeroed" : " mode=erased") : ""));
                         }
                         if (itemEditDialogValue == 0 && !trainer.itemsAreIdIndexed())
                         {
@@ -5334,8 +5166,7 @@ namespace UI
                         for (const auto &carriedPokemon : moveMon)
                         {
                             if (carriedPokemon)
-                                Utils::logEventToFile("RELEASE source=hand " +
-                                                      Utils::describePokemon(*carriedPokemon, trainer));
+                                Utils::logEventToFile("RELEASE source=hand " + Utils::describePokemon(*carriedPokemon, trainer));
                         }
                     }
                     // The group being released is the block in hand, so releasing it is simply
@@ -5348,9 +5179,7 @@ namespace UI
                     auto &slot = storageSlot(releasePane, releaseBox, releaseSlot);
                     if (g_debugLogging && slot)
                     {
-                        Utils::logEventToFile("RELEASE " +
-                                              Utils::logSlot("from", releasePane, releaseBox, releaseSlot) + " " +
-                                              Utils::describePokemon(*slot, trainer));
+                        Utils::logEventToFile("RELEASE " + Utils::logSlot("from", releasePane, releaseBox, releaseSlot) + " " + Utils::describePokemon(*slot, trainer));
                     }
                     slot.reset();
                 }
@@ -5386,15 +5215,7 @@ namespace UI
                         const int rawIdx = visible[selectedItemIndex];
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(
-                                std::string("ITEM action=REMOVE ") +
-                                Utils::logField("pouch",
-                                                Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) +
-                                " " +
-                                Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) +
-                                " id=" + std::to_string(pouch[rawIdx].itemId) +
-                                " count=" + std::to_string(pouch[rawIdx].count) +
-                                " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased"));
+                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased"));
                         }
                         // keep entry; id-slot written to 0
                         if (trainer.itemsAreIdIndexed()) pouch[rawIdx].count = 0;
@@ -5458,10 +5279,11 @@ namespace UI
             return;
         }
 
-        // Handle the red-mode per-Pokemon action menu (Move / Edit / Release / Cancel).
+        // Handle the per-Pokemon action menu (Move / Edit / Clone / Export / Release / Cancel), raised by
+        // A in the Storage view's Menu mode and by Y in the Boxes view.
         if (storageMenuActive)
         {
-            constexpr int optionCount = 6; // Move, Edit, Clone, Release, Find, Cancel
+            constexpr int optionCount = STORAGE_MENU_ROW_COUNT;
             int touchedButton = touchedButtonId(touch);
             if (touchedButton >= 0)
             {
@@ -5469,13 +5291,10 @@ namespace UI
                 // ...and runs on the next
                 if (armTap(touchedButton, HidNpadButton_A)) return;
             }
-            // On a party-linked (locked) slot, Move (0) and Release (3) are disabled -- skip them so
-            // Up/Down never land on a greyed row, and guard the actions below in case a tap slips in.
+            // On a party-linked (locked) slot, only the rows that move the Pokemon out are disabled.
             const bool menuLocked = storageSlotLocked(menuPane, menuBox, menuSlot);
-            auto menuDisabled = [&](int menuIndex)
-            { return menuLocked && (menuIndex == 0 || menuIndex == 3); };
-            // Find (4) and Cancel (5) act on neither the slot nor the save, so a locked slot never
-            // greys them.
+            auto menuDisabled = [&](int menuRow)
+            { return menuLocked && storageMenuRowNeedsUnlockedSlot(menuRow, selectedMode); };
             if (buttonsDown & HidNpadButton_Up)
                 do
                 {
@@ -5496,9 +5315,17 @@ namespace UI
                 storageMenuActive = false;
                 switch (storageMenuIndex)
                 {
-                case 0: // Move -> pick up as a 1x1 block (blocked on a party-linked slot)
-                    if (menuLocked)
+                case STORAGE_MENU_ROW_MOVE: // Move -> pick up as a 1x1 block (blocked on a party-linked slot)
+                    if (menuDisabled(STORAGE_MENU_ROW_MOVE))
                         break;
+                    if (selectedMode == ViewMode::Boxes)
+                    {
+                        // The Boxes view's grab: Y on another slot swaps with it, B lets go.
+                        swapActive = true;
+                        swapSourceBox = menuBox;
+                        swapSourceSlot = menuSlot;
+                        break;
+                    }
                     storageFocusPane = menuPane;
                     if (menuPane == 0)
                     {
@@ -5513,18 +5340,16 @@ namespace UI
                     pickupSingle();
                     postPickup();
                     break;
-                case 1: // Edit -> open the details modal
+                case STORAGE_MENU_ROW_EDIT: // Edit -> open the details modal
                     openStorageEditor(menuPane, menuBox, menuSlot);
                     break;
-                case 2: // Clone -> duplicate into the first empty slot (this box first, then ANY box)
+                case STORAGE_MENU_ROW_CLONE: // Clone -> duplicate into the first empty slot (this box first, then ANY box)
                     if (const Pokemon::Pokemon *source = storageSlot(menuPane, menuBox, menuSlot).get())
                     {
                         if (auto copy = source->clone())
                         {
-                            const int slots = menuPane == 0 ? static_cast<int>(trainer.getSlotsPerBox())
-                                                            : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
-                            const int boxes = menuPane == 0 ? static_cast<int>(trainer.getBoxCount())
-                                                            : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
+                            const int slots = menuPane == 0 ? static_cast<int>(trainer.getSlotsPerBox()) : static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX);
+                            const int boxes = menuPane == 0 ? static_cast<int>(trainer.getBoxCount()) : static_cast<int>(Trainer::Bank::BANK_BOX_COUNT);
                             // Search the pokemon's own box first, then spill into any other box. A full
                             // box must NOT eat the clone -- on Let's Go's gapless list every box but
                             // the last is full, so a single-box search silently dropped the copy (a
@@ -5536,8 +5361,7 @@ namespace UI
                                 for (int slotIndex = 0; slotIndex < slots && !placed; ++slotIndex)
                                 {
                                     auto &destination = storageSlot(menuPane, box, slotIndex);
-                                    if ((!destination || destination->speciesID() == 0) &&
-                                        !storageSlotLocked(menuPane, box, slotIndex))
+                                    if ((!destination || destination->speciesID() == 0) && !storageSlotLocked(menuPane, box, slotIndex))
                                     {
                                         destination = std::move(copy);
                                         hasUnsavedChanges = true;
@@ -5548,10 +5372,7 @@ namespace UI
                                         // where it came from and where it landed.
                                         if (g_debugLogging)
                                         {
-                                            Utils::logEventToFile("CLONE result=OK " +
-                                                                  Utils::logSlot("from", menuPane, menuBox, menuSlot) +
-                                                                  " " + Utils::logSlot("to", menuPane, box, slotIndex) +
-                                                                  " " + Utils::describePokemon(*destination, trainer));
+                                            Utils::logEventToFile("CLONE result=OK " + Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " + Utils::logSlot("to", menuPane, box, slotIndex) + " " + Utils::describePokemon(*destination, trainer));
                                         }
                                     }
                                 }
@@ -5561,15 +5382,38 @@ namespace UI
                                 postStatus("No free slot to clone into.", 240);
                                 if (g_debugLogging)
                                 {
-                                    Utils::logEventToFile("CLONE result=REFUSED reason=no-free-slot " +
-                                                          Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " +
-                                                          Utils::briefPokemon(*source));
+                                    Utils::logEventToFile("CLONE result=REFUSED reason=no-free-slot " + Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " + Utils::briefPokemon(*source));
                                 }
                             }
                         }
                     }
                     break;
-                case 3: // Release -> confirm (blocked on a party-linked slot)
+                case STORAGE_MENU_ROW_EXPORT: // Export -> verified native file; source stays untouched
+                    if (const Pokemon::Pokemon *source = storageSlot(menuPane, menuBox, menuSlot).get())
+                    {
+                        std::string error;
+                        const std::string path = Trainer::PokemonFile::defaultExportPath(*source);
+                        if (path.empty())
+                            error = "no free file name in " + POKEMON_EXPORT_DIRECTORY;
+                        if (!path.empty() && Trainer::PokemonFile::write(*source, path, &error))
+                        {
+                            postStatus("Exported " + leafName(path) + " to " + POKEMON_EXPORT_DIRECTORY + ".", 360);
+                            if (g_debugLogging)
+                            {
+                                Utils::logEventToFile("POKEMONFILE action=EXPORT result=OK " + Utils::logField("file", leafName(path)) + " " + Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " + Utils::briefPokemon(*source));
+                            }
+                        }
+                        else
+                        {
+                            postStatus("Export failed: " + error, 480);
+                            if (g_debugLogging)
+                            {
+                                Utils::logEventToFile("POKEMONFILE action=EXPORT result=FAILED " + Utils::logField("reason", error) + " " + Utils::logSlot("from", menuPane, menuBox, menuSlot) + " " + Utils::briefPokemon(*source));
+                            }
+                        }
+                    }
+                    break;
+                case STORAGE_MENU_ROW_RELEASE: // Release -> confirm (blocked on a party-linked slot)
                     if (menuLocked)
                         break;
                     releaseGroup = false;
@@ -5578,17 +5422,48 @@ namespace UI
                     releaseSlot = menuSlot;
                     releaseConfirmActive = true;
                     break;
-                case 4: // Find -> highlight matching Pokemon and jump to the first
-                    if (storageSearch.promptForQuery("Box and Bank"))
-                    {
-                        if (storageSearch.isFiltering() && !jumpToFirstStorageMatch())
-                            postStatus("No Pokemon here match that search.", 240);
-                    }
-                    break;
                 default:
                     break; // Cancel
                 }
                 return;
+            }
+            return;
+        }
+
+        // Handle the box menu (Sort / Search / Cancel), raised by X in the Boxes and Storage views.
+        if (boxMenuActive)
+        {
+            constexpr int optionCount = BOX_MENU_ROW_COUNT;
+            int touchedButton = touchedButtonId(touch);
+            if (touchedButton >= 0)
+            {
+                boxMenuIndex = touchedButton;            // draws highlighted this frame
+                // ...and runs on the next
+                if (armTap(touchedButton, HidNpadButton_A)) return;
+            }
+            if (buttonsDown & HidNpadButton_Up)
+                boxMenuIndex = (boxMenuIndex - 1 + optionCount) % optionCount;
+            if (buttonsDown & HidNpadButton_Down)
+                boxMenuIndex = (boxMenuIndex + 1) % optionCount;
+            if (buttonsDown & HidNpadButton_B)
+            {
+                boxMenuActive = false;
+                return;
+            }
+            if (buttonsDown & HidNpadButton_A)
+            {
+                boxMenuActive = false;
+                switch (boxMenuIndex)
+                {
+                case BOX_MENU_ROW_SORT:
+                    sortStorageBox(boxMenuPane, boxMenuBox);
+                    break;
+                case BOX_MENU_ROW_SEARCH:
+                    searchStorage();
+                    break;
+                default:
+                    break; // Cancel
+                }
             }
             return;
         }
@@ -5677,17 +5552,13 @@ namespace UI
                     // The open box went out with that write -- it is part of the bank's image (see
                     // Bank::currentBox), so it needs nothing here and is kept only because the user
                     // chose Save.
-                    Utils::logTest("BANKSAVE result=OK verifyfail=" +
-                                   std::to_string(bank ? bank->lastVerifyFailures() : 0));
-                    Utils::logEventToFile("BANK action=SAVE result=OK verifyfail=" +
-                                          std::to_string(bank ? bank->lastVerifyFailures() : 0));
+                    Utils::logTest("BANKSAVE result=OK verifyfail=" + std::to_string(bank ? bank->lastVerifyFailures() : 0));
+                    Utils::logEventToFile("BANK action=SAVE result=OK verifyfail=" + std::to_string(bank ? bank->lastVerifyFailures() : 0));
                     // Written, but the round-trip check found slots that don't reproduce. That
                     // is a PKSE bug rather than a write failure, so it warns instead of blocking.
                     if (bank && bank->lastVerifyFailures() > 0)
                     {
-                        postStatus(std::to_string(bank->lastVerifyFailures()) +
-                                       " bank slot(s) failed the integrity check - see the PKSE log.",
-                                   480);
+                        postStatus(std::to_string(bank->lastVerifyFailures()) + " bank slot(s) failed the integrity check - see the PKSE log.", 480);
                     }
                     detailViewActive = false;
                     answered = true;
@@ -5697,8 +5568,7 @@ namespace UI
                         // save. Pulling a Pokemon out and then discarding therefore leaves the
                         // copy in the save box -- intended, and how a HOME-style box works. Undoing that half
                         // is the GAME save's own discard, which is a separate decision.
-                    Utils::logEventToFile("BANK action=DISCARD result=OK scope=bank-only"
-                                          " note=withdrawn-copies-remain-in-save");
+                    Utils::logEventToFile("BANK action=DISCARD result=OK scope=bank-only note=withdrawn-copies-remain-in-save");
                     if (bank)
                     {
                         bank->load();
@@ -5710,6 +5580,8 @@ namespace UI
                             stBankBox = static_cast<int>(bank->currentBox);
                             stBankSlot = 0;
                         }
+                        if (!bank->lastLoadProblem().empty())
+                            postStatus(bank->lastLoadProblem(), 600);
                     }
                     detailViewActive = false;
                     answered = true;
@@ -5783,8 +5655,7 @@ namespace UI
                     {
                         // header arrows / name pill
                         if (t.slot < 0) continue;
-                        if (touch.x() >= t.hitX && touch.x() < t.hitX + t.hitWidth &&
-                            touch.y() >= t.hitY && touch.y() < t.hitY + t.hitHeight)
+                        if (touch.x() >= t.hitX && touch.x() < t.hitX + t.hitWidth && touch.y() >= t.hitY && touch.y() < t.hitY + t.hitHeight)
                         {
                             outPane = t.pane;
                             outSlot = t.slot;
@@ -5817,8 +5688,7 @@ namespace UI
                 {
                     for (const auto &t : storageTouchTargets)
                     {
-                        if (touch.x() >= t.hitX && touch.x() < t.hitX + t.hitWidth &&
-                            touch.y() >= t.hitY && touch.y() < t.hitY + t.hitHeight)
+                        if (touch.x() >= t.hitX && touch.x() < t.hitX + t.hitWidth && touch.y() >= t.hitY && touch.y() < t.hitY + t.hitHeight)
                         {
                             storageFocusPane = t.pane;
                             // ◀ previous box
@@ -5859,10 +5729,18 @@ namespace UI
                 // below may also listen for Y -- Add Item did, and was unreachable until it moved.
                 if (buttonsDown & HidNpadButton_Y)
                 {
-                    if (itemSearch.promptForQuery("Items"))
+                    const int itemIndexBeforeSearch = selectedItemIndex;
+                    const int pageBeforeSearch = currentPage;
+                    const auto resetCursor = [this]
                     {
                         selectedItemIndex = 0;
                         currentPage = 0;
+                    };
+                    // Typing resets the cursor as it goes; a query that ends where it began puts it back.
+                    if (!itemSearch.promptForQuery("Items", ListSearch::FilterTiming::WhileTyping, resetCursor))
+                    {
+                        selectedItemIndex = itemIndexBeforeSearch;
+                        currentPage = pageBeforeSearch;
                     }
                     return;
                 }
@@ -5872,8 +5750,7 @@ namespace UI
                     // Navigate/edit only the visible items (count > 0); selectedItemIndex indexes
                     // this filtered view, mapped back to the raw pouch via visible[...] on edit.
                     std::vector<int> visible = visibleItemIndices();
-                    int itemsPerPage =
-                        (CONTENT_PANEL_HEIGHT - 106 - listSearchBoxHeight()) / 52; // rows that fit (mirror ItemsPanel)
+                    int itemsPerPage = (CONTENT_PANEL_HEIGHT - 106 - listSearchBoxHeight()) / 52; // rows that fit (mirror ItemsPanel)
                     if (itemsPerPage < 1)
                         itemsPerPage = 1;
                     int totalItems = static_cast<int>(visible.size());
@@ -5961,8 +5838,7 @@ namespace UI
                         bool blockedByCapacity = false; // a new item exists to add, but the pouch can't take it
                         for (uint16_t pickedItemId : legal)
                         {
-                            const auto existingEntry = std::find_if(pouch.begin(), pouch.end(),
-                                                        [pickedItemId](const Trainer::InventoryItem &x)
+                            const auto existingEntry = std::find_if(pouch.begin(), pouch.end(), [pickedItemId](const Trainer::InventoryItem &x)
                                                         { return x.itemId == pickedItemId; });
                             if (existingEntry != pouch.end())
                             {
@@ -6001,8 +5877,7 @@ namespace UI
 
                     // X asks to remove the selected item, behind a confirm dialog. The delete
                     // runs in the itemRemoveConfirmActive handler on A; here we just open the prompt.
-                    if ((buttonsDown & HidNpadButton_X) && totalItems > 0 && selectedItemIndex >= 0 &&
-                        selectedItemIndex < totalItems)
+                    if ((buttonsDown & HidNpadButton_X) && totalItems > 0 && selectedItemIndex >= 0 && selectedItemIndex < totalItems)
                     {
                         itemRemoveConfirmActive = true;
                         return;
@@ -6011,123 +5886,11 @@ namespace UI
                     // L/R to change categories (but not when in edit dialog)
                     if (buttonsDown & HidNpadButton_L)
                     {
-                        switch (trainer.getGameGroup())
-                        {
-                        case GameVersion::ZA:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_LZA) % POUCH_COUNT9_LZA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SV:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_SV) % POUCH_COUNT9_SV;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::PLA:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT8_LA) % POUCH_COUNT8_LA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::BDSP:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT8BDSP) % POUCH_COUNT8BDSP;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SWSH:
-                        {
-                            selectedCategory =
-                                (selectedCategory - 1 + static_cast<int>(Trainer::PouchType8SWSH::Count)) %
-                                static_cast<int>(Trainer::PouchType8SWSH::Count);
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::GG:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT7_LGPE) % POUCH_COUNT7_LGPE;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::FRLG:
-                        case GameVersion::RSE:
-                        {
-                            static_assert(POUCH_COUNT3_FRLG == POUCH_COUNT3_RSE, "both Gen 3 groups have six pockets");
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT3_FRLG) % POUCH_COUNT3_FRLG;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        default:
-                            break;
-                        }
+                        stepItemPouch(-1);
                     }
                     if (buttonsDown & HidNpadButton_R)
                     {
-                        switch (trainer.getGameGroup())
-                        {
-                        case GameVersion::ZA:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_LZA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SV:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_SV;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::PLA:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT8_LA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::BDSP:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT8BDSP;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SWSH:
-                        {
-                            selectedCategory =
-                                (selectedCategory + 1) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::GG:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT7_LGPE;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::FRLG:
-                        case GameVersion::RSE:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT3_FRLG;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        default:
-                            break;
-                        }
+                        stepItemPouch(1);
                     }
                 }
             }
@@ -6271,8 +6034,7 @@ namespace UI
                     {
                         renameBox(selectedBoxIndex);
                     }
-                    else if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) &&
-                             selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
+                    else if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) && selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
                     {
                         const auto &pokemon = trainer.boxes[selectedBoxIndex][selectedItemIndex];
                         if (pokemon && pokemon->speciesID() != 0)
@@ -6307,51 +6069,31 @@ namespace UI
                     }
                 }
 
-                // X button: release the pokemon under the cursor, after a confirm. Blocked on a party-linked
-                // slot (LGPE) -- releasing it would orphan the party pointer, the same rule the Storage
-                // release menu enforces (D8). Reuses the global release-confirm flow (pane 0 = save box).
-                // Skipped mid-swap -- while holding a grabbed pokemon, B cancels and Y drops.
+                // X button: the box menu (Sort / Search). Skipped mid-swap -- while holding a grabbed
+                // pokemon, B cancels and Y drops.
                 if ((buttonsDown & HidNpadButton_X) && !swapActive)
                 {
-                    const bool inRange = selectedBoxIndex >= 0 &&
-                                         selectedBoxIndex < static_cast<int>(trainer.boxes.size()) &&
-                                         selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS);
-                    if (inRange)
-                    {
-                        const auto &pk = trainer.boxes[selectedBoxIndex][selectedItemIndex];
-                        if (pk && pk->speciesID() != 0)
-                        {
-                            if (storageSlotLocked(0, selectedBoxIndex, selectedItemIndex))
-                            {
-                                postStatus("That Pokémon is a party member — release it from the party first.", 240);
-                            }
-                            else
-                            {
-                                releaseGroup = false;
-                                releasePane = 0;
-                                releaseBox = selectedBoxIndex;
-                                releaseSlot = selectedItemIndex;
-                                releaseConfirmActive = true;
-                            }
-                        }
-                    }
+                    openBoxMenu(0, selectedBoxIndex);
+                    return;
                 }
 
-                // Y button: grab the slot under the cursor, then Y on another occupied slot
-                // to swap them (Phase 3.1). Same-slot Y cancels the grab.
+                // Y button: the per-Pokemon action menu the Storage view opens with A (Move / Edit /
+                // Clone / Export / Release). Its Move grabs the slot; Y on another slot then swaps
+                // them, and Y on the grabbed slot again cancels the grab.
                 if (buttonsDown & HidNpadButton_Y)
                 {
-                    bool inRange = selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) &&
-                                   selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS);
+                    bool inRange = selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) && selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS);
                     bool cursorOccupied = inRange && trainer.boxes[selectedBoxIndex][selectedItemIndex] != nullptr;
 
                     if (!swapActive)
                     {
-                        if (cursorOccupied)
+                        if (cursorOccupied && trainer.boxes[selectedBoxIndex][selectedItemIndex]->speciesID() != 0)
                         {
-                            swapActive = true;
-                            swapSourceBox = selectedBoxIndex;
-                            swapSourceSlot = selectedItemIndex;
+                            storageMenuActive = true;
+                            storageMenuIndex = STORAGE_MENU_ROW_MOVE;
+                            menuPane = 0;
+                            menuBox = selectedBoxIndex;
+                            menuSlot = selectedItemIndex;
                         }
                     }
                     else if (swapSourceBox == selectedBoxIndex && swapSourceSlot == selectedItemIndex)
@@ -6484,10 +6226,7 @@ namespace UI
                         // set those by hand gets an obvious placeholder instead. It never alters a
                         // level, and never touches a transfer the games themselves support.
                         g_autoLegalizeTransfers = !g_autoLegalizeTransfers;
-                        postStatus(g_autoLegalizeTransfers
-                                       ? "Transfers with no official route will be rebuilt as legal natives."
-                                       : "Transfers will be left as-is for you to correct by hand.",
-                                   300);
+                        postStatus(g_autoLegalizeTransfers ? "Transfers with no official route will be rebuilt as legal natives." : "Transfers will be left as-is for you to correct by hand.", 300);
                     }
                     else if (settingsSelectedRow == SETTINGS_ROW_MOVE_WARNING)
                     {
@@ -6497,10 +6236,7 @@ namespace UI
                         // other two warned regardless, so a user who had turned warnings off was
                         // still stopped on every FireRed drop.
                         g_moveWarn = !g_moveWarn;
-                        postStatus(g_moveWarn
-                                       ? "Lossy bank transfers will ask before converting."
-                                       : "Lossy bank transfers will convert without asking.",
-                                   300);
+                        postStatus(g_moveWarn ? "Lossy bank transfers will ask before converting." : "Lossy bank transfers will convert without asking.", 300);
                     }
                     else if (settingsSelectedRow == SETTINGS_ROW_INJECT_TO_GAME)
                     {
@@ -6508,10 +6244,7 @@ namespace UI
                         // makes the "Game save" destination available in the save dialog -- it never
                         // makes a save destructive on its own, so no confirmation is needed here.
                         g_injectToGameSave = !g_injectToGameSave;
-                        postStatus(g_injectToGameSave
-                                       ? "An older backup can now be written over your live game save."
-                                       : "Backups can no longer be written over your live game save.",
-                                   300);
+                        postStatus(g_injectToGameSave ? "An older backup can now be written over your live game save." : "Backups can no longer be written over your live game save.", 300);
                     }
                     else if (settingsSelectedRow == SETTINGS_ROW_DEBUG_LOGGING)
                     {
@@ -6519,10 +6252,7 @@ namespace UI
                         // names the path because the whole point of the toggle is handing that file
                         // to someone else: turn it on, reproduce the problem, send the log.
                         g_debugLogging = !g_debugLogging;
-                        postStatus(g_debugLogging
-                                       ? "Debug logging on. Logs are written to sdmc:/PKSE/logs."
-                                       : "Debug logging off. No new log files will be written.",
-                                   300);
+                        postStatus(g_debugLogging ? "Debug logging on. Logs are written to sdmc:/PKSE/logs." : "Debug logging off. No new log files will be written.", 300);
                     }
                     else if (settingsSelectedRow == SETTINGS_ROW_LANGUAGE)
                     {
@@ -6539,12 +6269,9 @@ namespace UI
                         // A plain cycle rather than a picker dialog: nine entries is shorter than
                         // several lists that already use A-to-cycle here, and it keeps the whole
                         // settings screen operable without opening anything.
-                        const size_t nextLanguage =
-                            (Names::displayLanguageIndex() + 1) % Names::LANGUAGE_COUNT;
+                        const size_t nextLanguage = (Names::displayLanguageIndex() + 1) % Names::LANGUAGE_COUNT;
                         Names::setDisplayLanguage(nextLanguage);
-                        postStatus(std::string("Names now shown in ") +
-                                       Names::nameLanguageLabel(nextLanguage) + ".",
-                                   240);
+                        postStatus(std::string("Names now shown in ") + Names::nameLanguageLabel(nextLanguage) + ".", 240);
                     }
                     Utils::saveSettings(); // persist the change to settings.cfg
                 }
@@ -6591,13 +6318,13 @@ namespace UI
                 homeMenuIndex = (homeMenuIndex == 3) ? 5 : homeMenuIndex - 1;
             if (buttonsDown & HidNpadButton_Right)
                 homeMenuIndex = (homeMenuIndex == 5) ? 3 : homeMenuIndex + 1;
-            buttonsDown &=
-                ~(HidNpadButton_Left | HidNpadButton_Right); // consume L/R (don't also scroll the box preview)
+            buttonsDown &= ~(HidNpadButton_Left | HidNpadButton_Right); // consume L/R (don't also scroll the box preview)
         }
         switch (homeMenuIndex)
         {
         case 0:
             selectedMode = ViewMode::Boxes;
+            storageSearch.clear();
             break;
         case 1:
             selectedMode = ViewMode::Party;
@@ -6626,6 +6353,7 @@ namespace UI
             {
             case 0:
                 selectedMode = ViewMode::Boxes;
+                storageSearch.clear();
                 break;
             case 1:
                 selectedMode = ViewMode::Party;
@@ -6670,6 +6398,7 @@ namespace UI
                 selectDimensions = {0, 0};
                 currentlySelecting = false;
                 storageMenuActive = false;
+                boxMenuActive = false;
                 groupMenuActive = false;
                 cursorMode = CursorMode::Menu;
                 break;
@@ -6693,120 +6422,11 @@ namespace UI
         {
             if (buttonsDown & HidNpadButton_L)
             {
-                switch (trainer.getGameGroup())
-                {
-                case GameVersion::ZA:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_LZA) % POUCH_COUNT9_LZA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SV:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_SV) % POUCH_COUNT9_SV;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::PLA:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT8_LA) % POUCH_COUNT8_LA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::BDSP:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT8BDSP) % POUCH_COUNT8BDSP;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SWSH:
-                {
-                    selectedCategory = (selectedCategory - 1 + static_cast<int>(Trainer::PouchType8SWSH::Count)) %
-                                       static_cast<int>(Trainer::PouchType8SWSH::Count);
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::GG:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT7_LGPE) % POUCH_COUNT7_LGPE;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::FRLG:
-                case GameVersion::RSE:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT3_FRLG) % POUCH_COUNT3_FRLG;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                default:
-                    break;
-                }
+                stepItemPouch(-1);
             }
             if (buttonsDown & HidNpadButton_R)
             {
-                switch (trainer.getGameGroup())
-                {
-                case GameVersion::ZA:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_LZA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SV:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_SV;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::PLA:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT8_LA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::BDSP:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT8BDSP;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SWSH:
-                {
-                    selectedCategory = (selectedCategory + 1) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::GG:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT7_LGPE;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::FRLG:
-                case GameVersion::RSE:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT3_FRLG;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                default:
-                    break;
-                }
+                stepItemPouch(1);
             }
         }
 
@@ -6854,8 +6474,7 @@ namespace UI
             switch (selectedMode)
             {
             case ViewMode::Party:
-                Panels::drawPartyPokemon(framebuffer, trainer, contentX, CONTENT_PANEL_Y, contentPanelWidth,
-                                         CONTENT_PANEL_HEIGHT, selectedPartyIndex);
+                Panels::drawPartyPokemon(framebuffer, trainer, contentX, CONTENT_PANEL_Y, contentPanelWidth, CONTENT_PANEL_HEIGHT, selectedPartyIndex);
                 break;
             case ViewMode::Boxes:
             {
@@ -6863,24 +6482,20 @@ namespace UI
                 constexpr int columnGap = 12, summaryW = 452;
                 const int boxWidth = contentPanelWidth - columnGap - summaryW;
                 Panels::drawBoxPokemon(*this, framebuffer, contentX, CONTENT_PANEL_Y, boxWidth, CONTENT_PANEL_HEIGHT);
-                Panels::drawBoxSummaryPanel(*this, framebuffer, contentX + boxWidth + columnGap, CONTENT_PANEL_Y,
-                                            summaryW, CONTENT_PANEL_HEIGHT);
+                Panels::drawBoxSummaryPanel(*this, framebuffer, contentX + boxWidth + columnGap, CONTENT_PANEL_Y, summaryW, CONTENT_PANEL_HEIGHT);
                 break;
             }
             case ViewMode::Items:
-                Panels::drawItems(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth,
-                                  CONTENT_PANEL_HEIGHT);
+                Panels::drawItems(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth, CONTENT_PANEL_HEIGHT);
                 break;
             case ViewMode::Storage:
-                Panels::drawStorageView(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth,
-                                        CONTENT_PANEL_HEIGHT);
+                Panels::drawStorageView(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth, CONTENT_PANEL_HEIGHT);
                 break;
             case ViewMode::Trainer:
                 drawTrainerView(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth, CONTENT_PANEL_HEIGHT);
                 break;
             case ViewMode::Settings:
-                drawSettingsView(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth,
-                                 CONTENT_PANEL_HEIGHT);
+                drawSettingsView(*this, framebuffer, contentX, CONTENT_PANEL_Y, contentPanelWidth, CONTENT_PANEL_HEIGHT);
                 break;
             }
         }
@@ -6909,8 +6524,7 @@ namespace UI
         {
             if (selectedMode == ViewMode::Items)
             {
-                instructions = "Up/Down: Select  |  A: Edit Amount  |  Y: Search  |  -: Add Item  |  X: Remove Item  | "
-                               " Left/Right: Page  |  L/R: Category  |  B: Back";
+                instructions = "Up/Down: Select  |  A: Edit Amount  |  Y: Search  |  -: Add Item  |  X: Remove Item  |  Left/Right: Page  |  L/R: Category  |  B: Back";
             }
             else if (selectedMode == ViewMode::Boxes)
             {
@@ -6918,21 +6532,11 @@ namespace UI
                 {
                     if (details.category == 0)
                     { // Main
-                        instructions =
-                            details.editing
-                                ? details.selectedField == 3
-                                      ? "Up/Down: Select Field | A: Edit Field |  B: Back  |  X: Save  |  +: Exit App"
-                                      : "Up/Down: Select Field | B: Back  |  X: Save  |  +: Exit App"
-                                : "Up/Down: Select Category | A: Select Category  |  B: Close  |  X: Save  |  +: Exit "
-                                  "App";
+                        instructions = details.editing ? details.selectedField == 3 ? "Up/Down: Select Field | A: Edit Field |  B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Field | B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Category | A: Select Category  |  B: Close  |  X: Save  |  +: Exit App";
                     }
                     else if (details.category == 2)
                     { // Stats
-                        instructions =
-                            details.editing
-                                ? "Up/Down: Select Field  |  A: Edit Field |  B: Back  |  X: Save  |  +: Exit App"
-                                : "Up/Down: Select Category  |  A: Select Category  |  B: Close  |  X: Save  |  +: "
-                                  "Exit App";
+                        instructions = details.editing ? "Up/Down: Select Field  |  A: Edit Field |  B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Category  |  A: Select Category  |  B: Close  |  X: Save  |  +: Exit App";
                     }
                     else
                     {
@@ -6941,10 +6545,9 @@ namespace UI
                 }
                 else
                 {
-                    // Only advertise Details / Grab-Move when the cursor is on an occupied slot.
+                    // Only advertise Details / the Pokemon menu when the cursor is on an occupied slot.
                     bool anyOccupied = false;
-                    if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) &&
-                        selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
+                    if (selectedBoxIndex >= 0 && selectedBoxIndex < static_cast<int>(trainer.boxes.size()) && selectedItemIndex >= 0 && selectedItemIndex < static_cast<int>(BOX_SLOTS))
                     {
                         const auto &bpk = trainer.boxes[selectedBoxIndex][selectedItemIndex];
                         anyOccupied = bpk && bpk->speciesID() != 0;
@@ -6953,13 +6556,11 @@ namespace UI
                     // to rename" hint -- it's discoverable (the pill highlights) and just adds clutter.
                     if (selectedItemIndex == -1)
                     {
-                        instructions = "L/R: Box  |  A: Rename  |  B: Back";
+                        instructions = "L/R: Box  |  A: Rename  |  X: Sort/Search  |  B: Back";
                     }
                     else
                     {
-                        instructions = anyOccupied ? "Arrows: Navigate  |  L/R: Box  |  A: Details  |  X: Release  |  "
-                                                     "Y: Grab/Move  |  B: Back"
-                                                   : "Arrows: Navigate  |  L/R: Box  |  A: Create  |  B: Back";
+                        instructions = anyOccupied ? "Arrows: Navigate  |  L/R: Box  |  A: Details  |  Y: Menu  |  X: Sort/Search  |  B: Back" : "Arrows: Navigate  |  L/R: Box  |  A: Create  |  X: Sort/Search  |  B: Back";
                     }
                 }
             }
@@ -6970,21 +6571,11 @@ namespace UI
                 {
                     if (details.category == 0)
                     { // Main
-                        instructions =
-                            details.editing
-                                ? details.selectedField == 3
-                                      ? "Up/Down: Select Field | A: Edit Field |  B: Back  |  X: Save  |  +: Exit App"
-                                      : "Up/Down: Select Field | B: Back  |  X: Save  |  +: Exit App"
-                                : "Up/Down: Select Category | A: Select Category  |  B: Close  |  X: Save  |  +: Exit "
-                                  "App";
+                        instructions = details.editing ? details.selectedField == 3 ? "Up/Down: Select Field | A: Edit Field |  B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Field | B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Category | A: Select Category  |  B: Close  |  X: Save  |  +: Exit App";
                     }
                     else if (details.category == 2)
                     { // Stats
-                        instructions =
-                            details.editing
-                                ? "Up/Down: Select Field  |  A: Edit Field |  B: Back  |  X: Save  |  +: Exit App"
-                                : "Up/Down: Select Category  |  A: Select Category  |  B: Close  |  X: Save  |  +: "
-                                  "Exit App";
+                        instructions = details.editing ? "Up/Down: Select Field  |  A: Edit Field |  B: Back  |  X: Save  |  +: Exit App" : "Up/Down: Select Category  |  A: Select Category  |  B: Close  |  X: Save  |  +: Exit App";
                     }
                     else
                     {
@@ -7006,10 +6597,6 @@ namespace UI
                 {
                     instructions = "Up/Down: Choose  |  A: Confirm  |  B: Stay";
                 }
-                else if (storageMenuActive || groupMenuActive)
-                {
-                    instructions = "Up/Down: Choose  |  A: Select  |  B: Cancel";
-                }
                 else if (releaseConfirmActive)
                 {
                     instructions = "A: Release  |  B: Cancel";
@@ -7020,25 +6607,19 @@ namespace UI
                 }
                 else if (carrying())
                 {
-                    instructions = carriedCount() > 1 ? "Arrows: Move Group (cross panes at edge)  |  L/R: Box  |  A: "
-                                                        "Place Here  |  Minus: Options  |  B: Put Back"
-                                                      : "Arrows: Move (cross panes at edge)  |  L/R: Box  |  A: Drop / "
-                                                        "Swap  |  Minus: Options  |  B: Put Back";
+                    instructions = carriedCount() > 1 ? "Arrows: Move Group (cross panes at edge)  |  L/R: Box  |  A: Place Here  |  Minus: Options  |  B: Put Back" : "Arrows: Move (cross panes at edge)  |  L/R: Box  |  A: Drop / Swap  |  Minus: Options  |  B: Put Back";
                 }
                 else if (cursorMode == CursorMode::Menu)
                 {
-                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Menu)  |  A: Menu  |  X: "
-                                   "Sort  |  Minus: Import  |  B: Back";
+                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Menu)  |  A: Menu  |  X: Sort/Search  |  Minus: Import  |  B: Back";
                 }
                 else if (cursorMode == CursorMode::Move)
                 {
-                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Move)  |  A: Pick Up  |  "
-                                   "X: Sort  |  Minus: Import  |  B: Back";
+                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Move)  |  A: Pick Up  |  X: Sort/Search  |  Minus: Import  |  B: Back";
                 }
                 else
                 {
-                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Multi)  |  A: Select  |  "
-                                   "X: Sort  |  Minus: Import  |  B: Back";
+                    instructions = "Arrows: Move  |  L/R: Box  |  ZL/ZR: +/-10  |  Y: Mode (Multi)  |  A: Select  |  X: Sort/Search  |  Minus: Import  |  B: Back";
                 }
             }
             else if (selectedMode == ViewMode::Trainer)
@@ -7093,6 +6674,10 @@ namespace UI
         if (storageMenuActive)
         {
             Panels::drawStorageActionMenu(*this, framebuffer);
+        }
+        if (boxMenuActive)
+        {
+            Panels::drawStorageBoxMenu(*this, framebuffer);
         }
         if (groupMenuActive)
         {

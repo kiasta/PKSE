@@ -93,15 +93,11 @@ namespace Pokemon
         uint8_t rd8(size_t offset) const noexcept { return offset < dataSize ? static_cast<uint8_t>(data[offset]) : 0; }
         uint16_t rd16(size_t offset) const noexcept
         {
-            return (offset + 1 < dataSize)
-                       ? Utils::readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset))
-                       : 0;
+            return (offset + 1 < dataSize) ? Utils::readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
         uint32_t rd32(size_t offset) const noexcept
         {
-            return (offset + 3 < dataSize)
-                       ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset))
-                       : 0;
+            return (offset + 3 < dataSize) ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
         void wr8(size_t offset, uint8_t value) noexcept
         {
@@ -229,10 +225,7 @@ namespace Pokemon
             wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x01) | (value ? 1 : 0)));
         }
         uint8_t gender() const noexcept override { return (rd8(0x40) >> 1) & 0x03; }
-        void setGender(uint8_t genderValue) noexcept override
-        {
-            wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));
-        }
+        void setGender(uint8_t genderValue) noexcept override; // holds the PID to the new gender
         uint8_t formID() const noexcept override { return rd8(0x40) >> 3; }
         uint8_t form() const noexcept override { return formID(); }
         void setForm(uint8_t form) noexcept override
@@ -355,6 +348,12 @@ namespace Pokemon
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
 
     private:
+        // A new PID holding what the caller does not change (-1 = either); false when none can.
+        bool rerollPID(int wantShiny, int wantGender, uint32_t trainerID32) noexcept;
+        void writeStoredGender(uint8_t genderValue) noexcept
+        {
+            wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));
+        }
         const PersonalRecord &personal() const noexcept
         {
             return getPersonalInfo5BW(speciesID(), form());

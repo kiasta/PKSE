@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <new>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -20,21 +21,33 @@ namespace Utils
 {
     uint8_t *readAllBytes(const char *path, size_t *outSize)
     {
+        // Allocated with new[], so every caller releases it with delete[]. It once came from
+        // malloc() while most callers used delete[], which is undefined behaviour that only this
+        // toolchain's allocator happened to forgive. std::nothrow keeps the null check meaningful
+        // with exceptions disabled. Failures are logged, not printed: perror() reaches nowhere on a
+        // console, which left a failed read with no trace even with debug logging on.
         FILE *file = fopen(path, "rb");
         if (!file)
         {
-            perror("Failed to open file");
+            logInfoToFile("readAllBytes: could not open", path); // often just "not there yet"
             return NULL;
         }
 
         fseek(file, 0, SEEK_END);
-        size_t fileSize = ftell(file);
+        const long length = ftell(file);
         rewind(file);
+        if (length < 0)
+        {
+            logErrorToFile("readAllBytes: could not size", path);
+            fclose(file);
+            return NULL;
+        }
+        const size_t fileSize = static_cast<size_t>(length);
 
-        uint8_t *buffer = (unsigned char *)malloc(fileSize);
+        uint8_t *buffer = new (std::nothrow) uint8_t[fileSize > 0 ? fileSize : 1];
         if (!buffer)
         {
-            perror("Failed to allocate memory");
+            logErrorToFile("readAllBytes: out of memory for", path);
             fclose(file);
             return NULL;
         }
@@ -42,8 +55,8 @@ namespace Utils
         size_t bytesRead = fread(buffer, 1, fileSize, file);
         if (bytesRead != fileSize)
         {
-            perror("Failed to read the entire file");
-            free(buffer);
+            logErrorToFile("readAllBytes: short read of", path);
+            delete[] buffer;
             fclose(file);
             return NULL;
         }
@@ -109,7 +122,7 @@ namespace Utils
                 {
                     logErrorToFile("Failed to open for writing", destFilePath);
                     logErrorToFile("fopen error", strerror(errno));
-                    free(data);
+                    delete[] data;
                     overallSuccess = false;
                     continue;
                 }
@@ -125,7 +138,7 @@ namespace Utils
                     logInfoToFile("File size (bytes)", std::to_string(size).c_str());
                 }
                 fclose(out);
-                free(data);
+                delete[] data;
             }
         }
         closedir(dir);
@@ -159,7 +172,7 @@ namespace Utils
         {
             logErrorToFile("Failed to open for writing", destPath);
             logErrorToFile("fopen error", strerror(errno));
-            free(data);
+            delete[] data;
             return false;
         }
 
@@ -175,7 +188,7 @@ namespace Utils
         }
 
         fclose(out);
-        free(data);
+        delete[] data;
         return success;
     }
 
@@ -244,8 +257,7 @@ namespace Utils
         Result result = fsdevMountSaveData("save", titleId, userUid);
         if (R_FAILED(result))
         {
-            snprintf(buffer, sizeof(buffer), "fsdevMountSaveData failed for titleId 0x%016llX: 0x%x",
-                     static_cast<unsigned long long>(titleId), result);
+            snprintf(buffer, sizeof(buffer), "fsdevMountSaveData failed for titleId 0x%016llX: 0x%x", static_cast<unsigned long long>(titleId), result);
             logErrorToFile(buffer);
             return false;
         }
@@ -329,9 +341,7 @@ namespace Utils
      * So an absent optional file is skipped and not logged as a failure. A file that IS there and
      * will not copy still stops the restore, before the commit, leaving the game save untouched.
      */
-    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char *backupDir,
-                              const std::string &primaryFile,
-                              const std::vector<std::string> &optionalFiles)
+    bool restoreBackupToTitle(AccountUid userUid, u64 titleId, const char *backupDir, const std::string &primaryFile, const std::vector<std::string> &optionalFiles)
     {
         char buffer[LOG_BUFFER_SIZE];
         logInfoToFile("Restoring backup to game save", backupDir);

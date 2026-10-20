@@ -90,8 +90,7 @@ namespace Trainer
          * SIZE_PARTY9_SV bytes (344 bytes) contain Pokemon data. The remaining gap
          * (GAP_BOX_SLOT9_SV = 0x88 bytes) is unused/padding.
          */
-        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()),
-                                                   block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t slot = 0; slot < MAX_PARTY_SLOTS; ++slot)
         {
@@ -103,8 +102,7 @@ namespace Trainer
             std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY9_SV);
 
             bool isEmptySlot = true;
-            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY9_SV && slotSpanIndex < slotSpan.size();
-                 ++slotSpanIndex)
+            for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY9_SV && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
             {
                 if (slotSpan[slotSpanIndex] != std::byte{0})
                 {
@@ -190,9 +188,7 @@ namespace Trainer
 
     void Trainer9SV::parseBoxBlock(const Block &block)
     {
-        const std::span<const std::byte> blockSpan(
-            reinterpret_cast<const std::byte *>(block.data.data()),
-            block.data.size());
+        const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
         for (size_t boxIndex = 0; boxIndex < BOX_COUNT9_SV; ++boxIndex)
         {
@@ -208,8 +204,7 @@ namespace Trainer
                 std::span<const std::byte> slotSpan = blockSpan.subspan(offset, SIZE_PARTY9_SV);
 
                 bool isEmptySlot = true;
-                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY9_SV && slotSpanIndex < slotSpan.size();
-                     ++slotSpanIndex)
+                for (size_t slotSpanIndex = 0; slotSpanIndex < SIZE_PARTY9_SV && slotSpanIndex < slotSpan.size(); ++slotSpanIndex)
                 {
                     if (slotSpan[slotSpanIndex] != std::byte{0})
                     {
@@ -237,9 +232,7 @@ namespace Trainer
             size_t offset = boxIndex * BOX_NAME_LENGTH9_SV;
             if (offset + BOX_NAME_LENGTH9_SV <= block.data.size())
             {
-                std::u16string boxNameU16 = getString(
-                    block.data.data() + offset,
-                    BOX_NAME_LENGTH9_SV);
+                std::u16string boxNameU16 = getString(block.data.data() + offset, BOX_NAME_LENGTH9_SV);
                 std::string boxName = utf16ToUtf8(boxNameU16);
 
                 if (boxName.empty())
@@ -300,8 +293,7 @@ namespace Trainer
         this->gameVersionString = "v3.0";
 
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Save revision reported as: %d (%s, %s)",
-                 this->saveRevision, this->saveRevisionString.c_str(), this->gameVersionString.c_str());
+        snprintf(buffer, sizeof(buffer), "Save revision reported as: %d (%s, %s)", this->saveRevision, this->saveRevisionString.c_str(), this->gameVersionString.c_str());
         logInfoToFile(buffer);
     }
 
@@ -357,10 +349,8 @@ namespace Trainer
 
                     std::vector<std::byte> encryptedRecord(SIZE_PARTY9_SV);
                     std::memcpy(encryptedRecord.data(), &block.data[byteOffset], SIZE_PARTY9_SV);
-                    std::byte *dec = decryptArray9SV(
-                        std::span<const std::byte>(encryptedRecord.data(), SIZE_PARTY9_SV));
-                    alreadyEmpty[partySlotIndex] = (readUInt16LittleEndian(
-                                           reinterpret_cast<const uint8_t *>(dec) + 0x08) == 0);
+                    std::byte *dec = decryptArray9SV(std::span<const std::byte>(encryptedRecord.data(), SIZE_PARTY9_SV));
+                    alreadyEmpty[partySlotIndex] = (readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(dec) + 0x08) == 0);
                     delete[] dec;
                 }
 
@@ -369,10 +359,8 @@ namespace Trainer
                 std::vector<uint8_t> blankSlot;
                 {
                     std::vector<std::byte> zero(SIZE_PARTY9_SV, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray9SV(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
-                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord),
-                                     reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_SV);
+                    std::byte *encryptedRecord = encryptArray9SV(std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
+                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_SV);
                     blankSlot.resize(partySlotStride, 0);
                     delete[] encryptedRecord;
                 }
@@ -386,8 +374,7 @@ namespace Trainer
                     std::memcpy(&block.data[offset], blankSlot.data(), partySlotStride);
                 };
 
-                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS;
-                     ++partySlotIndex)
+                for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
                 {
                     // Calculate offset (packed for S/V, gapped for Z-A)
                     const size_t offset = partySlotIndex * partySlotStride;
@@ -395,12 +382,9 @@ namespace Trainer
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
                         const ::Pokemon::Pokemon *pokemon = party[partySlotIndex].get();
-                        uint32_t encryptionConstant = readUInt32LittleEndian(
-                            reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                        uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                        std::span<const std::byte> decryptedSpan(
-                            pokemon->getData().data(),
-                            pokemon->getDataSize());
+                        std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                         std::byte *encryptedData = encryptArray9SV(decryptedSpan, encryptionConstant);
 
@@ -444,8 +428,7 @@ namespace Trainer
                 const size_t offset = boxIndex * BOX_NAME_LENGTH9_SV;
                 if (offset + BOX_NAME_LENGTH9_SV > block.data.size())
                     break;
-                setString(block.data.data() + offset, BOX_NAME_LENGTH9_SV,
-                          utf8ToUtf16(boxNames[boxIndex]), BOX_NAME_LENGTH9_SV / 2 - 1);
+                setString(block.data.data() + offset, BOX_NAME_LENGTH9_SV, utf8ToUtf16(boxNames[boxIndex]), BOX_NAME_LENGTH9_SV / 2 - 1);
             }
             break;
         }
@@ -488,8 +471,7 @@ namespace Trainer
                             const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * boxSlotStride;
                             if (byteOffset + boxSlotStride <= block.data.size())
                             {
-                                blankSlot.assign(block.data.begin() + byteOffset,
-                                                 block.data.begin() + byteOffset + boxSlotStride);
+                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + boxSlotStride);
                                 break;
                             }
                         }
@@ -498,10 +480,8 @@ namespace Trainer
                 if (blankSlot.empty())
                 {
                     std::vector<std::byte> zero(SIZE_PARTY9_SV, std::byte{0});
-                    std::byte *encryptedRecord = encryptArray9SV(
-                        std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
-                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord),
-                                     reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_SV);
+                    std::byte *encryptedRecord = encryptArray9SV(std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
+                    blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_SV);
                     blankSlot.resize(boxSlotStride, 0); // pad the Z-A slot gap with zeros
                     delete[] encryptedRecord;
                 }
@@ -520,12 +500,9 @@ namespace Trainer
                         {
                             const auto &pokemon = boxes[boxIndex][slot];
 
-                            uint32_t encryptionConstant = readUInt32LittleEndian(
-                                reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
+                            uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
 
-                            std::span<const std::byte> decryptedSpan(
-                                pokemon->getData().data(),
-                                pokemon->getDataSize());
+                            std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
 
                             std::byte *encryptedData = encryptArray9SV(decryptedSpan, encryptionConstant);
 
@@ -557,10 +534,8 @@ namespace Trainer
         // -> a clean species-0, Sanity-0, checksum-valid entity. Raw zeros in the ctor would decrypt
         // to garbage (BAD EGG); the encrypt->decrypt round-trip is what makes the blank valid.
         std::vector<std::byte> zero(SIZE_PARTY9_SV, std::byte{0});
-        std::byte *encryptedRecord = encryptArray9SV(
-            std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
-        auto clone = std::make_unique<Pokemon9SV>(
-            std::span<const std::byte>(encryptedRecord, SIZE_PARTY9_SV));
+        std::byte *encryptedRecord = encryptArray9SV(std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
+        auto clone = std::make_unique<Pokemon9SV>(std::span<const std::byte>(encryptedRecord, SIZE_PARTY9_SV));
         delete[] encryptedRecord;
         return clone;
     }
@@ -608,8 +583,7 @@ namespace Trainer
 
         inline uint32_t rdU32(const std::vector<uint8_t> &d, size_t offset)
         {
-            return static_cast<uint32_t>(d[offset]) | (static_cast<uint32_t>(d[offset + 1]) << 8) |
-                   (static_cast<uint32_t>(d[offset + 2]) << 16) | (static_cast<uint32_t>(d[offset + 3]) << 24);
+            return static_cast<uint32_t>(d[offset]) | (static_cast<uint32_t>(d[offset + 1]) << 8) | (static_cast<uint32_t>(d[offset + 2]) << 16) | (static_cast<uint32_t>(d[offset + 3]) << 24);
         }
         inline void wrU32(std::vector<uint8_t> &d, size_t offset, uint32_t value)
         {
@@ -737,11 +711,7 @@ namespace Trainer
         // Without saying so it reads as "the Pokedex just didn't update" -- the silent-skip failure.
         if (skippedOutOfRange != 0)
         {
-            logErrorToFile("Pokedex: entries fell outside the Zukan block and were skipped",
-                           (std::to_string(skippedOutOfRange) +
-                            " skipped; block=" + std::string(useKitakami ? "Kitakami" : "Paldea") +
-                            " size=" + std::to_string(dex->size()) + " entry=" + std::to_string(entrySize))
-                               .c_str());
+            logErrorToFile("Pokedex: entries fell outside the Zukan block and were skipped", (std::to_string(skippedOutOfRange) + " skipped; block=" + std::string(useKitakami ? "Kitakami" : "Paldea") + " size=" + std::to_string(dex->size()) + " entry=" + std::to_string(entrySize)).c_str());
         }
     }
 
@@ -784,7 +754,7 @@ namespace Trainer
                 continue;
 
             // Size-preserving in-place write. Gen 9 stores every item at a fixed index (itemId * 0x10)
-            // as {pouchId@0x00, count@0x04 (int32 LE), flags@0x08 (isNew=bit0, isFavorite=bit1)}.
+            // as {pouchId@0x00, count@0x04 (int32 LE), flags@0x08 (isNew=bit0, isFavorite=bit1, obtained=bit2)}.
             //
             // PKSE places each item in a pouch by legal-list membership (getPouchItems, mirroring
             // PKHeX's spans); the GAME instead keys the bag off the pouchId in each record. A freshly
@@ -817,10 +787,13 @@ namespace Trainer
                         block.data[offset + 1] = static_cast<uint8_t>((pidValue >> 8) & 0xFF);
                         block.data[offset + 2] = static_cast<uint8_t>((pidValue >> 16) & 0xFF);
                         block.data[offset + 3] = static_cast<uint8_t>((pidValue >> 24) & 0xFF);
+                        // A record the save never held has no OBTAINED bit, and every item the game holds
+                        // carries one; PKHeX sets it for any non-zero count. A no-op on game-written items.
+                        block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | ITEM_OBTAINED_FLAG9_SV);
                         // isNew = flags bit 0. Only SET (for freshly-added items); never clear, so the
                         // game's own "new" markers on existing items survive round-trips.
                         if (item.isNew)
-                            block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | 0x01);
+                            block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | ITEM_NEW_FLAG9_SV);
                     }
                 }
             }

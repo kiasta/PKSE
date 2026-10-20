@@ -36,8 +36,7 @@ namespace Pokemon
 
     constexpr uint32_t unownFormValue(uint32_t pidValue) noexcept
     {
-        return ((pidValue & 0x03000000u) >> 18) | ((pidValue & 0x00030000u) >> 12) |
-               ((pidValue & 0x00000300u) >> 6) | (pidValue & 0x00000003u);
+        return ((pidValue & 0x03000000u) >> 18) | ((pidValue & 0x00030000u) >> 12) | ((pidValue & 0x00000300u) >> 6) | (pidValue & 0x00000003u);
     }
 
     /// The letter (0-27) a PID yields for Unown.
@@ -49,8 +48,7 @@ namespace Pokemon
     /// Scatter an 8-bit value back into the four 2-bit fields, leaving the other 24 bits alone.
     constexpr uint32_t withUnownFormValue(uint32_t pidValue, uint32_t value) noexcept
     {
-        return (pidValue & ~UNOWN_FORM_BITS) | ((value & 0xC0u) << 18) | ((value & 0x30u) << 12) |
-               ((value & 0x0Cu) << 6) | (value & 0x03u);
+        return (pidValue & ~UNOWN_FORM_BITS) | ((value & 0xC0u) << 18) | ((value & 0x30u) << 12) | ((value & 0x0Cu) << 6) | (value & 0x03u);
     }
 
 
@@ -75,8 +73,7 @@ namespace Pokemon
 
         std::unique_ptr<Pokemon> clone() const override
         {
-            std::byte *encryptedRecord =
-                Encryption::encryptArray3FRLG(std::span<const std::byte>(data.data(), dataSize));
+            std::byte *encryptedRecord = Encryption::encryptArray3FRLG(std::span<const std::byte>(data.data(), dataSize));
             auto copiedPokemon = std::make_unique<Pokemon3FRLG>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
             return copiedPokemon;

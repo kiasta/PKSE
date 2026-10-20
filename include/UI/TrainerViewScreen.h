@@ -10,6 +10,7 @@
 
 #include "Globals.h" // g_injectToGameSave gates the save-destination picker
 #include "UI/UIScreen.h"
+#include "UI/NavigationRepeat.h"
 #include "UI/PKSEFramebuffer.h"
 #include "UI/ListSearch.h" // the shared search box every list uses
 #include "Trainer/Bank.h"
@@ -67,8 +68,7 @@ namespace UI
             Bank
         };
 
-        TrainerViewScreen(Trainer::Trainer &trainer, const std::string &titleName, const std::string &backupDir,
-                          u64 titleId, AccountUid userUid, bool loadedFromCart);
+        TrainerViewScreen(Trainer::Trainer &trainer, const std::string &titleName, const std::string &backupDir, u64 titleId, AccountUid userUid, bool loadedFromCart);
         void update(const PadState &pad, const TouchInput &touch) override;
         void draw(PKSEFramebuffer &framebuffer) override;
         bool shouldExit() const override { return goBack; }
@@ -80,17 +80,13 @@ namespace UI
         std::unique_ptr<Pokemon::Pokemon> &storageSlot(int pane, int box, int slot); // pane 0=save,1=bank
         bool storageSlotLocked(int pane, int box, int slot); // LGPE party members (save pane) are locked
         bool convertForPane(std::unique_ptr<Pokemon::Pokemon> &pokemon, int destPane);
-        void buildAbilityPickerOrder(
-            uint16_t species, uint8_t form, Enums::GameVersion group,
-            uint16_t current); // the species' legal ability slots (all ids too, when illegal edits are allowed)
+        void buildAbilityPickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current); // the species' legal ability slots (all ids too, when illegal edits are allowed)
         void buildCreatorSpeciesOrder(); // creator: filter the species picker to the open game's dex
         /// Species the given game has an entry for, with `current` pre-selected (0 for none).
         void buildSpeciesPickerOrder(Enums::GameVersion group, uint16_t current);
         // learnable moves first
         void buildMovePickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current);
-        void buildFormPickerOrder(
-            uint16_t species, uint8_t current,
-            Enums::GameVersion group); // storable forms only (drops battle-only ones + the ones this game doesn't have)
+        void buildFormPickerOrder(uint16_t species, uint8_t current, Enums::GameVersion group); // storable forms only (drops battle-only ones + the ones this game doesn't have)
         // only the genders the species can be (one row when fixed-gender)
         void buildGenderPickerOrder(uint16_t species, uint8_t form, uint8_t current);
         // false -> the Gender row is read-only (nothing to change it TO)
@@ -142,6 +138,7 @@ namespace UI
         int currentPouchCapacity() const;            // slot limit of the current pouch; 0 = appending unsupported
         void sortStorageBox(int pane, int box);      // pack + order one box, pinning party-linked slots
         int currentItemMaxCount() const;             // per-stack ceiling for the current pouch (never 0)
+        void stepItemPouch(int pouchStep);           // L/R: move to the next (+1) or previous (-1) pouch, wrapping
 
         // Public state - accessible by UI components (Panels, Dialogs, Modals)
         Trainer::Trainer &trainer;
@@ -152,6 +149,7 @@ namespace UI
         AccountUid userUid;
         bool goBack = false;
         bool exitRequested = false; // True when user presses + to close app
+        ControllerNavigation controllerNavigation;
 
         // This block is public + mutable BY DESIGN: the panels/dialogs/modals read and write it
         // directly (immediate-mode UI). The biggest cohesive clusters are grouped into nested structs
@@ -241,10 +239,39 @@ namespace UI
         int carriedCount() const;                     // non-null cells in moveMon
         const Pokemon::Pokemon *firstCarried() const; // first non-null cell, or nullptr
 
-        // Red per-Pokemon action menu (Move / Edit / Release / Cancel).
+        // Red per-Pokemon action menu. These rows are the ONE list of it: the panel draws
+        // STORAGE_MENU_LABELS, and the action handler, the greyed-row mask and the starting row all
+        // name a row by its constant. A second list of row numbers is what lets a new row leave the
+        // handler acting on its neighbour.
+        static constexpr int STORAGE_MENU_ROW_MOVE = 0;
+        static constexpr int STORAGE_MENU_ROW_EDIT = 1;
+        static constexpr int STORAGE_MENU_ROW_CLONE = 2;
+        static constexpr int STORAGE_MENU_ROW_EXPORT = 3;
+        static constexpr int STORAGE_MENU_ROW_RELEASE = 4;
+        static constexpr int STORAGE_MENU_ROW_CANCEL = 5;
+        static constexpr int STORAGE_MENU_ROW_COUNT = 6;
+        static constexpr const char *STORAGE_MENU_LABELS[STORAGE_MENU_ROW_COUNT] = {
+            "Move", "Edit", "Clone", "Export", "Release", "Cancel"};
+        /// Rows a party-linked (Let's Go) slot cannot use: it can be edited, cloned and exported,
+        /// but not released, and not moved in Storage. The Boxes view's Move is a swap inside the
+        /// save, which carries the party pointer along with the Pokemon, so it stays available there.
+        static constexpr bool storageMenuRowNeedsUnlockedSlot(int menuRow, ViewMode mode)
+        {
+            return (menuRow == STORAGE_MENU_ROW_MOVE && mode == ViewMode::Storage) || menuRow == STORAGE_MENU_ROW_RELEASE;
+        }
         bool storageMenuActive = false;
         int storageMenuIndex = 0;
         int menuPane = 0, menuBox = 0, menuSlot = 0; // the slot the menu acts on
+        // X menu of the Boxes and Storage views: actions on a whole box rather than on one Pokemon.
+        static constexpr int BOX_MENU_ROW_SORT = 0;
+        static constexpr int BOX_MENU_ROW_SEARCH = 1;
+        static constexpr int BOX_MENU_ROW_CANCEL = 2;
+        static constexpr int BOX_MENU_ROW_COUNT = 3;
+        static constexpr const char *BOX_MENU_LABELS[BOX_MENU_ROW_COUNT] = {"Sort", "Search\u2026", "Cancel"};
+        bool boxMenuActive = false;
+        int boxMenuIndex = 0;
+        int boxMenuPane = 0, boxMenuBox = 0; // the box Sort acts on
+        void openBoxMenu(int pane, int box);
         // Group menu for the carried block (Release all / Return to origin / Cancel), opened with Minus.
         bool groupMenuActive = false;
         int groupMenuIndex = 0;
@@ -496,6 +523,10 @@ namespace UI
             int leftScroll = 0; // left-pane vertical scroll (px); auto-follows selection, reset on (re)open
             std::vector<int> leftOrder;          // left-pane editable field ids in DRAW order (rebuilt each draw)
             std::vector<std::byte> editSnapshot; // baseline bytes for the "Unsaved changes" marker + revert
+            /// hasUnsavedChanges when editSnapshot was taken. Every edit on the page sets the flag, so
+            /// rolling the bytes back has to roll it back too, or discarding the only edit left the
+            /// save marked as changed.
+            bool unsavedChangesAtSnapshot = false;
         };
         DetailsState details;
         // Creator: the Species picker was opened in "create a new pokemon" mode; where the built pokemon lands,
@@ -620,8 +651,11 @@ namespace UI
         /// mutable reference; nothing here writes through it.
         bool storageSlotMatchesSearch(int pane, int box, int slot);
         /// Moves the cursor to the first matching slot, searching the focused pane from the
-        /// current box onward and then the other pane. Returns false when nothing matches.
+        /// current box onward and then the other pane. The Boxes view searches the save alone.
+        /// Returns false when nothing matches.
         bool jumpToFirstStorageMatch();
+        /// Prompts for the storage query, then jumps to the first match once it is accepted.
+        void searchStorage();
         /// Unfiltered row indices that survive the query, in order. Empty and unused when the
         /// query is empty -- "no filter" then costs nothing and takes the same code path.
         std::vector<int> pickerFilteredRows;

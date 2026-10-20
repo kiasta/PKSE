@@ -21,8 +21,7 @@ namespace UI
     // face buttons are round, shoulders are rounded rectangles, +/- are round with a drawn bar, and
     // the d-pad is a cross with the unused axis dimmed. `cy` is the badge's vertical CENTRE.
     // Returns the width consumed, or 0 if the token isn't a button PKSE knows how to draw.
-    inline int buttonGlyph(PKSEFramebuffer &framebuffer, int badgeX, int centerY, const std::string &buttonToken,
-                           bool measureOnly)
+    inline int buttonGlyph(PKSEFramebuffer &framebuffer, int badgeX, int centerY, const std::string &buttonToken, bool measureOnly)
     {
         // Mid-grey badge with the bar colour as ink. Both are theme colours, so the pair inverts
         // itself: dark letter on light grey in the dark theme, white letter on grey in the light one.
@@ -38,8 +37,7 @@ namespace UI
         };
 
         // Face buttons.
-        if (buttonToken.size() == 1 &&
-            (buttonToken[0] == 'A' || buttonToken[0] == 'B' || buttonToken[0] == 'X' || buttonToken[0] == 'Y'))
+        if (buttonToken.size() == 1 && (buttonToken[0] == 'A' || buttonToken[0] == 'B' || buttonToken[0] == 'X' || buttonToken[0] == 'Y'))
         {
             if (!measureOnly)
             {
@@ -64,8 +62,7 @@ namespace UI
         }
 
         // Shoulders, and the slash pairs the hints use ("L/R", "ZL/ZR"): rounded rects sized to text.
-        if (buttonToken == "L" || buttonToken == "R" || buttonToken == "ZL" || buttonToken == "ZR" ||
-            buttonToken == "L/R" || buttonToken == "ZL/ZR")
+        if (buttonToken == "L" || buttonToken == "R" || buttonToken == "ZL" || buttonToken == "ZR" || buttonToken == "L/R" || buttonToken == "ZL/ZR")
         {
             int textWidth, th;
             framebuffer.measureText(buttonToken, textWidth, th, TextStyle::Caption);
@@ -80,8 +77,7 @@ namespace UI
 
         // D-pad. "Up/Down" and "Left/Right" dim the axis they don't use, so the badge itself says
         // which way the stick moves rather than relying on the label to explain it.
-        if (buttonToken == "Arrows" || buttonToken == "D-Pad" || buttonToken == "Up/Down" ||
-            buttonToken == "Left/Right")
+        if (buttonToken == "Arrows" || buttonToken == "D-Pad" || buttonToken == "Up/Down" || buttonToken == "Left/Right")
         {
             constexpr int crossSize = 24, armThickness = 9; // across the cross, and one arm's thickness
             if (!measureOnly)
@@ -118,16 +114,12 @@ namespace UI
             if (!measureOnly)
             {
                 framebuffer.drawFilledRoundedRect(badgeX, centerY - badgeSize / 2, badgeSize, badgeSize, 6, fillColor);
-                const std::string arrowGlyph = buttonToken == "Left"    ? "\xE2\x97\x80"  // ◀
-                                        : buttonToken == "Right" ? "\xE2\x96\xB6"  // ▶
-                                        : buttonToken == "Up"    ? "\xE2\x96\xB2"  // ▲
-                                                         : "\xE2\x96\xBC"; // ▼
+                const std::string arrowGlyph = buttonToken == "Left" ? "\xE2\x97\x80" : buttonToken == "Right" ? "\xE2\x96\xB6" : buttonToken == "Up" ? "\xE2\x96\xB2" : "\xE2\x96\xBC"; // ◀ ▶ ▲ ▼
                 // Measure AND draw the arrow at Caption size -- drawSymbol otherwise defaults to Body,
                 // which overflowed this 22px badge and mis-centred the glyph (the ◀ was clipping away).
                 int textWidth, th;
                 framebuffer.measureText(arrowGlyph, textWidth, th, TextStyle::Caption);
-                framebuffer.drawSymbol(badgeX + (badgeSize - textWidth) / 2, centerY - th / 2, arrowGlyph, inkColor,
-                                       TextStyle::Caption);
+                framebuffer.drawSymbol(badgeX + (badgeSize - textWidth) / 2, centerY - th / 2, arrowGlyph, inkColor, TextStyle::Caption);
             }
             return badgeSize;
         }
@@ -152,10 +144,7 @@ namespace UI
     // is drawn INSIDE the button's own rectangle, so a held button occupies exactly the space an
     // unheld one does and nothing around it shifts. The tint goes OVER the caller's fill rather than
     // replacing it, so a destructive button stays recognisably red while it is held.
-    inline void drawGlyphButton(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, int boxHeight,
-                                const std::string &glyph, const std::string &label,
-                                Color fillColor = Colors::PanelAlt, Color textColor = Colors::Text,
-                                bool pressed = false)
+    inline void drawGlyphButton(PKSEFramebuffer &framebuffer, int boxX, int boxY, int boxWidth, int boxHeight, const std::string &glyph, const std::string &label, Color fillColor = Colors::PanelAlt, Color textColor = Colors::Text, bool pressed = false)
     {
         framebuffer.drawFilledRoundedRect(boxX, boxY, boxWidth, boxHeight, 8, fillColor);
         if (pressed)
@@ -227,8 +216,7 @@ namespace UI
             return 0;
         for (const NavHit &hit : g_navHits)
         {
-            if (touch.x() >= hit.hitX && touch.x() < hit.hitX + hit.hitWidth &&
-                touch.y() >= hit.hitY && touch.y() < hit.hitY + hit.hitHeight)
+            if (touch.x() >= hit.hitX && touch.x() < hit.hitX + hit.hitWidth && touch.y() >= hit.hitY && touch.y() < hit.hitY + hit.hitHeight)
                 return hit.button;
         }
         return 0;
@@ -246,8 +234,7 @@ namespace UI
      * A run of spaces collapses to the one break it stands for; the text has no other whitespace the
      * layout should keep.
      */
-    inline std::vector<std::string> wrapTextToWidth(PKSEFramebuffer &framebuffer, const std::string &text,
-                                                    int maxLineWidth, TextStyle style)
+    inline std::vector<std::string> wrapTextToWidth(PKSEFramebuffer &framebuffer, const std::string &text, int maxLineWidth, TextStyle style)
     {
         const auto fits = [&](const std::string &candidate)
         {
@@ -316,8 +303,7 @@ namespace UI
     // Lay out a "Btn: Label  |  Btn: Label" hint as badge+label pairs, centred within [x, x+w] on
     // `cy`. A segment with no colon (e.g. "HOLDING") is a state marker and renders as accent text.
     // Shared by the screen nav bar and the dialog footer so the two always match.
-    inline void drawNavHints(PKSEFramebuffer &framebuffer, int hintsX, int hintsWidth, int centerY,
-                             const std::string &hint)
+    inline void drawNavHints(PKSEFramebuffer &framebuffer, int hintsX, int hintsWidth, int centerY, const std::string &hint)
     {
         struct HintSegment
         {
@@ -342,8 +328,7 @@ namespace UI
         for (size_t hintIndex = 0; hintIndex <= hint.size();)
         {
             const size_t barPosition = hint.find('|', hintIndex);
-            const std::string token = trim(
-                hint.substr(hintIndex, barPosition == std::string::npos ? std::string::npos : barPosition - hintIndex));
+            const std::string token = trim(hint.substr(hintIndex, barPosition == std::string::npos ? std::string::npos : barPosition - hintIndex));
             if (!token.empty())
             {
                 HintSegment segment{};
@@ -357,8 +342,7 @@ namespace UI
                     segment.buttonToken = trim(token.substr(0, colon));
                     segment.label = trim(token.substr(colon + 1));
                 }
-                segment.glyphWidth =
-                    segment.buttonToken.empty() ? 0 : buttonGlyphWidth(framebuffer, segment.buttonToken);
+                segment.glyphWidth = segment.buttonToken.empty() ? 0 : buttonGlyphWidth(framebuffer, segment.buttonToken);
                 // A button we have no badge for still has to be readable: fall back to plain text
                 // rather than silently dropping the button name and leaving a bare verb.
                 if (segment.glyphWidth == 0 && !segment.buttonToken.empty())
@@ -395,16 +379,14 @@ namespace UI
             }
             int textWidth, textHeight;
             framebuffer.measureText(segment.label, textWidth, textHeight, TextStyle::Caption);
-            framebuffer.drawText(centerX, centerY - textHeight / 2, segment.label,
-                                 segment.glyphWidth ? Colors::Text : Colors::Accent, TextStyle::Caption);
+            framebuffer.drawText(centerX, centerY - textHeight / 2, segment.label, segment.glyphWidth ? Colors::Text : Colors::Accent, TextStyle::Caption);
             centerX += segment.labelWidth;
             // The badge AND its label are one tap target -- aiming at a 24px circle is unreasonable,
             // and the label is the part that says what will happen. Height is TouchTargetMin rather
             // than the bar height (46), so the target stays fingertip-sized.
             const uint64_t button = segment.glyphWidth ? navButtonFor(segment.buttonToken) : 0;
             if (button)
-                g_navHits.push_back(
-                    {segmentX, centerY - TouchTargetMin / 2, centerX - segmentX, TouchTargetMin, button});
+                g_navHits.push_back({segmentX, centerY - TouchTargetMin / 2, centerX - segmentX, TouchTargetMin, button});
             centerX += itemGap;
         }
     }
@@ -413,8 +395,7 @@ namespace UI
     inline void drawTitleBar(PKSEFramebuffer &framebuffer, const std::string &subtitle)
     {
         framebuffer.drawSoftShadow(0, -40, framebuffer.getWidth(), HEADER_HEIGHT + 40, CHROME_CORNER_RADIUS);
-        framebuffer.drawFilledRoundedRect(0, -CHROME_CORNER_RADIUS, framebuffer.getWidth(),
-                                          HEADER_HEIGHT + CHROME_CORNER_RADIUS, CHROME_CORNER_RADIUS, Colors::Panel);
+        framebuffer.drawFilledRoundedRect(0, -CHROME_CORNER_RADIUS, framebuffer.getWidth(), HEADER_HEIGHT + CHROME_CORNER_RADIUS, CHROME_CORNER_RADIUS, Colors::Panel);
         framebuffer.drawText(20, 8, "PKSE", Colors::Accent, TextStyle::Title);
         int boxWidth, bh;
         framebuffer.measureText("PKSE", boxWidth, bh, TextStyle::Title);
@@ -423,6 +404,14 @@ namespace UI
         framebuffer.drawFilledRoundedRect(20, 52, boxWidth, 3, 2, Colors::Accent);
         if (!subtitle.empty())
             framebuffer.drawText(20 + boxWidth + 16, 24, subtitle, Colors::TextDim, TextStyle::Body);
+#ifdef PKSE_DEVELOPMENT_BUILD
+        // Every screen of a development build says so, at the right end of the bar, so a
+        // screenshot or a console left running is never mistaken for a release.
+        const std::string developmentLabel = "DEVELOPMENT";
+        int labelWidth, labelHeight;
+        framebuffer.measureText(developmentLabel, labelWidth, labelHeight, TextStyle::Heading);
+        framebuffer.drawText(framebuffer.getWidth() - 20 - labelWidth, (HEADER_HEIGHT - labelHeight) / 2, developmentLabel, Colors::Danger, TextStyle::Heading);
+#endif
     }
 
     // Bottom nav bar: a sheet that curves along its top edge, carrying the controller badges.
@@ -430,17 +419,14 @@ namespace UI
     {
         const int screenWidth = framebuffer.getWidth(), barY = framebuffer.getHeight() - NAV_BAR_HEIGHT;
         framebuffer.drawSoftShadow(0, barY, screenWidth, NAV_BAR_HEIGHT + 40, CHROME_CORNER_RADIUS);
-        framebuffer.drawFilledRoundedRect(0, barY, screenWidth, NAV_BAR_HEIGHT + CHROME_CORNER_RADIUS,
-                                          CHROME_CORNER_RADIUS, Colors::Panel);
+        framebuffer.drawFilledRoundedRect(0, barY, screenWidth, NAV_BAR_HEIGHT + CHROME_CORNER_RADIUS, CHROME_CORNER_RADIUS, Colors::Panel);
         drawNavHints(framebuffer, 0, screenWidth, barY + NAV_BAR_HEIGHT / 2, hint);
     }
 
     // A HOME-style selectable list tile: rounded (stadium), soft shadow, amber when
     // selected. `accent` marks a special/primary row (indigo-tinted when not selected, e.g. the
     // "Create New Backup" action); `enabled` false dims it (e.g. a "no saves" placeholder).
-    inline void drawHomeTile(PKSEFramebuffer &framebuffer, int homeTileX, int homeTileY, int homeTileWidth,
-                             int homeTileHeight, const std::string &label, bool selected, bool accent = false,
-                             bool enabled = true)
+    inline void drawHomeTile(PKSEFramebuffer &framebuffer, int homeTileX, int homeTileY, int homeTileWidth, int homeTileHeight, const std::string &label, bool selected, bool accent = false, bool enabled = true)
     {
         framebuffer.drawSoftShadow(homeTileX, homeTileY, homeTileWidth, homeTileHeight, homeTileHeight / 2);
         const Color fillColor = selected ? Colors::Primary : Colors::PanelAlt;
@@ -449,15 +435,11 @@ namespace UI
         // NOT a filled highlight, which would read as a false selection next to the real (amber) one.
         if (accent && !selected)
             framebuffer.drawPillBorder(homeTileX, homeTileY, homeTileWidth, homeTileHeight, Colors::Accent, 2);
-        const Color textColor2 = !enabled   ? Colors::TextDim
-                          : selected ? Colors::PrimaryText
-                          : accent   ? Colors::Accent
-                                     : Colors::Text;
+        const Color textColor2 = !enabled ? Colors::TextDim : selected ? Colors::PrimaryText : accent ? Colors::Accent : Colors::Text;
         int labelX = homeTileX + 28;
         if (selected)
         {
-            framebuffer.drawSymbol(homeTileX + 20, homeTileY + homeTileHeight / 2 - 12, "\xE2\x96\xB6",
-                                   Colors::PrimaryText);
+            framebuffer.drawSymbol(homeTileX + 20, homeTileY + homeTileHeight / 2 - 12, "\xE2\x96\xB6", Colors::PrimaryText);
             labelX = homeTileX + 48;
         }
         int labelWidth, lh;
@@ -470,8 +452,7 @@ namespace UI
     // contentH the full content height, scroll the current offset. Item lists pass contentH =
     // totalItems * rowH and scroll = firstItem * rowH. One helper so every scrolling surface in the
     // app gets the same thumb the details editor uses.
-    inline void drawScrollbar(PKSEFramebuffer &framebuffer, int trackX, int trackY, int trackH, int contentH,
-                              int scroll)
+    inline void drawScrollbar(PKSEFramebuffer &framebuffer, int trackX, int trackY, int trackH, int contentH, int scroll)
     {
         if (contentH <= trackH || trackH <= 0)
             return;

@@ -45,11 +45,26 @@ namespace Trainer
         /// also migrates the legacy per-game bank files (gg/swsh/za/... _bank.dat), if present.
         Bank();
 
+        /// Redirects the bank file to `dir` (which must exist) instead of sdmc:/PKSE/bank. Set to ""
+        /// to go back to the real one.
+        ///
+        /// This exists for exactly one caller: the on-console self test, which deposits sample
+        /// Pokemon, saves, reloads and byte-compares to prove the bank's byte-in == byte-out
+        /// contract. Doing that against the user's real bank would mean a test run rewriting the
+        /// file their whole collection lives in, so it gets a scratch bank instead. Legacy
+        /// migration is skipped while redirected -- importing the user's old per-group banks into
+        /// a throwaway file would be pointless work and a confusing log line.
+        ///
+        /// Process-wide and NOT thread safe; the self test is the only writer and it runs alone.
+        static void setRootOverride(const std::string &directory);
+        static bool rootOverridden() noexcept;
+
         /// (Re)loads the bank from its SD file, discarding any in-memory changes. Clears all
         /// slots first, so this doubles as the "discard changes" path (revert to on-disk state).
         void load();
 
-        /// Writes the bank to its SD file (tagged, encrypted records). Returns true on success.
+        /// Writes the bank to its SD file (tagged, encrypted records), through a temporary file so an
+        /// interrupted write never damages the old one. Returns true on success.
         bool save() const;
 
         /// True if the in-memory boxes differ from the last saved/loaded on-disk state.
@@ -110,6 +125,11 @@ namespace Trainer
         /// (bad checksum, species 0, unknown tag). Non-zero means the bank file was damaged.
         size_t lastLoadRejects() const noexcept { return loadRejects; }
 
+        /// What the user must be told about the last load(), or empty. Set when the bank file existed
+        /// but could not be used: it was moved aside to bank.dat.unreadable and the bank opened empty,
+        /// or it could not even be moved, in which case save() refuses to write over it.
+        const std::string &lastLoadProblem() const noexcept { return loadProblem; }
+
         /// Occupied slots whose bytes did not survive an encrypt->decrypt round trip during the
         /// last save(). The bank's contract is byte-in == byte-out, so non-zero means a PKSE bug.
         ///
@@ -129,8 +149,12 @@ namespace Trainer
         /// their battle-stat tail from the span's LENGTH, so a short span reads plausible garbage
         /// rather than failing. Gen 1 and Gen 2 have two lengths per group; use recordSizeForTag()
         /// when the on-disk tag is what says which.
-        static std::unique_ptr<::Pokemon::Pokemon> makePokemon(Enums::GameVersion group,
-                                                               std::span<const std::byte> record);
+        static std::unique_ptr<::Pokemon::Pokemon> makePokemon(Enums::GameVersion group, std::span<const std::byte> record);
+        /// Encrypt one DECRYPTED record into the form `group`'s entity constructors take -- the other
+        /// half of makePokemon(), exposed for the same reason. Gens 1 and 2 have no encryption and get
+        /// a plain copy. Returns a `new[]` buffer of `decryptedRecord.size()` bytes the caller
+        /// releases with `delete[]`, or nullptr for a group with no entity class.
+        static std::byte *encryptRecord(Enums::GameVersion group, std::span<const std::byte> decryptedRecord, uint32_t encryptionConstant);
         /// Bytes one entity of `group` occupies -- the PARTY size, since several formats keep level
         /// and the battle stats in a tail the accessors index straight into.
         static size_t recordSizeFor(Enums::GameVersion group);
@@ -149,6 +173,8 @@ namespace Trainer
         mutable std::vector<uint8_t> savedImage; // serialized image as of the last load()/save()
         mutable size_t verifyFailures = 0;
         size_t loadRejects = 0;
+        std::string loadProblem;
+        bool fileUntouchable = false; // an unreadable bank.dat that could not be moved aside
     };
 }
 
