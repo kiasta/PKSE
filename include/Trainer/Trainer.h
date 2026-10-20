@@ -154,14 +154,26 @@ namespace Trainer
         /**
          * Max number of item slots pouch `pouch` can hold, for the add-item flow. Default 0
          * means "appending unsupported" (the UI uses a large sentinel for the id-indexed games, which
-         * never append). Legends: Arceus overrides this: its pouches are fixed-capacity packed lists,
-         * and the general-items bag grows with the player's Satchel Upgrades (as in PKHeX PlayerBag8a).
+         * never append). Every slot-list group from Gen 1 to Gen 7 overrides this: its writer stores
+         * only that many entries and silently drops the rest, so an add past it must be refused.
+         * Legends: Arceus overrides it too: its pouches are fixed-capacity packed lists, and the
+         * general-items bag grows with the player's Satchel Upgrades (as in PKHeX PlayerBag8a).
          */
         virtual size_t getItemPouchCapacity(int pouch) const { return 0; }
 
         /**
+         * Largest stack pouch `pouch` holds for one item, or 0 when the group leaves it to the
+         * editor's own per-pouch limits. The slot-list groups from Gen 1 to Gen 7 answer from their
+         * Inventory tables (PKHeX's per-pouch MaxCount).
+         */
+        virtual int getItemMaxCount(int pouch) const { return 0; }
+
+        /// Display name of pouch `pouch`, or nullptr when the group leaves it to the editor.
+        virtual const char *getItemPouchName(int pouch) const { return nullptr; }
+
+        /**
          * True if items are stored ID-INDEXED (count at itemId * stride: BDSP / S-V / Z-A), false if
-         * SLOT-BASED (a packed list of {itemId,count}: FRLG / LGPE / SWSH / LA). This decides how the
+         * SLOT-BASED (a list of {itemId,count}: Gens 1-7, LGPE, SWSH, LA). This decides how the
          * editor removes or retypes an item, because the two models save opposite ways:
          *   - slot-based: erase the entry / reassign its itemId (the region is rewritten each save);
          *   - id-indexed: set count 0 but KEEP the entry so its id-slot is written to 0 (updateItemBlock
@@ -296,7 +308,10 @@ namespace Trainer
          * added without registering gets picked up the next time the save is written.
          *
          * Only ever SETS flags. A player's existing Pokedex is never cleared, so a game the player has
-         * legitimately progressed cannot be walked backwards by opening it in PKSE.
+         * legitimately progressed cannot be walked backwards by opening it in PKSE. It must also be
+         * idempotent: an unedited save writes the same dex again. Legends: Arceus is the one format
+         * with counters (its research tasks), and it counts only Pokemon that arrived since the save
+         * was read or last written.
          *
          * Default is a no-op for the games whose Pokedex format is not implemented yet -- those saves
          * are left exactly as they were rather than half-written.

@@ -72,6 +72,9 @@ namespace Trainer
         /// The field is 0x22 bytes = 17 UTF-16 units, so 16 characters plus a terminator.
         size_t getMaxBoxNameLength() const noexcept override { return 16; }
         bool itemsAreIdIndexed() const noexcept override { return false; }
+        size_t getItemPouchCapacity(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT7_USUM) ? POUCHES7_USUM[pouch].slots : 0; }
+        int getItemMaxCount(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT7_USUM) ? POUCHES7_USUM[pouch].maxCount : 0; }
+        const char *getItemPouchName(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT7_USUM) ? POUCHES7_USUM[pouch].name : nullptr; }
         bool compactStorage() override { return false; }
         bool canStoreBoxName(const std::string &name) const override;
 

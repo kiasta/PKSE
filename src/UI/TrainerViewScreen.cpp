@@ -63,6 +63,7 @@
 #include "Pokemon/LearnsetTable.h"
 #include "Pokemon/Gen1Tables.h"    // MAX_SPECIES_GEN1 -- the Gen 1 dex bound
 #include "Pokemon/Pokemon2GSC.h"   // MAX_SPECIES_GEN2
+#include "Pokemon/Pokemon8LA.h"   // resetSizeAbsolutes -> a created Pokemon's size
 #include "Pokemon/PersonalInfo3FRLG.h"  // the per-group species ceilings this picker filters by
 #include "Pokemon/PersonalInfo4HGSS.h"
 #include "Pokemon/PersonalInfo5B2W2.h"
@@ -572,6 +573,12 @@ namespace UI
                 std::memcpy(dataBytes.data() + 0x2C, &hAbs, sizeof(float));
                 std::memcpy(dataBytes.data() + 0xE4, &wAbs, sizeof(float));
             }
+        }
+        // Legends: Arceus also stores its absolutes, and its Pokedex researches them: left at 0, a
+        // created Pokemon would count as the smallest and lightest of its species.
+        if (tr.getGameGroup() == Enums::GameVersion::PLA)
+        {
+            static_cast<Pokemon::Pokemon8LA &>(*pokemon).resetSizeAbsolutes();
         }
         // Roll a random IV spread at birth (same routine as the L-button randomizer, which is unchanged);
         // this recalculates stats and refreshes the checksum, so it stands in for the final pass.
@@ -2460,7 +2467,8 @@ namespace UI
     // Two storage models. The id-indexed games (BDSP / S-V / Z-A) build their pouch vector by
     // walking every legal id, so an entry already exists for anything addable and nothing is ever
     // appended -- they report a bound large enough to never block. The slot-based games store only
-    // what the bag holds, so a new item really does append and must respect the pouch's capacity.
+    // what the bag holds, so a new item really does append and must respect the pouch's capacity;
+    // a group with no case below answers through its trainer, whose writer drops anything past it.
     // Legends: Arceus reports 0 (appending unsupported): its PouchInfo8LA carries no capacity and
     // its item block is resized on write, so appending without a documented bound could overflow it.
     int TrainerViewScreen::currentPouchCapacity() const
@@ -2486,7 +2494,9 @@ namespace UI
             // Fixed-capacity packed pouches; the general bag grows with Satchel Upgrades.
             return static_cast<int>(trainer.getItemPouchCapacity(categoryIndex));
         default:
-            return 1 << 20; // id-indexed: the entry is already there, so this never binds
+            if (trainer.itemsAreIdIndexed())
+                return 1 << 20; // id-indexed: the entry is already there, so this never binds
+            return static_cast<int>(trainer.getItemPouchCapacity(categoryIndex));
         }
     }
 
@@ -2534,8 +2544,23 @@ namespace UI
         case Version::ZA:
             return (categoryIndex == static_cast<int>(Trainer::PouchType9LZA::KeyItems) || categoryIndex == static_cast<int>(Trainer::PouchType9LZA::TMs) || categoryIndex == static_cast<int>(Trainer::PouchType9LZA::MegaStones)) ? 1 : 999;
         default:
-            return 999;
+        {
+            const int pouchMaxCount = trainer.getItemMaxCount(categoryIndex);
+            return pouchMaxCount > 0 ? pouchMaxCount : 999;
         }
+        }
+    }
+
+    // Wraps on the pouches the trainer actually loaded, so every group pages through its own bag
+    // with no list of games to fall out of step with.
+    void TrainerViewScreen::stepItemPouch(int pouchStep)
+    {
+        const int pouchCount = static_cast<int>(trainer.items.size());
+        if (pouchCount == 0)
+            return;
+        selectedCategory = ((selectedCategory + pouchStep) % pouchCount + pouchCount) % pouchCount;
+        currentPage = 0;
+        selectedItemIndex = 0;
     }
 
     // Open the details modal on a storage slot (reuses the Box path for the save pane).
@@ -3527,7 +3552,7 @@ namespace UI
                         // differently from an add followed by a remove.
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(std::string("ITEM action=RETYPE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) + " " + Utils::logField("from", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " fromid=" + std::to_string(pouch[rawIdx].itemId) + " " + Utils::logField("to", Utils::itemName(newId, trainer.getGameGroup())) + " toid=" + std::to_string(newId) + " count=" + std::to_string(keepCount) + " mode=" + (trainer.itemsAreIdIndexed() ? "idIndexed" : "slotBased"));
+                            Utils::logEventToFile(std::string("ITEM action=RETYPE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("from", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " fromid=" + std::to_string(pouch[rawIdx].itemId) + " " + Utils::logField("to", Utils::itemName(newId, trainer.getGameGroup())) + " toid=" + std::to_string(newId) + " count=" + std::to_string(keepCount) + " mode=" + (trainer.itemsAreIdIndexed() ? "idIndexed" : "slotBased"));
                         }
                         // The dialog we return to must show the NEW item's amount (its count carried
                         // over unchanged), so re-sync both the live value and the change-baseline.
@@ -3610,7 +3635,7 @@ namespace UI
                     }
                     if (g_debugLogging && addVia)
                     {
-                        Utils::logEventToFile(std::string("ITEM action=ADD ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pickedItemId, trainer.getGameGroup())) + " id=" + std::to_string(pickedItemId) + " count=1 via=" + addVia + " pouchsize=" + std::to_string(pouch.size()) + "/" + std::to_string(currentPouchCapacity()));
+                        Utils::logEventToFile(std::string("ITEM action=ADD ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pickedItemId, trainer.getGameGroup())) + " id=" + std::to_string(pickedItemId) + " count=1 via=" + addVia + " pouchsize=" + std::to_string(pouch.size()) + "/" + std::to_string(currentPouchCapacity()));
                     }
                     // Land the cursor on the row that was just added so A edits its amount next --
                     // and FOLLOW IT TO ITS PAGE. The list is paged, and a new item usually sorts
@@ -5058,7 +5083,7 @@ namespace UI
                         const int rawIdx = visible[selectedItemIndex];
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased") + " via=dialog");
+                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased") + " via=dialog");
                         }
                         if (trainer.itemsAreIdIndexed())
                         {
@@ -5096,7 +5121,7 @@ namespace UI
                         if (g_debugLogging && itemEditDialogValue != itemEditDialogOriginalValue)
                         {
                             const bool removing = (itemEditDialogValue == 0);
-                            Utils::logEventToFile(std::string("ITEM action=") + (removing ? "REMOVE" : "SETCOUNT") + " " + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " from=" + std::to_string(itemEditDialogOriginalValue) + " to=" + std::to_string(itemEditDialogValue) + (removing ? (trainer.itemsAreIdIndexed() ? " mode=zeroed" : " mode=erased") : ""));
+                            Utils::logEventToFile(std::string("ITEM action=") + (removing ? "REMOVE" : "SETCOUNT") + " " + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " from=" + std::to_string(itemEditDialogOriginalValue) + " to=" + std::to_string(itemEditDialogValue) + (removing ? (trainer.itemsAreIdIndexed() ? " mode=zeroed" : " mode=erased") : ""));
                         }
                         if (itemEditDialogValue == 0 && !trainer.itemsAreIdIndexed())
                         {
@@ -5190,7 +5215,7 @@ namespace UI
                         const int rawIdx = visible[selectedItemIndex];
                         if (g_debugLogging)
                         {
-                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer.getGameGroup(), selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased"));
+                            Utils::logEventToFile(std::string("ITEM action=REMOVE ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, selectedCategory)) + " " + Utils::logField("item", Utils::itemName(pouch[rawIdx].itemId, trainer.getGameGroup())) + " id=" + std::to_string(pouch[rawIdx].itemId) + " count=" + std::to_string(pouch[rawIdx].count) + " mode=" + (trainer.itemsAreIdIndexed() ? "zeroed" : "erased"));
                         }
                         // keep entry; id-slot written to 0
                         if (trainer.itemsAreIdIndexed()) pouch[rawIdx].count = 0;
@@ -5861,120 +5886,11 @@ namespace UI
                     // L/R to change categories (but not when in edit dialog)
                     if (buttonsDown & HidNpadButton_L)
                     {
-                        switch (trainer.getGameGroup())
-                        {
-                        case GameVersion::ZA:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_LZA) % POUCH_COUNT9_LZA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SV:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_SV) % POUCH_COUNT9_SV;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::PLA:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT8_LA) % POUCH_COUNT8_LA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::BDSP:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT8BDSP) % POUCH_COUNT8BDSP;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SWSH:
-                        {
-                            selectedCategory = (selectedCategory - 1 + static_cast<int>(Trainer::PouchType8SWSH::Count)) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::GG:
-                        {
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT7_LGPE) % POUCH_COUNT7_LGPE;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::FRLG:
-                        case GameVersion::RSE:
-                        {
-                            static_assert(POUCH_COUNT3_FRLG == POUCH_COUNT3_RSE, "both Gen 3 groups have six pockets");
-                            selectedCategory = (selectedCategory - 1 + POUCH_COUNT3_FRLG) % POUCH_COUNT3_FRLG;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        default:
-                            break;
-                        }
+                        stepItemPouch(-1);
                     }
                     if (buttonsDown & HidNpadButton_R)
                     {
-                        switch (trainer.getGameGroup())
-                        {
-                        case GameVersion::ZA:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_LZA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SV:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_SV;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::PLA:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT8_LA;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::BDSP:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT8BDSP;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::SWSH:
-                        {
-                            selectedCategory = (selectedCategory + 1) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::GG:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT7_LGPE;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        case GameVersion::FRLG:
-                        case GameVersion::RSE:
-                        {
-                            selectedCategory = (selectedCategory + 1) % POUCH_COUNT3_FRLG;
-                            currentPage = 0;
-                            selectedItemIndex = 0;
-                            break;
-                        }
-                        default:
-                            break;
-                        }
+                        stepItemPouch(1);
                     }
                 }
             }
@@ -6506,119 +6422,11 @@ namespace UI
         {
             if (buttonsDown & HidNpadButton_L)
             {
-                switch (trainer.getGameGroup())
-                {
-                case GameVersion::ZA:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_LZA) % POUCH_COUNT9_LZA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SV:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT9_SV) % POUCH_COUNT9_SV;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::PLA:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT8_LA) % POUCH_COUNT8_LA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::BDSP:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT8BDSP) % POUCH_COUNT8BDSP;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SWSH:
-                {
-                    selectedCategory = (selectedCategory - 1 + static_cast<int>(Trainer::PouchType8SWSH::Count)) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::GG:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT7_LGPE) % POUCH_COUNT7_LGPE;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::FRLG:
-                case GameVersion::RSE:
-                {
-                    selectedCategory = (selectedCategory - 1 + POUCH_COUNT3_FRLG) % POUCH_COUNT3_FRLG;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                default:
-                    break;
-                }
+                stepItemPouch(-1);
             }
             if (buttonsDown & HidNpadButton_R)
             {
-                switch (trainer.getGameGroup())
-                {
-                case GameVersion::ZA:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_LZA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SV:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT9_SV;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::PLA:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT8_LA;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::BDSP:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT8BDSP;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::SWSH:
-                {
-                    selectedCategory = (selectedCategory + 1) % static_cast<int>(Trainer::PouchType8SWSH::Count);
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::GG:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT7_LGPE;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                case GameVersion::FRLG:
-                case GameVersion::RSE:
-                {
-                    selectedCategory = (selectedCategory + 1) % POUCH_COUNT3_FRLG;
-                    currentPage = 0;
-                    selectedItemIndex = 0;
-                    break;
-                }
-                default:
-                    break;
-                }
+                stepItemPouch(1);
             }
         }
 

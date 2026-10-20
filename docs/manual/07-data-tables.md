@@ -561,7 +561,8 @@ Those carry no table and must not grow one; a lookup for `species - 1` is not da
 have a table are the ones whose ordering exists only in PKHeX: `DexTable8SWSH` (three separate dex
 blocks, own numbering each), `DexTable9SV` (three regional dexes in one block, membership per species
 **and form** — Kantonian Meowth is Paldea, Alolan Meowth is Blueberry), `DexTable8LA` (statistics
-entries reached through a lookup on `species | (form << 11)`), and
+entries reached through a lookup on `species | (form << 11)`, plus each species' size research
+task and threshold from `researchtask_la.pkl`, reached through `personal_la`'s Hisui dex index), and
 `DexTable6XY`/`6ORAS`/`7SM`/`7USUM`/`7LGPE` (`gen_dexformtables.py`), whose seen/caught bits are
 arithmetic but whose alternate-FORM region is not. **Ten groups write no dex at all** — Gens 2, 4, 5,
 6 and 7-3DS — which is deliberate and documented on `Trainer::updatePokedexBlock()`: a no-op leaves

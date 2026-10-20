@@ -36,10 +36,21 @@
 #include "Trainer/Bank.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/Trainer1RBY.h"
+#include "Trainer/Trainer2GSC.h"
 #include "Trainer/Trainer3FRLG.h"
+#include "Trainer/Trainer4DP.h"
+#include "Trainer/Trainer4PT.h"
+#include "Trainer/Trainer4HGSS.h"
+#include "Trainer/Trainer5BW.h"
+#include "Trainer/Trainer5B2W2.h"
+#include "Trainer/Trainer6XY.h"
+#include "Trainer/Trainer6ORAS.h"
+#include "Trainer/Trainer7SM.h"
+#include "Trainer/Trainer7USUM.h"
 #include "Trainer/Trainer8SWSH.h"
 #include "Trainer/Trainer7LGPE.h"
 #include "Test/TestRunner.h"
+#include "Trainer/Trainer8LA.h"
 #include "Trainer/Trainer9LZA.h"
 #include "Names/LocationNames.h" // the met-list dead-end hint is checked against the egg-source table
 #include "UI/ListSearch.h"
@@ -47,6 +58,7 @@
 #include "UI/ScreenChrome.h" // NAV_BAR_HEIGHT -- the one-nav-bar rule is checked against its geometry
 #include "UI/Dialogs/FileBrowserDialog.h"
 #include "UI/Dialogs/KeyboardDialog.h"
+#include "Save/RtcFooter.h"
 #include "Save/SaveFileName.h"
 #include "Save/SaveEnvelope.h"
 #include "UI/SpriteManager.h"
@@ -132,12 +144,22 @@ namespace {
     }
 
     /// The screen renders at all, and lands on the HOME menu rather than inside a view.
-    void testOpens(Test::Context& context, TrainerViewScreen& s) {
+    void testOpens(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
         Driver d(context, s, "open");
         d.step("open the editor").frame(2);
         d.expect(!d.frameData().draws.empty(), "the editor drew nothing on its first frames");
         d.expect(!s.detailViewActive, "the editor opened inside a view instead of on the HOME menu");
-        d.seeSprites(1);   // the HOME menu's live box-preview card
+        // The HOME menu's live box-preview card has a sprite to draw only when the box it shows is not empty.
+        bool previewHasPokemon = false;
+        const int box = s.selectedBoxIndex;
+        if (box >= 0 && box < static_cast<int>(tr.boxes.size())) {
+            for (int slot = 0; slot < static_cast<int>(tr.getSlotsPerBox()); ++slot)
+                if (!Test::isEmptySlot(tr.boxes[box][slot].get())) { previewHasPokemon = true; break; }
+        }
+        if (previewHasPokemon)
+            d.seeSprites(1);
+        else
+            context.note("this save's current box is empty, so the HOME box preview's sprites were not checked", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
     }
 
     /// Every HOME destination opens AND closes again. The failure this exists for is a view you can
@@ -767,6 +789,14 @@ namespace {
         d.press(Btn::A).frame(2);
         if (!d.expect(s.detailViewActive, "could not open the items view")) return;
 
+        // The first pouch can be empty (a Gold or Pearl save's is), so R moves on to one with an item.
+        for (size_t pouchIndex = 0; pouchIndex < tr.items.size() && s.visibleItemIndices().empty(); ++pouchIndex)
+            d.step("next pouch, looking for an item").press(Btn::R).frame();
+        if (s.visibleItemIndices().empty()) {
+            context.note("this save's bag is empty, so tap feedback was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+
         d.step("open the item edit dialog").press(Btn::A).frame(2);
         if (!d.expect(s.itemEditDialogActive, "A on an item did not open the edit dialog")) return;
 
@@ -1299,12 +1329,12 @@ namespace {
         UIHost::clearPrompts();
     }
 
-    void runUI(Test::Report& rep, const std::string& target, Enums::GameVersion group, Trainer::Trainer& tr, u64 titleId) {
+    void runUI(Test::Report& report, const std::string& target, Enums::GameVersion group, Trainer::Trainer& tr, u64 titleId) {
         Test::Context context;
-        context.rep = &rep; context.suite = "ui"; context.target = target;
+        context.report = &report; context.suite = "ui"; context.target = target;
         // The trainer names its own title, the same way the on-console runner asks a loose save.
         context.group = group; context.version = tr.getGameVersion(); context.trainer = &tr; context.titleId = titleId;
-        rep.setScope(target, "ui");
+        report.setScope(target, "ui");
 
         std::printf("  ui  %s\n", target.c_str());
 
@@ -1314,7 +1344,7 @@ namespace {
             return std::make_unique<TrainerViewScreen>(tr, target, std::string("/tmp/pkse-uitest"), titleId, AccountUid{}, false);
         };
 
-        { auto s = fresh(); testOpens(context, *s); }
+        { auto s = fresh(); testOpens(context, *s, tr); }
         { auto s = fresh(); testEveryDestinationOpensAndCloses(context, *s); }
         { auto s = fresh(); testBoxGridGeometry(context, *s, tr); }
         { auto s = fresh(); testNoSpritesInEmptySlots(context, *s, tr); }
@@ -1336,10 +1366,10 @@ namespace {
         // the journeys be debugged in seconds instead of by pushing an .nro to a console.
         {
             Test::Context uctx;
-            uctx.rep = &rep; uctx.suite = "ui"; uctx.target = target;
+            uctx.report = &report; uctx.suite = "ui"; uctx.target = target;
             uctx.group = group; uctx.version = tr.getGameVersion(); uctx.trainer = &tr; uctx.titleId = titleId;
-            uctx.workDir = "/tmp/pkse-uitest-work";
-            rep.setScope(target, "ui");
+            uctx.workDirectory = "/tmp/pkse-uitest-work";
+            report.setScope(target, "ui");
             // The console runs the journeys with swkbd refused (Runner::start), because the applet
             // BLOCKS and an automated pass that reaches one waits for a human. Mirror that here, or
             // the host would quietly answer prompts the console cannot.
@@ -1353,14 +1383,14 @@ namespace {
             // one gap between the two runs.
             UI::PKSEFramebuffer probe;
             for (int c = 0; c < chunks; ++c) {
-                rep.setScope(target, "ui");
+                report.setScope(target, "ui");
                 Test::uiRun(uctx, c);
                 if (UI::UIScreen* driven = Test::Runner::drivenScreen()) driven->draw(probe);
             }
             // The suite MUST have torn itself down: the runner frees the trainer the moment it moves
             // to the next target, so anything still published here outlives the data behind it.
             g_suppressKeyboard = false;
-            rep.setScope(target, "ui");
+            report.setScope(target, "ui");
             uctx.check(Test::Runner::drivenScreen() == nullptr, "the ui suite finished with a screen still published as the driven screen", "chunks=" + std::to_string(chunks));
         }
 
@@ -1382,12 +1412,12 @@ namespace {
             for (auto& member : tr.party)
                 member.reset();
 
-            const int failuresBefore = rep.failures();
+            const int failuresBefore = report.failures();
             Test::Context uctx;
-            uctx.rep = &rep; uctx.suite = "ui"; uctx.target = target;
+            uctx.report = &report; uctx.suite = "ui"; uctx.target = target;
             uctx.group = group; uctx.version = tr.getGameVersion(); uctx.trainer = &tr; uctx.titleId = titleId;
-            uctx.workDir = "/tmp/pkse-uitest-work";
-            rep.setScope(target, "ui");
+            uctx.workDirectory = "/tmp/pkse-uitest-work";
+            report.setScope(target, "ui");
             // The console runs the journeys with swkbd refused (Runner::start), because the applet
             // BLOCKS and an automated pass that reaches one waits for a human. Mirror that here, or
             // the host would quietly answer prompts the console cannot.
@@ -1396,24 +1426,42 @@ namespace {
             std::printf("  ui-journeys %s (emptied save)  (%d chunks)\n", target.c_str(), chunks);
             UI::PKSEFramebuffer probe;
             for (int c = 0; c < chunks; ++c) {
-                rep.setScope(target, "ui");
+                report.setScope(target, "ui");
                 Test::uiRun(uctx, c);
                 if (UI::UIScreen* driven = Test::Runner::drivenScreen()) driven->draw(probe);
             }
             g_suppressKeyboard = false;
-            rep.setScope(target, "ui");
-            uctx.check(rep.failures() == failuresBefore, "walking a save with no Pokemon in it produced failures; the steps that need one must be skipped, not pressed through", "added=" + std::to_string(rep.failures() - failuresBefore));
+            report.setScope(target, "ui");
+            uctx.check(report.failures() == failuresBefore, "walking a save with no Pokemon in it produced failures; the steps that need one must be skipped, not pressed through", "added=" + std::to_string(report.failures() - failuresBefore));
         }
     }
 
     template <typename TrainerT>
-    bool openSCBlock(Test::Report& rep, const char* label, Enums::GameVersion group, const std::string& path, u64 titleId) {
+    bool openSCBlock(Test::Report& report, const char* label, Enums::GameVersion group, const std::string& path, u64 titleId) {
         std::vector<uint8_t> bytes = readFile(path);
         if (bytes.empty()) return false;
         std::vector<Save::Block> blocks = Encryption::decrypt(bytes.data(), bytes.size());
         if (blocks.empty()) { std::printf("  !! %s: decrypt produced no blocks\n", label); return false; }
         TrainerT trainer(std::move(blocks));
-        runUI(rep, label, group, trainer, titleId);
+        runUI(report, label, group, trainer, titleId);
+        return true;
+    }
+
+    /// A loose save, read the way its own class reads one. Every group from Gen 1 to Gen 7 bar Gen 3
+    /// once had Items pouches that L/R could not reach, and it shipped because no host run opened
+    /// one of their saves: the walk is the same for every group, but each one answers for its own bag.
+    template <typename TrainerT>
+    bool openLoose(Test::Report& report, const char* label, Enums::GameVersion group, const std::string& path) {
+        std::vector<uint8_t> bytes = readFile(path);
+        if (bytes.empty()) return false;
+        // As Save::openExternalSave does: an RTC footer comes off only when the file does not
+        // detect as it stands. A class must never be built over bytes its own detect() refuses.
+        if (!TrainerT::detect(bytes) && !(Save::stripRtcFooter(bytes) && TrainerT::detect(bytes))) {
+            std::printf("  !! %s: not a save this class opens: %s\n", label, path.c_str());
+            return false;
+        }
+        TrainerT trainer(std::move(bytes), path);
+        runUI(report, label, group, trainer, 0);
         return true;
     }
 
@@ -1472,11 +1520,11 @@ namespace {
 }
 
 int main(int argc, char** argv) {
-    const std::string outPath  = (argc > 1) ? argv[1] : std::string("uitest-report.log");
+    const std::string reportFilePath  = (argc > 1) ? argv[1] : std::string("uitest-report.log");
     const std::string saveRoot = (argc > 2) ? argv[2] : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves" : std::string());
 
-    Test::Report rep;
-    rep.reset();
+    Test::Report report;
+    report.reset();
 
     std::printf("PKSE UI tests, host run\n");
 
@@ -1495,20 +1543,20 @@ int main(int argc, char** argv) {
     // shipped bug, where every Gen 6 and Gen 7 save was filtered out of the picker for having no
     // file extension.
     {
-        rep.setScope("-", "browser");
+        report.setScope("-", "browser");
         Test::Context context;
-        context.rep = &rep;
+        context.report = &report;
         context.suite = "browser";
         context.target = "-";
-        context.workDir = "/tmp/pkse-uitest-browser";
-        mkdir(context.workDir.c_str(), 0777);
+        context.workDirectory = "/tmp/pkse-uitest-browser";
+        mkdir(context.workDirectory.c_str(), 0777);
         const int chunks = Test::fileBrowserPlan(context);
         for (int chunk = 0; chunk < chunks; ++chunk) {
-            rep.setScope("-", "browser");
+            report.setScope("-", "browser");
             Test::fileBrowserRun(context, chunk);
         }
-        rmdir(context.workDir.c_str());
-        rep.setScope("-", "browser");
+        rmdir(context.workDirectory.c_str());
+        report.setScope("-", "browser");
         testFileBrowserShowsRefusal(context);
     }
 
@@ -1520,9 +1568,9 @@ int main(int argc, char** argv) {
     // The text wrapper needs no save either: its contract is checked on inputs built to reach every
     // branch, which no real save's Pokemon can be relied on to say.
     {
-        rep.setScope("-", "text-wrap");
+        report.setScope("-", "text-wrap");
         Test::Context context;
-        context.rep = &rep;
+        context.report = &report;
         context.suite = "text-wrap";
         context.target = "-";
         testWrapTextToWidth(context);
@@ -1531,18 +1579,18 @@ int main(int argc, char** argv) {
     // The on-screen keyboard needs no save either: its rules are about the text it holds and the
     // keys it draws, and every one of them is reachable from a pad and a touchscreen.
     {
-        rep.setScope("-", "keyboard");
+        report.setScope("-", "keyboard");
         Test::Context context;
-        context.rep = &rep;
+        context.report = &report;
         context.suite = "keyboard";
         context.target = "-";
         testOnScreenKeyboard(context);
     }
 
     {
-        rep.setScope("-", "bank-box");
+        report.setScope("-", "bank-box");
         Test::Context context;
-        context.rep = &rep;
+        context.report = &report;
         context.suite = "bank-box";
         context.target = "-";
         const std::string bankFile = "/tmp/pkse-uitest-bank/bank.dat";
@@ -1597,7 +1645,7 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> frlg = readFile(SaveTree::fireRed(saveRoot));
         if (!frlg.empty()) {
             Trainer::Trainer3FRLG trainer(frlg, "FireRed_e.sav");
-            runUI(rep, "FireRed", Enums::GameVersion::FRLG, trainer, 0x0100554023408000ULL);
+            runUI(report, "FireRed", Enums::GameVersion::FRLG, trainer, 0x0100554023408000ULL);
             ++opened;
         }
         // Let's Go is not an SCBlock game and not a flat GBA file -- it is the one format with its
@@ -1607,32 +1655,53 @@ int main(int argc, char** argv) {
         if (gg.size() >= Trainer::SAVE_SIZE7_LGPE) {
             std::vector<uint8_t> area(gg.begin(), gg.begin() + Trainer::SAVE_SIZE7_LGPE);
             Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(area));
-            runUI(rep, "Let's Go Eevee", Enums::GameVersion::GG, trainer, 0x0100187003A36000ULL);
+            runUI(report, "Let's Go Pikachu", Enums::GameVersion::GG, trainer, 0x010003F003A34000ULL);
             ++opened;
         }
-        opened += openSCBlock<Trainer::Trainer8SWSH>(rep, "Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot), 0x01008DB008C2C000ULL) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9LZA>(rep, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
+        {
+            std::vector<uint8_t> red = readFile(SaveTree::red(saveRoot));
+            if (!red.empty()) {
+                Trainer::Trainer1RBY trainer(red, "Pokemon Red.dat");
+                runUI(report, "Red", Enums::GameVersion::RBY, trainer, 0);
+                ++opened;
+            }
+        }
+        opened += openLoose<Trainer::Trainer2GSC>(report, "Gold", Enums::GameVersion::GSC, SaveTree::forTitle(saveRoot, "Gold")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer4DP>(report, "Pearl", Enums::GameVersion::DP, SaveTree::forTitle(saveRoot, "Pearl")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer4PT>(report, "Platinum", Enums::GameVersion::PT, SaveTree::forTitle(saveRoot, "Platinum")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer4HGSS>(report, "SoulSilver", Enums::GameVersion::HGSS, SaveTree::forTitle(saveRoot, "SoulSilver")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer5BW>(report, "Black", Enums::GameVersion::BW, SaveTree::forTitle(saveRoot, "Black")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer5B2W2>(report, "Black 2", Enums::GameVersion::B2W2, SaveTree::forTitle(saveRoot, "Black 2")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer6XY>(report, "X", Enums::GameVersion::XY, SaveTree::forTitle(saveRoot, "X")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer6ORAS>(report, "Omega Ruby", Enums::GameVersion::ORAS, SaveTree::forTitle(saveRoot, "Omega Ruby")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer7SM>(report, "Sun", Enums::GameVersion::SM, SaveTree::forTitle(saveRoot, "Sun")) ? 1 : 0;
+        opened += openLoose<Trainer::Trainer7USUM>(report, "Ultra Sun", Enums::GameVersion::USUM, SaveTree::ultraSun(saveRoot)) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer8SWSH>(report, "Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot), 0x01008DB008C2C000ULL) ? 1 : 0;
+        // Legends: Arceus is the one format whose created Pokemon carries a stored height and
+        // weight, so the creator journey checks something here it checks nowhere else.
+        opened += openSCBlock<Trainer::Trainer8LA>(report, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot), 0x01001F5010DFA000ULL) ? 1 : 0;
+        opened += openSCBlock<Trainer::Trainer9LZA>(report, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
     }
 
     if (opened == 0) {
-        rep.setScope("-", "ui");
-        Test::Context context; context.rep = &rep;
+        report.setScope("-", "ui");
+        Test::Context context; context.report = &report;
         context.skip("no saves were opened, so no UI test ran at all", "saveRoot=\"" + saveRoot + "\"");
     }
 
     std::printf("\n");
-    for (const auto& t : rep.tallies())
+    for (const auto& t : report.tallies())
         std::printf("  %-28s %-6s %7d checks  %4d fail  %4d warn  %4d skip\n", t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
 
     std::printf("\nfindings:\n");
-    for (const auto& g : rep.groups()) {
-        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
+    for (const auto& g : report.groups()) {
+        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.occurrenceCount);
         for (size_t i = 0; i < g.samples.size() && i < 3; ++i)
             std::printf("        %s\n", g.samples[i].c_str());
     }
-    if (rep.groups().empty()) std::printf("  (none)\n");
+    if (report.groups().empty()) std::printf("  (none)\n");
 
-    rep.write(outPath, "PKSE UI TESTS (host, real screens driven with synthetic input)\n");
-    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  shots=%d  -> %s\n", rep.checks(), rep.failures(), rep.warnings(), rep.skips(), rep.notes(), UIHost::Driver::shotsWritten(), outPath.c_str());
-    return rep.failures() == 0 ? 0 : 1;
+    report.write(reportFilePath, "PKSE UI TESTS (host, real screens driven with synthetic input)\n");
+    std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  shots=%d  -> %s\n", report.checks(), report.failures(), report.warnings(), report.skips(), report.notes(), UIHost::Driver::shotsWritten(), reportFilePath.c_str());
+    return report.failures() == 0 ? 0 : 1;
 }

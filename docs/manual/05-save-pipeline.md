@@ -680,6 +680,9 @@ every Pokemon DS save 1 MiB (`savlib.dat` gives them `FF 02`, two 512 KiB units)
 per-game flags over the file's last 8 bytes, ending `NMSY`. Padding comes off only when every byte of
 it is the same 00 or FF (bar YSMenu's eight) — what unwritten flash reads back as — and only after
 every kind has failed on the file as it stands, so it can never shorten a save that opens without it.
+The sizes are tried DS, then GBA, then the Game Boy sizes smallest first: Gen 2's probe accepts every
+layout at 0x8000 or 0x10000, as PKHeX's does, so trying 0x10000 first would open a padded
+international Gold/Silver/Crystal save with half its padding inside the image.
 It goes back on verbatim, which is why this does not break the RTC rule above: guessing is dangerous
 because it TRUNCATES, and nothing here is truncated. A DeSmuME `.dsv` around a 1 MiB YSMenu save is
 the nested case, and opens. PKSM-Core's `SaveRecognition.cpp` makes the same uniform-tail test.

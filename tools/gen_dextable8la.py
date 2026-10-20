@@ -17,10 +17,16 @@ binary search; that is reproduced verbatim here.
 PokemonInfoIds / PokemonInfoGenders come along too: the gender flag decides whether an entry tracks
 male and female separately, which the "selected variant" logic needs.
 
+The size research tasks ("catch a large / small / heavy / light one") come from researchtask_la.pkl:
+one list of 0x28-byte task records per Hisui dex entry, reached from a species through personal_la's
+DexIndexHisui, exactly as PKHeX's PokedexSave8a.TryGetResearchTasks does. Only the FIRST task of each
+of the four types counts (PKHeX TryGetTriggeredTask), and only its threshold byte is kept.
+
 Run by hand when the PKHeX-derived data changes; the build only compiles the committed output.
 """
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +34,19 @@ from pkhex_source import pkhex_path  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = "Saves/Substructures/Gen8/LA/Pokedex/PokedexConstants8a.cs"
+RESEARCH_TASKS = "Resources/byte/zukan_research/researchtask_la.pkl"
+PERSONAL = "Resources/byte/personal/personal_la"
+
+# PersonalInfo8LA field offsets (PKHeX PersonalInfo8LA.cs).
+PERSONAL_SIZE = 0xB0
+PERSONAL_FORM_STATS_INDEX = 0x1E
+PERSONAL_FORM_COUNT = 0x20
+PERSONAL_DEX_INDEX_HISUI = 0x60
+
+# PokedexResearchTask8a: 0x28 bytes, task type at 0x00, threshold at 0x03.
+RESEARCH_TASK_SIZE = 0x28
+# PokedexResearchTaskType8a, in the order the emitted SizeResearchTask8LA enum lists them.
+SIZE_TASK_TYPES = (6, 7, 8, 9)  # CatchLarge, CatchSmall, CatchHeavy, CatchLight
 
 
 def grab(text, name):
@@ -35,6 +54,58 @@ def grab(text, name):
     start = text.index(name + " =>")
     body = text[text.index("[", start) + 1: text.index("];", start)]
     return [int(x, 0) for x in re.findall(r"0x[0-9A-Fa-f]+|\d+", body)]
+
+
+def read_size_research(max_species):
+    """species -> (task mask, [threshold per SIZE_TASK_TYPES]) for every species with a Hisui entry."""
+    with open(pkhex_path(PERSONAL), "rb") as fh:
+        personal = fh.read()
+    with open(pkhex_path(RESEARCH_TASKS), "rb") as fh:
+        linker = fh.read()
+    assert linker[:2] == b"la", "researchtask_la.pkl magic"
+    entry_count = struct.unpack_from("<H", linker, 2)[0]
+    task_lists = []
+    for entry_index in range(entry_count):
+        start, end = struct.unpack_from("<II", linker, 4 + entry_index * 4)
+        task_lists.append(linker[start:end])
+
+    def personal_field(index, offset, fmt):
+        return struct.unpack_from(fmt, personal, index * PERSONAL_SIZE + offset)[0]
+
+    def form_index(species, form):
+        # PKHeX PersonalInfo.FormIndex / HasForm.
+        form_stats_index = personal_field(species, PERSONAL_FORM_STATS_INDEX, "<H")
+        form_count = personal_field(species, PERSONAL_FORM_COUNT, "<B")
+        if form == 0 or form_stats_index <= 0 or form >= form_count:
+            return species
+        return form_stats_index + form - 1
+
+    result = {}
+    for species in range(1, max_species):
+        form_count = personal_field(species, PERSONAL_FORM_COUNT, "<B")
+        dex_index = 0
+        for form in range(form_count):
+            dex_index = personal_field(form_index(species, form), PERSONAL_DEX_INDEX_HISUI, "<H")
+            if dex_index:
+                break
+        if not dex_index:
+            continue
+        tasks = task_lists[dex_index - 1]
+        assert len(tasks) % RESEARCH_TASK_SIZE == 0, f"species {species}: ragged task list"
+        mask = 0
+        thresholds = [0, 0, 0, 0]
+        for task_offset in range(0, len(tasks), RESEARCH_TASK_SIZE):
+            task_type = tasks[task_offset]
+            if task_type not in SIZE_TASK_TYPES:
+                continue
+            slot = SIZE_TASK_TYPES.index(task_type)
+            if mask & (1 << slot):
+                continue  # PKHeX takes the first task of a type
+            mask |= 1 << slot
+            thresholds[slot] = tasks[task_offset + 3]
+        if mask:
+            result[species] = (mask, thresholds)
+    return result
 
 
 def main():
@@ -63,6 +134,12 @@ def main():
         assert (k & 0x7FF) <= 981 and (k >> 11) < 120, f"key {k} decodes out of range"
     print(f"highest statistics index used: {max(vals)}  (region holds 1480)")
     print(f"keys with a non-zero form: {sum(1 for k in ids if k >> 11)}")
+
+    size_research = read_size_research(981)
+    size_species = sorted(size_research)
+    print(f"species with a size research task: {len(size_species)}")
+    for slot, label in enumerate(("large", "small", "heavy", "light")):
+        print(f"  {label:<6} tasks: {sum(1 for s in size_species if size_research[s][0] & (1 << slot))}")
 
     def rows(vs, per, width, hexfmt=False):
         out = ""
@@ -105,6 +182,20 @@ namespace Pokemon {
     /// True when the dex tracks this species+form's genders SEPARATELY (PokemonInfoGenders bit 3).
     /// Where false, the male and female slots are one shared record.
     bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept;
+
+    /// The four size research tasks. Large and small compare HeightAbsolute with the threshold;
+    /// heavy and light compare WeightAbsolute with the threshold in tenths.
+    enum class SizeResearchTask8LA : uint8_t
+    {
+        CatchLarge = 0,
+        CatchSmall,
+        CatchHeavy,
+        CatchLight,
+    };
+
+    /// True when the species has `task` among its research tasks, with its threshold in
+    /// `taskThreshold`. False, leaving `taskThreshold` alone, when it has none.
+    bool getSizeResearchThreshold8LA(uint16_t speciesId, SizeResearchTask8LA task, uint8_t &taskThreshold) noexcept;
 }
 
 #endif
@@ -131,6 +222,16 @@ namespace Pokemon {
         constexpr uint8_t INFO_GENDERS[] = {
 %s        };
         constexpr int INFO_COUNT = static_cast<int>(sizeof(INFO_KEYS) / sizeof(INFO_KEYS[0]));
+
+        // Species with a size research task, sorted; a bit per SizeResearchTask8LA it has, and the
+        // threshold of each (0 where the bit is clear).
+        constexpr uint16_t SIZE_RESEARCH_SPECIES[] = {
+%s        };
+        constexpr uint8_t SIZE_RESEARCH_TASK_MASKS[] = {
+%s        };
+        constexpr uint8_t SIZE_RESEARCH_THRESHOLDS[][4] = {
+%s        };
+        constexpr int SIZE_RESEARCH_COUNT = static_cast<int>(sizeof(SIZE_RESEARCH_SPECIES) / sizeof(SIZE_RESEARCH_SPECIES[0]));
 
         // Same binary search PKHeX uses; -1 when absent.
         int findKey(const uint16_t* keys, int count, uint16_t key) noexcept {
@@ -160,9 +261,20 @@ namespace Pokemon {
         const int i = findKey(INFO_KEYS, INFO_COUNT, packKey(species, form));
         return (i >= 0) && (INFO_GENDERS[i] & 0x08) != 0;
     }
+
+    bool getSizeResearchThreshold8LA(uint16_t speciesId, SizeResearchTask8LA task, uint8_t &taskThreshold) noexcept
+    {
+        const int speciesIndex = findKey(SIZE_RESEARCH_SPECIES, SIZE_RESEARCH_COUNT, speciesId);
+        const unsigned taskSlot = static_cast<unsigned>(task);
+        if (speciesIndex < 0 || taskSlot >= 4 || (SIZE_RESEARCH_TASK_MASKS[speciesIndex] & (1u << taskSlot)) == 0) return false;
+        taskThreshold = SIZE_RESEARCH_THRESHOLDS[speciesIndex][taskSlot];
+        return true;
+    }
 }
 """ % (rows(ids, 12, 6), rows(vals, 12, 5), rows(info_ids, 12, 6),
-       rows(info_gender, 12, 4, hexfmt=True))
+       rows(info_gender, 12, 4, hexfmt=True),
+       rows(size_species, 12, 4), rows([size_research[s][0] for s in size_species], 12, 4, hexfmt=True),
+       "".join("        { " + ", ".join(f"{v:>3}" for v in size_research[s][1]) + " },\n" for s in size_species))
 
     hp = os.path.join(ROOT, "include", "Pokemon", "DexTable8LA.h")
     cp = os.path.join(ROOT, "src", "Pokemon", "DexTable8LA.cpp")
@@ -179,6 +291,8 @@ namespace Pokemon {
         k = sp | (fm << 11)
         print(f"  spot check: {label:<18} key={k:<6} -> "
               f"{lookup.get(k, 'no statistics entry')}")
+    for sp, label in ((399, "Bidoof"), (25, "Pikachu"), (493, "Arceus"), (900, "Kleavor"), (58, "Growlithe")):
+        print(f"  size research: {label:<10} {size_research.get(sp, 'none')}")
 
 
 if __name__ == "__main__":

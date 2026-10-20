@@ -138,6 +138,7 @@ namespace UI
         int currentPouchCapacity() const;            // slot limit of the current pouch; 0 = appending unsupported
         void sortStorageBox(int pane, int box);      // pack + order one box, pinning party-linked slots
         int currentItemMaxCount() const;             // per-stack ceiling for the current pouch (never 0)
+        void stepItemPouch(int pouchStep);           // L/R: move to the next (+1) or previous (-1) pouch, wrapping
 
         // Public state - accessible by UI components (Panels, Dialogs, Modals)
         Trainer::Trainer &trainer;

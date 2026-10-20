@@ -11,7 +11,10 @@
 #ifndef TRAINER_TRAINER8LA_H
 #define TRAINER_TRAINER8LA_H
 
+#include <cstdint>
 #include <cstring>
+#include <map>
+#include <vector>
 
 #include "Trainer/Trainer.h"
 #include "Pokemon/Pokemon8LA.h"
@@ -62,6 +65,18 @@ namespace Trainer
     constexpr size_t BOX_COUNT8_LA = 32;         // Number of boxes in Legends: Arceus
     constexpr size_t BOX_NAME_LENGTH8_LA = 0x22; // 34 bytes per box name (UTF-16LE)
 
+    /// The per-species research fields the Pokedex writer changes when a Pokemon arrives.
+    enum class ResearchField8LA : uint8_t
+    {
+        CatchCount,
+        AlphaCount,
+        LargeCount,
+        SmallCount,
+        HeavyCount,
+        LightCount,
+        UpdateCounter,
+    };
+
     class Trainer8LA final : public Trainer
     {
     public:
@@ -79,6 +94,7 @@ namespace Trainer
             {
                 parseBlock(block);
             }
+            storedPokemonCounts = countStoredPokemon();
         }
 
         ~Trainer8LA() override = default;
@@ -108,6 +124,13 @@ namespace Trainer
         void updateItemBlock() override;
         void updateTrainerInfoBlock() override; // money / OT name
         void updatePokedexBlock() override;     // PokedexSave8a: research + statistics entries
+
+        /// One of a species' research fields, read from the Pokedex block's bytes. 0 for a species
+        /// outside the research log or a block too short to hold it.
+        static uint16_t researchField(const std::vector<uint8_t> &pokedexBytes, uint16_t speciesId, ResearchField8LA field) noexcept;
+
+        /// The update counter the Pokedex hands the next species whose research changes.
+        static uint16_t nextResearchUpdateCounter(const std::vector<uint8_t> &pokedexBytes) noexcept;
 
         // Fixed-capacity packed pouches (KeyItems 100 / Stored 180 / Recipes 70), and the general
         // Items bag = min(675, SatchelUpgrades + 20). Enables in-pouch item creation for PLA.
@@ -151,6 +174,16 @@ namespace Trainer
         size_t partySlotStride = SIZE_PARTY8_LA; // packed: no gap between party slots
         size_t boxSlotStride = SIZE_STORED8_LA;  // packed: no gap between box slots
         size_t slotGapZero = 0;                  // no gap bytes after pokemon data
+
+        /**
+         * How many of each Pokemon storage held when the save was read or last written, keyed on
+         * encryption constant + species. updatePokedexBlock counts a Pokemon toward catch research
+         * only while storage holds more of its key than this, so one that was already here, or was
+         * only moved, never counts again. A clone shares its original's key, hence counts, not a set.
+         */
+        std::map<uint64_t, size_t> storedPokemonCounts;
+        std::map<uint64_t, size_t> countStoredPokemon() const;
+
         void parseBlock(const Block &block);
 
         /**

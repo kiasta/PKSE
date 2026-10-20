@@ -94,6 +94,9 @@ namespace Trainer
         bool supportsBoxNames() const noexcept override { return true; }
         size_t getMaxBoxNameLength() const noexcept override { return 8; }
         bool itemsAreIdIndexed() const noexcept override { return false; }
+        size_t getItemPouchCapacity(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT4_PT) ? POUCHES4_PT[pouch].slots : 0; }
+        int getItemMaxCount(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT4_PT) ? POUCHES4_PT[pouch].maxCount : 0; }
+        const char *getItemPouchName(int pouch) const override { return (pouch >= 0 && pouch < POUCH_COUNT4_PT) ? POUCHES4_PT[pouch].name : nullptr; }
         /// Gen 4 storage is POSITIONAL -- every slot has a fixed home and an empty one stays empty.
         /// Re-packing would shuffle Pokemon the player arranged deliberately.
         bool compactStorage() override { return false; }

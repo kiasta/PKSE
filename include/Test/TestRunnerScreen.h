@@ -58,7 +58,7 @@ namespace UI
         /// one is selected, and whether it is in the run at all.
         struct TitleRow
         {
-            Enums::GameVersion title = Enums::GameVersion::Invalid;
+            Enums::GameVersion gameVersion = Enums::GameVersion::Invalid;
             std::vector<int> candidateTargets; // indices into `discoveredTargets`
             int chosenCandidate = 0;           // index into `candidateTargets`
             bool included = true;
@@ -70,8 +70,8 @@ namespace UI
         void drawDriveCaption(PKSEFramebuffer &framebuffer);
 
         std::vector<Test::Target> discoveredTargets;
-        std::vector<TitleRow> rows;
-        int rowIndex = 0;
+        std::vector<TitleRow> titleRows;
+        int selectedRowIndex = 0;
         bool goBack = false;        // B -- back to the save picker
         bool exitRequested = false; // + -- close the app (same name, same meaning, as TrainerViewScreen)
         /// + pressed mid-run: cancel, let the report land, THEN leave. Runner::cancel() only queues
@@ -83,7 +83,7 @@ namespace UI
         Test::Runner runner;
 
         /// Scroll offset for the results list (failure groups can easily outrun one screen).
-        int resultScroll = 0;
+        int resultScrollOffset = 0;
     };
 }
 

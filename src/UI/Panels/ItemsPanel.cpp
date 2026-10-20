@@ -31,8 +31,11 @@ namespace UI
 {
     namespace Panels
     {
-        const char *pouchDisplayName(GameVersion gameGroup, int category)
+        const char *pouchDisplayName(const Trainer::Trainer &trainer, int category)
         {
+            const char *trainerPouchName = trainer.getItemPouchName(category);
+            if (trainerPouchName != nullptr) return trainerPouchName;
+            const GameVersion gameGroup = trainer.getGameGroup();
             const char *name = nullptr;
             if (gameGroup == GameVersion::ZA)
                 name = getPouchInfo9LZA(static_cast<PouchType9LZA>(category)).name;
@@ -68,7 +71,7 @@ namespace UI
             framebuffer.drawFilledRoundedRect(itemsX, itemsY, itemsWidth, headerHeight, 16, Colors::AccentDim);
             framebuffer.drawFilledRect(itemsX, itemsY + headerHeight - 16, itemsWidth, 16, Colors::AccentDim);
             GameVersion gameGroup = screen.trainer.getGameGroup();
-            const char *pouchName = pouchDisplayName(gameGroup, screen.selectedCategory);
+            const char *pouchName = pouchDisplayName(screen.trainer, screen.selectedCategory);
             framebuffer.drawText(itemsX + 22, itemsY + (headerHeight - framebuffer.lineHeight(TextStyle::Heading)) / 2, std::string("Items - ") + pouchName, Colors::Text, TextStyle::Heading);
 
             screen.touchButtons.clear();

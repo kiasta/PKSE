@@ -61,20 +61,23 @@ namespace Test
             ChunkCount
         };
 
-        bool sameBytes(const Pokemon::Pokemon &a, const Pokemon::Pokemon &b, size_t &firstDiff)
+        bool sameBytes(const Pokemon::Pokemon &depositedPokemon, const Pokemon::Pokemon &reloadedPokemon, size_t &firstDifferenceOffset)
         {
-            const auto firstData = a.getData(), db = b.getData();
-            if (firstData.size() != db.size())
+            const auto depositedBytes = depositedPokemon.getData();
+            const auto reloadedBytes = reloadedPokemon.getData();
+            if (depositedBytes.size() != reloadedBytes.size())
             {
-                firstDiff = 0;
+                firstDifferenceOffset = 0;
                 return false;
             }
-            for (size_t daIndex = 0; daIndex < firstData.size(); ++daIndex)
-                if (firstData[daIndex] != db[daIndex])
+            for (size_t byteOffset = 0; byteOffset < depositedBytes.size(); ++byteOffset)
+            {
+                if (depositedBytes[byteOffset] != reloadedBytes[byteOffset])
                 {
-                    firstDiff = daIndex;
+                    firstDifferenceOffset = byteOffset;
                     return false;
                 }
+            }
             return true;
         }
 
@@ -83,26 +86,38 @@ namespace Test
         /// to know about anyway.
         void checkRealBank(Context &context)
         {
-            Trainer::Bank real;
-            size_t occupied = 0;
-            for (size_t boxIndex = 0; boxIndex < real.boxCount(); ++boxIndex)
-                for (size_t slotIndex = 0; slotIndex < real.slotsPerBox(); ++slotIndex)
-                    if (!isEmptySlot(real.boxes[boxIndex][slotIndex].get()))
-                        ++occupied;
+            Trainer::Bank realBank;
+            size_t occupiedSlotCount = 0;
+            for (size_t boxIndex = 0; boxIndex < realBank.boxCount(); ++boxIndex)
+            {
+                for (size_t slotIndex = 0; slotIndex < realBank.slotsPerBox(); ++slotIndex)
+                {
+                    if (!isEmptySlot(realBank.boxes[boxIndex][slotIndex].get()))
+                    {
+                        ++occupiedSlotCount;
+                    }
+                }
+            }
 
-            context.check(real.lastLoadRejects() == 0, "the user's bank file has records that would not decode to a valid Pokemon", "rejects=" + std::to_string(real.lastLoadRejects()) + " loaded=" + std::to_string(occupied));
-            context.check(!real.hasChanged(), "a freshly loaded bank already reports unsaved changes (load and serialize disagree, so leaving the storage view would prompt to save)", "loaded=" + std::to_string(occupied));
+            context.check(realBank.lastLoadRejects() == 0, "the user's bank file has records that would not decode to a valid Pokemon", "rejects=" + std::to_string(realBank.lastLoadRejects()) + " loaded=" + std::to_string(occupiedSlotCount));
+            context.check(!realBank.hasChanged(), "a freshly loaded bank already reports unsaved changes (load and serialize disagree, so leaving the storage view would prompt to save)", "loaded=" + std::to_string(occupiedSlotCount));
 
             // Every record that DID load must still be structurally valid: load() gates on
             // isStructurallyValid, so anything here that fails it means the gate is not doing its job.
-            size_t rejectedCount = 0;
-            for (size_t boxIndex = 0; boxIndex < real.boxCount(); ++boxIndex)
-                for (size_t slotIndex = 0; slotIndex < real.slotsPerBox(); ++slotIndex)
-                    if (!isEmptySlot(real.boxes[boxIndex][slotIndex].get()) && !real.boxes[boxIndex][slotIndex]->isStructurallyValid())
-                        ++rejectedCount;
-            context.check(rejectedCount == 0, "the user's bank holds Pokemon that fail their structural validity check", "count=" + std::to_string(rejectedCount));
+            size_t invalidPokemonCount = 0;
+            for (size_t boxIndex = 0; boxIndex < realBank.boxCount(); ++boxIndex)
+            {
+                for (size_t slotIndex = 0; slotIndex < realBank.slotsPerBox(); ++slotIndex)
+                {
+                    if (!isEmptySlot(realBank.boxes[boxIndex][slotIndex].get()) && !realBank.boxes[boxIndex][slotIndex]->isStructurallyValid())
+                    {
+                        ++invalidPokemonCount;
+                    }
+                }
+            }
+            context.check(invalidPokemonCount == 0, "the user's bank holds Pokemon that fail their structural validity check", "count=" + std::to_string(invalidPokemonCount));
 
-            context.note("user's bank", "occupied=" + std::to_string(occupied) + " rejects=" + std::to_string(real.lastLoadRejects()));
+            context.note("user's bank", "occupied=" + std::to_string(occupiedSlotCount) + " rejects=" + std::to_string(realBank.lastLoadRejects()));
         }
 
         bool pathExists(const std::string &path)
@@ -121,9 +136,9 @@ namespace Test
         ///   - a file that exists but cannot be read at all (a directory stands in for an SD card
         ///     error here: it exists, and no read of it succeeds) is not taken for "no bank yet",
         ///     which ran the first-run path and let the next save overwrite it.
-        void checkBankFileProtection(Context &context, const std::string &directory)
+        void checkBankFileProtection(Context &context, const std::string &bankDirectory)
         {
-            const std::string bankPath = directory + "/bank.dat";
+            const std::string bankPath = bankDirectory + "/bank.dat";
             const std::string temporaryPath = bankPath + ".tmp";
             const std::string asidePath = bankPath + ".unreadable";
             if (!pathExists(bankPath))
@@ -134,26 +149,26 @@ namespace Test
 
             // An interrupted save.
             std::remove(temporaryPath.c_str());
-            if (context.check(std::rename(bankPath.c_str(), temporaryPath.c_str()) == 0, "could not stage an interrupted bank save", "dir=\"" + directory + "\""))
+            if (context.check(std::rename(bankPath.c_str(), temporaryPath.c_str()) == 0, "could not stage an interrupted bank save", "dir=\"" + bankDirectory + "\""))
             {
-                Trainer::Bank recovered;
+                Trainer::Bank recoveredBank;
                 context.check(pathExists(bankPath) && !pathExists(temporaryPath), "a bank save interrupted before its rename was not recovered from bank.dat.tmp");
-                context.check(recovered.boxNames[0] == "SelfTest", "the bank recovered from an interrupted save is not the bank that was saved", "box1=\"" + recovered.boxNames[0] + "\"");
-                context.check(recovered.lastLoadProblem().empty(), "recovering an interrupted bank save was reported as a problem", "message=\"" + recovered.lastLoadProblem() + "\"");
+                context.check(recoveredBank.boxNames[0] == "SelfTest", "the bank recovered from an interrupted save is not the bank that was saved", "box1=\"" + recoveredBank.boxNames[0] + "\"");
+                context.check(recoveredBank.lastLoadProblem().empty(), "recovering an interrupted bank save was reported as a problem", "message=\"" + recoveredBank.lastLoadProblem() + "\"");
             }
 
             // A file that is not a bank.
             std::remove(asidePath.c_str());
             std::remove(bankPath.c_str());
-            if (FILE *garbage = std::fopen(bankPath.c_str(), "wb"))
+            if (FILE *garbageFile = std::fopen(bankPath.c_str(), "wb"))
             {
-                std::fputs("not a PKSE bank", garbage);
-                std::fclose(garbage);
-                Trainer::Bank damaged;
-                context.check(!damaged.lastLoadProblem().empty(), "a bank file that is not a bank opened with no message");
+                std::fputs("not a PKSE bank", garbageFile);
+                std::fclose(garbageFile);
+                Trainer::Bank damagedBank;
+                context.check(!damagedBank.lastLoadProblem().empty(), "a bank file that is not a bank opened with no message");
                 context.check(pathExists(asidePath), "a bank file that is not a bank was not kept as bank.dat.unreadable");
-                damaged.boxNames[0] = "AfterDamage";
-                context.check(damaged.save(), "the bank could not be saved after its damaged file was set aside");
+                damagedBank.boxNames[0] = "AfterDamage";
+                context.check(damagedBank.save(), "the bank could not be saved after its damaged file was set aside");
                 context.check(pathExists(asidePath), "saving the bank removed the damaged file that had been set aside");
             }
             std::remove(asidePath.c_str());
@@ -161,28 +176,28 @@ namespace Test
             // A file that exists but will not read, staged two ways: a directory in its place (no
             // read of it succeeds on a console), and a file with no read permission (which a
             // console ignores but a desktop host honours).
-            auto checkUnreadable = [&](const char *how)
+            auto checkUnreadable = [&](const char *stagingMethod)
             {
-                Trainer::Bank unreadable;
-                context.check(!unreadable.lastLoadProblem().empty(), "a bank file that exists but cannot be read opened as an empty bank with no message", std::string("staged=") + how);
-                unreadable.boxNames[0] = "Overwrite";
-                const bool saved = unreadable.save();
+                Trainer::Bank unreadableBank;
+                context.check(!unreadableBank.lastLoadProblem().empty(), "a bank file that exists but cannot be read opened as an empty bank with no message", std::string("staged=") + stagingMethod);
+                unreadableBank.boxNames[0] = "Overwrite";
+                const bool bankSaved = unreadableBank.save();
                 // Either it was moved aside and the save went to a new file, or it could not be
                 // moved and the save refused. Writing over it in place is the one wrong answer.
-                context.check(pathExists(asidePath) || !saved, "a bank file that could not be read was neither set aside nor protected from the next save", std::string("staged=") + how);
+                context.check(pathExists(asidePath) || !bankSaved, "a bank file that could not be read was neither set aside nor protected from the next save", std::string("staged=") + stagingMethod);
             };
             std::remove(bankPath.c_str());
-            if (context.check(mkdir(bankPath.c_str(), 0777) == 0, "could not stage an unreadable bank file", "dir=\"" + directory + "\""))
+            if (context.check(mkdir(bankPath.c_str(), 0777) == 0, "could not stage an unreadable bank file", "dir=\"" + bankDirectory + "\""))
             {
                 checkUnreadable("directory");
                 rmdir(asidePath.c_str());
                 rmdir(bankPath.c_str());
             }
             std::remove(bankPath.c_str());
-            if (FILE *locked = std::fopen(bankPath.c_str(), "wb"))
+            if (FILE *lockedFile = std::fopen(bankPath.c_str(), "wb"))
             {
-                std::fputs("PKSEBANK", locked);
-                std::fclose(locked);
+                std::fputs("PKSEBANK", lockedFile);
+                std::fclose(lockedFile);
                 chmod(bankPath.c_str(), 0);
                 checkUnreadable("no-read-permission");
                 chmod(asidePath.c_str(), 0666);
@@ -203,101 +218,115 @@ namespace Test
 
             // The run's work directory (sdmc:/PKSE/tests/work on a console, the harness's scratch
             // folder on the host).
-            const std::string workRoot = context.workDir.empty() ? BASE_SAVE_DIRECTORY + "/tests/work" : context.workDir;
-            const std::string directory = workRoot + "/bank";
+            const std::string workRoot = context.workDirectory.empty() ? BASE_SAVE_DIRECTORY + "/tests/work" : context.workDirectory;
+            const std::string bankDirectory = workRoot + "/bank";
             mkdir((BASE_SAVE_DIRECTORY + "/tests").c_str(), 0777);
             mkdir(workRoot.c_str(), 0777);
-            mkdir(directory.c_str(), 0777);
-            std::remove((directory + "/bank.dat").c_str()); // start from an empty bank every run
+            mkdir(bankDirectory.c_str(), 0777);
+            std::remove((bankDirectory + "/bank.dat").c_str()); // start from an empty bank every run
 
-            Trainer::Bank::setRootOverride(directory);
+            Trainer::Bank::setRootOverride(bankDirectory);
 
             {
-                Trainer::Bank scratch;
-                context.check(scratch.lastLoadRejects() == 0, "a brand-new scratch bank reported rejected records", "dir=\"" + directory + "\"");
+                Trainer::Bank scratchBank;
+                context.check(scratchBank.lastLoadRejects() == 0, "a brand-new scratch bank reported rejected records", "dir=\"" + bankDirectory + "\"");
 
                 // Deposit one sample per slot, spread across two boxes so the record table's stride
                 // is exercised rather than just its first row.
-                size_t placed = 0;
-                for (const auto &s : samples())
+                size_t placedCount = 0;
+                for (const auto &sample : samples())
                 {
-                    if (!s.pokemon)
-                        continue;
-                    if (auto copiedPokemon = s.pokemon->clone())
+                    if (!sample.pokemon)
                     {
-                        const size_t box = placed / 4;
-                        const size_t slotI = placed % 4;
-                        if (box >= scratch.boxCount())
+                        continue;
+                    }
+                    if (auto copiedPokemon = sample.pokemon->clone())
+                    {
+                        const size_t boxIndex = placedCount / 4;
+                        const size_t slotIndex = placedCount % 4;
+                        if (boxIndex >= scratchBank.boxCount())
+                        {
                             break;
-                        scratch.boxes[box][slotI] = std::move(copiedPokemon);
-                        ++placed;
+                        }
+                        scratchBank.boxes[boxIndex][slotIndex] = std::move(copiedPokemon);
+                        ++placedCount;
                     }
                 }
-                context.check(placed > 0, "no sample could be cloned into the scratch bank");
-                scratch.boxNames[0] = "SelfTest";
+                context.check(placedCount > 0, "no sample could be cloned into the scratch bank");
+                scratchBank.boxNames[0] = "SelfTest";
 
-                context.check(scratch.hasChanged(), "the bank does not report a change after Pokemon were deposited into it");
+                context.check(scratchBank.hasChanged(), "the bank does not report a change after Pokemon were deposited into it");
 
-                const bool saved = scratch.save();
-                context.check(saved, "writing the scratch bank failed", "dir=\"" + directory + "\"");
+                const bool bankSaved = scratchBank.save();
+                context.check(bankSaved, "writing the scratch bank failed", "dir=\"" + bankDirectory + "\"");
                 // The bank verifies its own image on the way out. A non-zero count here is the
                 // byte-in == byte-out contract failing, reported rather than enforced by design.
-                context.check(scratch.lastVerifyFailures() == 0, "the bank's own save-time verification found slots that did not survive an encrypt/decrypt round trip", "failures=" + std::to_string(scratch.lastVerifyFailures()) + " placed=" + std::to_string(placed));
-                context.check(!scratch.hasChanged(), "the bank still reports unsaved changes immediately after a successful save");
+                context.check(scratchBank.lastVerifyFailures() == 0, "the bank's own save-time verification found slots that did not survive an encrypt/decrypt round trip", "failures=" + std::to_string(scratchBank.lastVerifyFailures()) + " placed=" + std::to_string(placedCount));
+                context.check(!scratchBank.hasChanged(), "the bank still reports unsaved changes immediately after a successful save");
 
-                Trainer::Bank reloaded;
-                context.check(reloaded.lastLoadRejects() == 0, "reloading the bank PKSE just wrote rejected records", "rejects=" + std::to_string(reloaded.lastLoadRejects()));
-                context.check(reloaded.boxNames[0] == "SelfTest", "a bank box name did not survive save/reload", "read=\"" + reloaded.boxNames[0] + "\"");
+                Trainer::Bank reloadedBank;
+                context.check(reloadedBank.lastLoadRejects() == 0, "reloading the bank PKSE just wrote rejected records", "rejects=" + std::to_string(reloadedBank.lastLoadRejects()));
+                context.check(reloadedBank.boxNames[0] == "SelfTest", "a bank box name did not survive save/reload", "read=\"" + reloadedBank.boxNames[0] + "\"");
 
                 // DISCARD. Storage's Save/Discard prompt discards by reloading the bank, so an unsaved
                 // release and rename followed by load() must give back exactly what was saved, and the
                 // bank must stop reporting a change.
-                if (reloaded.boxes[0][0])
+                if (reloadedBank.boxes[0][0])
                 {
-                    const uint16_t savedSpecies = reloaded.boxes[0][0]->speciesID();
-                    reloaded.boxes[0][0].reset();
-                    reloaded.boxNames[0] = "Discard";
-                    context.check(reloaded.hasChanged(), "the bank does not report a change after a release and a rename");
-                    reloaded.load();
-                    context.check(!reloaded.hasChanged(), "the bank still reports a change after discarding by reload");
-                    context.check(reloaded.boxNames[0] == "SelfTest", "discarding did not restore a renamed bank box", "read=\"" + reloaded.boxNames[0] + "\"");
-                    context.check(reloaded.boxes[0][0] && reloaded.boxes[0][0]->speciesID() == savedSpecies, "discarding did not bring back a released bank Pokemon", "want=" + std::to_string(savedSpecies));
+                    const uint16_t savedSpeciesId = reloadedBank.boxes[0][0]->speciesID();
+                    reloadedBank.boxes[0][0].reset();
+                    reloadedBank.boxNames[0] = "Discard";
+                    context.check(reloadedBank.hasChanged(), "the bank does not report a change after a release and a rename");
+                    reloadedBank.load();
+                    context.check(!reloadedBank.hasChanged(), "the bank still reports a change after discarding by reload");
+                    context.check(reloadedBank.boxNames[0] == "SelfTest", "discarding did not restore a renamed bank box", "read=\"" + reloadedBank.boxNames[0] + "\"");
+                    context.check(reloadedBank.boxes[0][0] && reloadedBank.boxes[0][0]->speciesID() == savedSpeciesId, "discarding did not bring back a released bank Pokemon", "want=" + std::to_string(savedSpeciesId));
                 }
 
-                size_t index = 0;
-                for (const auto &s : samples())
+                size_t sampleIndex = 0;
+                for (const auto &sample : samples())
                 {
-                    if (!s.pokemon)
+                    if (!sample.pokemon)
+                    {
                         continue;
-                    const size_t box = index / 4, slotI = index % 4;
-                    ++index;
-                    if (box >= reloaded.boxCount())
+                    }
+                    const size_t boxIndex = sampleIndex / 4;
+                    const size_t slotIndex = sampleIndex % 4;
+                    ++sampleIndex;
+                    if (boxIndex >= reloadedBank.boxCount())
+                    {
                         break;
+                    }
 
-                    const std::string whereLabel = s.origin + "  " + monLabel(*s.pokemon) + "  " + slot((int)box, (int)slotI);
-                    const auto &got = reloaded.boxes[box][slotI];
-                    if (!context.check(got != nullptr, "a deposited Pokemon is missing after save/reload", whereLabel))
+                    const std::string whereLabel = sample.origin + "  " + pokemonLabel(*sample.pokemon) + "  " + slot((int)boxIndex, (int)slotIndex);
+                    const auto &reloadedPokemon = reloadedBank.boxes[boxIndex][slotIndex];
+                    if (!context.check(reloadedPokemon != nullptr, "a deposited Pokemon is missing after save/reload", whereLabel))
+                    {
                         continue;
+                    }
                     // Against the group the bank STORES it as, not the group it was deposited
                     // from. A bank tag names an entity format and several groups share one, so a
                     // Ruby PK3 legitimately reads back as FireRed/LeafGreen. Asserting the
                     // deposited group instead reported thirteen real Pokemon as corrupted.
-                    const Enums::GameVersion wantGroup = formatGroupFor(s.group);
-                    context.check(got->getGameGroup() == wantGroup, "a deposited Pokemon came back tagged as a different game", whereLabel + " deposited=" + Enums::getGameVersionName(s.group) + " expected=" + Enums::getGameVersionName(wantGroup) + " got=" + Enums::getGameVersionName(got->getGameGroup()));
-                    size_t diff = 0;
-                    context.check(sameBytes(*s.pokemon, *got, diff), "a deposited Pokemon's bytes changed across save/reload (the bank's byte-in == byte-out contract)", whereLabel + " " + hex("offset", diff, 4));
+                    const Enums::GameVersion expectedGroup = formatGroupFor(sample.group);
+                    context.check(reloadedPokemon->getGameGroup() == expectedGroup, "a deposited Pokemon came back tagged as a different game", whereLabel + " deposited=" + Enums::getGameVersionName(sample.group) + " expected=" + Enums::getGameVersionName(expectedGroup) + " got=" + Enums::getGameVersionName(reloadedPokemon->getGameGroup()));
+                    size_t firstDifferenceOffset = 0;
+                    context.check(sameBytes(*sample.pokemon, *reloadedPokemon, firstDifferenceOffset), "a deposited Pokemon's bytes changed across save/reload (the bank's byte-in == byte-out contract)", whereLabel + " " + hexField("offset", firstDifferenceOffset, 4));
                 }
             }
 
-            checkBankFileProtection(context, directory);
+            checkBankFileProtection(context, bankDirectory);
 
             Trainer::Bank::setRootOverride("");
             context.check(!Trainer::Bank::rootOverridden(), "the bank path override was not cleared after the test");
-            std::remove((directory + "/bank.dat").c_str());
+            std::remove((bankDirectory + "/bank.dat").c_str());
         }
     }
 
-    int bankPlan(Context &) { return ChunkCount; }
+    int bankPlan(Context &)
+    {
+        return ChunkCount;
+    }
 
     void bankRun(Context &context, int chunk)
     {

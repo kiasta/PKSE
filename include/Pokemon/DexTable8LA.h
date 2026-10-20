@@ -32,6 +32,20 @@ namespace Pokemon {
     /// True when the dex tracks this species+form's genders SEPARATELY (PokemonInfoGenders bit 3).
     /// Where false, the male and female slots are one shared record.
     bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept;
+
+    /// The four size research tasks. Large and small compare HeightAbsolute with the threshold;
+    /// heavy and light compare WeightAbsolute with the threshold in tenths.
+    enum class SizeResearchTask8LA : uint8_t
+    {
+        CatchLarge = 0,
+        CatchSmall,
+        CatchHeavy,
+        CatchLight,
+    };
+
+    /// True when the species has `task` among its research tasks, with its threshold in
+    /// `taskThreshold`. False, leaving `taskThreshold` alone, when it has none.
+    bool getSizeResearchThreshold8LA(uint16_t speciesId, SizeResearchTask8LA task, uint8_t &taskThreshold) noexcept;
 }
 
 #endif

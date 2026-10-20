@@ -1980,6 +1980,13 @@ namespace Conversion
         // table the name is written through.
         out->setLanguage(Enums::safeLanguageForGroup(destGroup, out->language()));
 
+        // The PA8 remap leaves the absolute height and weight zero. PKHeX recalculates them from the
+        // size scalars on the way into Legends: Arceus, and the game shows and researches them.
+        if (destGroup == GameVersion::PLA)
+        {
+            static_cast<Pokemon::Pokemon8LA &>(*out).resetSizeAbsolutes();
+        }
+
         // Sanitize the moveset to what the destination game's species can legally learn: any move (or
         // relearn move) it can't -- illegal for the species, OR not present in that game at all -- is
         // cleared to empty. Required for LGPE, which turns a pokemon with an impossible move into a Bad Egg;

@@ -669,6 +669,13 @@ namespace Pokemon
         }
 
         /**
+         * Sets the absolute height and weight from the size scalars (0x50 / 0x51) and the species'
+         * base size, as the game computes them (PKHeX PA8.ResetHeight / ResetWeight). A record that
+         * reaches this format any other way than being caught in it carries no absolutes of its own.
+         */
+        void resetSizeAbsolutes() noexcept;
+
+        /**
          * GRIT VALUES (0-10 per stat), Legends: Arceus's replacement for EVs.
          *
          * PLA has no effort values: the EV bytes at 0x26-0x2B are inherited struct space the game

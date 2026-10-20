@@ -180,6 +180,7 @@ namespace Trainer
             const PouchType1RBY pouchType = (pouch == static_cast<int>(PouchType1RBY::PCItems)) ? PouchType1RBY::PCItems : PouchType1RBY::Items;
             return static_cast<size_t>(getPouchInfo1RBY(pouchType).maxSlots);
         }
+        int getItemMaxCount(int pouch) const override { return ITEM_MAX_COUNT1_RBY; }
 
         uint8_t badgeFlags = 0; // 8 badge bits
         uint16_t coins = 0;     // Game Corner coins (BCD, max 9999)

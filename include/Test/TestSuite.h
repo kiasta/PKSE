@@ -10,7 +10,7 @@
  * no dynamic initialisation is one less thing that can differ between the host harness and the .nro.
  *
  * ADDING A SUITE is: write `int fooPlan(Context&)` and `void fooRun(Context&, int)` in a new
- * source/Test/SuiteFoo.cpp, declare them below, and add one row to the table in TestRunner.cpp.
+ * src/Test/SuiteFoo.cpp, declare them below, and add one row to the table in TestRunner.cpp.
  */
 #ifndef TEST_TEST_SUITE_H
 #define TEST_TEST_SUITE_H
@@ -29,13 +29,13 @@ namespace Test
     enum class Scope : uint8_t
     {
         Global,    // once per run, no save needed (data tables, ROMFS assets)
-        PerTarget, // once per chosen generation, with that generation's save loaded
+        PerTarget, // once per target title, with that title's save loaded
         Cross,     // once per run, after every target, against the samples they left behind
     };
 
     struct Suite
     {
-        const char *name; // short tag used in the report ("entity", "tables")
+        const char *suiteName; // short tag used in the report ("entity", "tables")
         Scope scope;
         /// Chunks this suite needs for `context`. 0 means "nothing to do here" and the suite is skipped
         /// silently -- a suite that cannot run for a REASON should return 1 and report a skip from
@@ -120,7 +120,7 @@ namespace Test
     /// SwSh's box writer deliberately stamps a canonical encrypted blank over each unoccupied slot,
     /// because leftover bytes that decrypt to species 0 re-encrypt into a Bad Egg -- so a non-null
     /// pointer does not mean "occupied". Species 0 does, and that is the test the whole UI uses
-    /// (`!pk || pk->speciesID() == 0`). Shared rather than per-suite: getting it wrong once produced
+    /// (`!pokemon || pokemon->speciesID() == 0`). Shared rather than per-suite: getting it wrong once produced
     /// 1849 phantom findings in the entity sweep and 936 more in the save round trip, independently.
     inline bool isEmptySlot(const Pokemon::Pokemon *pokemon) noexcept
     {
@@ -131,15 +131,15 @@ namespace Test
     {
         /// The TITLE this pokemon was taken from -- Sword, Violet, Yellow -- not its generation. The
         /// run tests one save per title, so this is also what caps the pool: SAMPLES_PER_TARGET
-        /// mons per title.
+        /// Pokemon per title.
         Enums::GameVersion version = Enums::GameVersion::Invalid;
         Enums::GameVersion group = Enums::GameVersion::Invalid;
         std::string origin; // "Sword", for finding detail lines
         std::unique_ptr<Pokemon::Pokemon> pokemon;
     };
 
-    /// How many mons each target contributes. Small on purpose: the conversion matrix is quadratic
-    /// in the pool, and four representative mons per title already covers the field remaps.
+    /// How many Pokemon each target contributes. Small on purpose: the conversion matrix is quadratic
+    /// in the pool, and four representative Pokemon per title already covers the field remaps.
     inline constexpr int SAMPLES_PER_TARGET = 4;
 
     /// The pool lives in an inline function-local static rather than in a .cpp, so a caller can
@@ -156,8 +156,7 @@ namespace Test
 
     inline void addSample(Enums::GameVersion version, Enums::GameVersion group, const std::string &origin, std::unique_ptr<Pokemon::Pokemon> pokemon)
     {
-        if (!pokemon)
-            return;
+        if (!pokemon) return;
         sampleStore().push_back(Sample{version, group, origin, std::move(pokemon)});
     }
 
@@ -167,8 +166,8 @@ namespace Test
     void tablesRun(Context &, int); // generation-independent data tables
     int assetsPlan(Context &);
     void assetsRun(Context &, int); // ROMFS: fonts, type icons, every sprite
-    int genTablesPlan(Context &);
-    void genTablesRun(Context &, int); // per-generation tables (items, learnsets, dex)
+    int generationTablesPlan(Context &);
+    void generationTablesRun(Context &, int); // per-generation tables (items, learnsets, dex)
     int savePlan(Context &);
     void saveRun(Context &, int); // save structure, round trip, edit persistence
     int entityPlan(Context &);

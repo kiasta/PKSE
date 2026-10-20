@@ -138,6 +138,9 @@ namespace Trainer
         /// other four are slot lists. The flag answers for the four; updateItemBlock() special-
         /// cases the TM pouch.
         bool itemsAreIdIndexed() const noexcept override { return false; }
+        size_t getItemPouchCapacity(int pouch) const override;
+        int getItemMaxCount(int pouch) const override;
+        const char *getItemPouchName(int pouch) const override;
         bool compactStorage() override { return true; }
         /// The regions writeMirrors() refreshes -- see Gen2Mirror. Public because verifying
         /// a round trip means knowing which bytes a write is allowed to move.

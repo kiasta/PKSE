@@ -28,7 +28,7 @@ namespace Test
             // before any target is loaded. Unlike "picker" it is host-buildable, so the uihost
             // harness runs it too.
             {"browser", Scope::Global, fileBrowserPlan, fileBrowserRun},
-            {"gentables", Scope::PerTarget, genTablesPlan, genTablesRun},
+            {"gentables", Scope::PerTarget, generationTablesPlan, generationTablesRun},
             {"entity", Scope::PerTarget, entityPlan, entityRun},
             {"setters", Scope::PerTarget, settersPlan, settersRun},
             {"legality", Scope::PerTarget, legalityPlan, legalityRun},

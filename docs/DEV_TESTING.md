@@ -115,6 +115,7 @@ harnesses find a save by its folder, never by guessing what a dumper called the 
 ├── Omega Ruby/     main
 ├── Ultra Sun/      main
 ├── Let's Go Pikachu/  savedata.bin
+├── Let's Go Eevee/    savedata.bin
 ├── Sword/          main
 ├── Shield/         main
 ├── Violet/         main
@@ -158,6 +159,25 @@ on any pouch without a gap. It changes the count of every pouch's last entry, ap
 every pouch with room, and requires the written item block to equal the original with exactly those
 slots changed. It prints how many of the edited entries sat after a gap; a save with none cannot
 tell the two writers apart, and says so.
+
+**Legends: Arceus also gets a `[catch research]` step**, because its Pokedex writer is the one that
+keeps counters rather than flags, and the round trip above never runs that writer. It writes the
+dex twice with nothing changed and requires every research field to be unchanged. Then it places
+four copies of a stored Pokemon whose species has a size task: one meeting the task's threshold,
+one missing it, an alpha meeting it, and one with no recorded size. Each must add exactly what
+PKHeX's `OnPokeGet` adds (one catch, the alpha, the size task) to that species alone, and the next
+write must add nothing. Last, it requires `resetSizeAbsolutes()` to reproduce, bit for bit, the
+height and weight the game stored for every Pokemon in the save. Counting all of storage on every
+save inflated the catch counter by one per Pokemon per save, and an unedited round trip can't see it.
+
+**Let's Go Pikachu and Let's Go Eevee get their own round trip**, the first host harness to write a
+Let's Go save at all. Each writer runs alone, then all of them in the app's save order. The Pokedex
+writer registers everything in storage, so it may change a save whose dex doesn't yet show a Pokemon
+it holds (a Pokemon an editor made shiny after it was caught, whose shiny sighting was never
+recorded). That is a KNOWN divergence, held to three rules: the write changes no block but the
+Pokedex, a second write changes nothing, and a partner Pikachu or Eevee writes no size record for its
+species. PKHeX registers neither partner, and PKSE once folded the partner Eevee onto form 0 and wrote
+it into the minimum-weight record on every save.
 
 **FireRed, Ruby and Emerald also get an `[interrupted]` step.** It erases one sector of the save's
 NEWER slot — what a save interrupted mid-write leaves — and requires the trainer to open from the
@@ -396,7 +416,10 @@ not referenced by the Makefile or the `.vcxproj`. Deleting the directory removes
 It compiles the **same** screen, panel, dialog and modal sources the `.nro` does, against real
 saves, driven by synthetic input, and asserts on **what they actually drew** — including the details
 page end to end (open it, open the species picker, apply a different species, check the resulting
-form, level, ability and checksum before discarding).
+form, level, ability and checksum before discarding), and the creator (A on an empty box slot, pick
+the first species, check the new Pokemon, then discard it and put the slot back). In Legends: Arceus
+the creator check also requires the new Pokemon's stored height and weight to be exactly what its size
+scalars give, which is why the Legends: Arceus save is among the ones it walks.
 
 **How you test an immediate-mode UI.** An immediate-mode UI has no retained widget tree, which is why
 "test the UI" looked impossible here — Cypress works because the DOM is a queryable structure and
@@ -665,7 +688,7 @@ load-bearing**.
 | 9 | `ui` | PerTarget | **drives real screens** with synthetic input |
 | 10 | `pokemonfile` | PerTarget | .pkX export, read back, the .ekX form, refusal of renamed or corrupted files, bank import |
 | 11 | `save` | PerTarget | save structure, round trip, **edit persistence** (an empty slot filled, a new item added), save envelopes |
-| 12 | `conversion` | Cross | the cross-generation conversion matrix, plus a synthetic Poke Transporter pass |
+| 12 | `conversion` | Cross | the cross-generation conversion matrix, plus a synthetic Poke Transporter pass; a Pokemon converted into Legends: Arceus must arrive with the height and weight its size scalars give |
 | 13 | `bank` | Cross | deposit / save / reload / verify, discard by reload, a bank file never written over |
 
 Three of them DRIVE the app rather than calling into it: `ui`, `picker` and `browser`.
@@ -747,7 +770,8 @@ and each is allowed only where it is proven to be that rewrite:
 | Gen 1 | the current box's flush | every changed byte is in the bank copy, the initialised bit, a first-flush header or the checksum, and the bank copy now equals the live one (as `build-gen1.sh`) |
 | Gen 2 | the trainer-block backup refresh | every changed byte is in a mirror or a checksum word, and every mirror equals its source (as `build-oldgens.sh`) |
 | Sword/Shield, Legends: Arceus, Scarlet/Violet, Legends: Z-A | empty box slots normalised; Pokedex registration | decrypted block by block: only the box block (in EMPTY slots only) and the Pokedex blocks may differ |
-| Let's Go, Brilliant Diamond / Shining Pearl | Pokedex registration | not attributable here, so any change is a WARNING naming the count and first offset |
+| Let's Go | Pokedex registration | block by block: only the Pokedex block may differ, and a second unedited write must change nothing |
+| Brilliant Diamond / Shining Pearl | Pokedex registration | not attributable here, so any change is a WARNING naming the count and first offset |
 | everything else | nothing | the file must be identical |
 
 Gen 3's `serialize()` (the app's write path, Pokedex included) reproduces real FireRed, Ruby and
