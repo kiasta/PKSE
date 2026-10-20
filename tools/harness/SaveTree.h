@@ -137,6 +137,7 @@ namespace SaveTree {
     inline std::string letsGoPikachu(const std::string& root) {
         return resolve(root, "Let's Go Pikachu", {"gg/savedata.bin"});
     }
+    inline std::string letsGoEevee(const std::string& root) { return forTitle(root, "Let's Go Eevee"); }
     inline std::string sword(const std::string& root) { return forTitle(root, "Sword"); }
     inline std::string shield(const std::string& root) { return resolve(root, "Shield", {"shield/main"}); }
     inline std::string legendsZA(const std::string& root) { return resolve(root, "Legends Z-A", {"za/main"}); }

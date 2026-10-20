@@ -52,15 +52,15 @@ namespace Test
     {
         /// The Gen 7 totem forms: NPC-only, so they are in the personal table and in no game.
         /// PKHeX FormInfo.IsTotemForm / HasTotemForm.
-        bool isTotemForm(uint16_t species, uint8_t form)
+        bool isTotemForm(uint16_t speciesId, uint8_t formId)
         {
-            switch (species)
+            switch (speciesId)
             {
             case 20:  // Raticate (Alolan totem)
             case 105: // Marowak (Alolan totem)
-                return form == 2;
+                return formId == 2;
             case 778: // Mimikyu (totem, disguised and busted)
-                return form == 2 || form == 3;
+                return formId == 2 || formId == 3;
             case 735: // Gumshoos
             case 738: // Vikavolt
             case 743: // Ribombee
@@ -69,7 +69,7 @@ namespace Test
             case 758: // Salazzle
             case 777: // Togedemaru
             case 784: // Kommo-o
-                return form == 1;
+                return formId == 1;
             default:
                 return false;
             }
@@ -100,21 +100,24 @@ namespace Test
 
         constexpr uint16_t PERSONAL_CHUNK_SPLIT_SPECIES = 512; // species 1..511 in chunk A, the rest in B
 
-        bool named(const char *text) { return text != nullptr && text[0] != '\0'; }
+        bool isNamed(const char *text)
+        {
+            return text != nullptr && text[0] != '\0';
+        }
 
         /// PKHeX's gender byte is a small closed set: always-male (0), the four thresholds for
         /// 12.5 / 25 / 50 / 75 percent female (31 / 63 / 127 / 191), 87.5 percent female (225 --
         /// Litleo and Pyroar are the only species that use it), always-female (254) and genderless
         /// (255). Anything else means the byte being read is not the gender ratio at all, which is
         /// exactly the Gen 1 trap where personal_rb byte 0 looks like a dex number.
-        bool canonicalGenderRatio(uint8_t genderRatio)
+        bool isCanonicalGenderRatio(uint8_t genderRatio)
         {
             return genderRatio == 0 || genderRatio == 31 || genderRatio == 63 || genderRatio == 127 || genderRatio == 191 || genderRatio == 225 || genderRatio == 254 || genderRatio == 255;
         }
 
-        std::string sp(uint16_t species)
+        std::string speciesLabel(uint16_t speciesId)
         {
-            return "species=" + std::to_string(species) + " (" + Trainer::getSpeciesName(species) + ")";
+            return "species=" + std::to_string(speciesId) + " (" + Trainer::getSpeciesName(speciesId) + ")";
         }
 
         /**
@@ -142,50 +145,71 @@ namespace Test
             // table is broken, because the other six still differ. Breaking getItemName on purpose
             // proved it: zero failures. Each table has to answer for itself.
             using NameTable = std::pair<const char *, std::vector<std::string>>;
-            auto snapshot = [](std::vector<NameTable> &out) {
-                out.clear();
+            auto snapshot = [](std::vector<NameTable> &nameTables)
+            {
+                nameTables.clear();
                 std::vector<std::string> rows;
-                for (uint16_t species = 1; species <= Pokemon::PERSONAL_MAX_SPECIES; ++species)
-                    rows.push_back(Trainer::getSpeciesName(species));
-                out.push_back({"species", rows});
+                for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
+                {
+                    rows.push_back(Trainer::getSpeciesName(speciesId));
+                }
+                nameTables.push_back({"species", rows});
                 rows.clear();
-                for (uint16_t move = 1; move <= Pokemon::LEARN_MAX_MOVE_ID; ++move)
-                    rows.push_back(Names::getMoveName(move));
-                out.push_back({"moves", rows});
+                for (uint16_t moveId = 1; moveId <= Pokemon::LEARN_MAX_MOVE_ID; ++moveId)
+                {
+                    rows.push_back(Names::getMoveName(moveId));
+                }
+                nameTables.push_back({"moves", rows});
                 rows.clear();
-                for (uint16_t item = 1; item < Names::getItemCount(); ++item)
-                    rows.push_back(Names::getItemName(item));
-                out.push_back({"items", rows});
+                for (uint16_t itemId = 1; itemId < Names::getItemCount(); ++itemId)
+                {
+                    rows.push_back(Names::getItemName(itemId));
+                }
+                nameTables.push_back({"items", rows});
                 rows.clear();
-                for (uint16_t g3Item = 1; g3Item < Names::getItemCountG3(); ++g3Item)
-                    rows.push_back(Names::getItemNameG3(g3Item));
-                out.push_back({"gen3 items", rows});
+                for (uint16_t gen3ItemId = 1; gen3ItemId < Names::getItemCountG3(); ++gen3ItemId)
+                {
+                    rows.push_back(Names::getItemNameG3(gen3ItemId));
+                }
+                nameTables.push_back({"gen3 items", rows});
                 rows.clear();
-                for (uint16_t ability = 1; ability < 300; ++ability)
-                    rows.push_back(Trainer::getAbilityName(ability));
-                out.push_back({"abilities", rows});
+                for (uint16_t abilityId = 1; abilityId < 300; ++abilityId)
+                {
+                    rows.push_back(Trainer::getAbilityName(abilityId));
+                }
+                nameTables.push_back({"abilities", rows});
                 rows.clear();
-                for (uint8_t nature = 0; nature < 25; ++nature)
-                    rows.push_back(Trainer::getNatureName(nature));
-                out.push_back({"natures", rows});
+                for (uint8_t natureId = 0; natureId < 25; ++natureId)
+                {
+                    rows.push_back(Trainer::getNatureName(natureId));
+                }
+                nameTables.push_back({"natures", rows});
                 rows.clear();
                 for (uint8_t typeIndex = 0; typeIndex < Names::getTypeNameCount(); ++typeIndex)
+                {
                     rows.push_back(Names::getTypeName(typeIndex));
-                out.push_back({"types", rows});
+                }
+                nameTables.push_back({"types", rows});
                 rows.clear();
                 // Form names: English is the curated table and the other eight come from PKHeX,
                 // so this checks the DISPATCHER is wired -- a getFormName that forgot to consult
                 // the language would return the English name for everyone and fail the
                 // differs-from-English check below.
-                for (uint16_t species = 1; species <= Pokemon::PERSONAL_MAX_SPECIES; ++species)
-                    for (uint8_t form = 0; form < 4; ++form)
-                        rows.push_back(Names::getFormName(species, form));
-                out.push_back({"forms", rows});
+                for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
+                {
+                    for (uint8_t formId = 0; formId < 4; ++formId)
+                    {
+                        rows.push_back(Names::getFormName(speciesId, formId));
+                    }
+                }
+                nameTables.push_back({"forms", rows});
                 rows.clear();
                 // Locations go through the same dispatcher the details view uses.
-                for (uint16_t location = 1; location < 200; ++location)
-                    rows.push_back(Names::getMetLocationName(static_cast<uint8_t>(Enums::GameVersion::SL), location));
-                out.push_back({"locations", rows});
+                for (uint16_t locationId = 1; locationId < 200; ++locationId)
+                {
+                    rows.push_back(Names::getMetLocationName(static_cast<uint8_t>(Enums::GameVersion::SL), locationId));
+                }
+                nameTables.push_back({"locations", rows});
             };
 
             std::vector<NameTable> englishTables;
@@ -194,37 +218,39 @@ namespace Test
 
             for (size_t languageIndex = 0; languageIndex < Names::LANGUAGE_COUNT; ++languageIndex)
             {
-                const std::string label = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
+                const std::string languageLabel = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
                 Names::setDisplayLanguage(languageIndex);
-                context.check(Names::displayLanguageIndex() == languageIndex, "the display language did not take", label);
+                context.check(Names::displayLanguageIndex() == languageIndex, "the display language did not take", languageLabel);
 
                 std::vector<NameTable> tables;
                 snapshot(tables);
                 for (size_t tableIndex = 0; tableIndex < tables.size(); ++tableIndex)
                 {
-                    const std::string what = label + " table=" + tables[tableIndex].first;
+                    const std::string tableLabel = languageLabel + " table=" + tables[tableIndex].first;
                     const std::vector<std::string> &rows = tables[tableIndex].second;
                     const std::vector<std::string> &englishRows = englishTables[tableIndex].second;
-                    if (!context.check(rows.size() == englishRows.size(), "a language returned a different number of names", what))
-                        continue;
-                    size_t differences = 0, missing = 0;
-                    for (size_t index = 0; index < rows.size(); ++index)
+                    if (!context.check(rows.size() == englishRows.size(), "a language returned a different number of names", tableLabel)) continue;
+                    size_t differenceCount = 0;
+                    size_t missingCount = 0;
+                    for (size_t rowIndex = 0; rowIndex < rows.size(); ++rowIndex)
                     {
                         // An empty string is legitimate: the location tables emit "" for a blank
                         // slot and for PKHeX's em-dash "no location" sentinel, so a run of ids is
                         // correctly nameless in EVERY language, English included. The invariant
                         // that holds is relative -- wherever English has a name, so must the rest.
-                        if (englishRows[index].empty())
-                            continue;
-                        if (rows[index].empty())
-                            ++missing;
-                        else if (rows[index] != englishRows[index])
-                            ++differences;
+                        if (englishRows[rowIndex].empty()) continue;
+                        if (rows[rowIndex].empty())
+                        {
+                            ++missingCount;
+                        }
+                        else if (rows[rowIndex] != englishRows[rowIndex])
+                        {
+                            ++differenceCount;
+                        }
                     }
-                    context.check(missing == 0, "a name is missing from a language's table", what + " missing=" + std::to_string(missing));
-                    if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH)
-                        continue;
-                    context.check(differences > 0, "a table is identical to English in another language -- that getter is probably not indexing by language", what);
+                    context.check(missingCount == 0, "a name is missing from a language's table", tableLabel + " missing=" + std::to_string(missingCount));
+                    if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH) continue;
+                    context.check(differenceCount > 0, "a table is identical to English in another language -- that getter is probably not indexing by language", tableLabel);
                 }
             }
             // FORM NAMES NEED THEIR OWN CHECK, and the reason is worth keeping. The table-wide
@@ -241,28 +267,29 @@ namespace Test
                 // English deliberately comes from the curated switch, not the table
                 if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH) continue;
                 Names::setDisplayLanguage(languageIndex);
-                const std::string label = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
-                size_t checkedForms = 0, wrongForms = 0;
-                for (uint16_t species = 1; species <= Pokemon::PERSONAL_MAX_SPECIES; ++species)
+                const std::string languageLabel = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
+                size_t checkedFormCount = 0;
+                size_t wrongFormCount = 0;
+                for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
                 {
-                    for (uint8_t form = 0; form < 4; ++form)
+                    for (uint8_t formId = 0; formId < 4; ++formId)
                     {
-                        const char *localized = Names::getFormNameLocalized(species, form, languageIndex);
-                        if (localized == nullptr || localized[0] == '\0')
-                            continue;
+                        const char *localizedFormName = Names::getFormNameLocalized(speciesId, formId, languageIndex);
+                        if (localizedFormName == nullptr || localizedFormName[0] == '\0') continue;
                         // Only where English names the form at all -- getFormName gates on that.
                         Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
-                        const std::string englishForm = Names::getFormName(species, form);
+                        const std::string englishFormName = Names::getFormName(speciesId, formId);
                         Names::setDisplayLanguage(languageIndex);
-                        if (englishForm.empty())
-                            continue;
-                        ++checkedForms;
-                        if (std::string(Names::getFormName(species, form)) != localized)
-                            ++wrongForms;
+                        if (englishFormName.empty()) continue;
+                        ++checkedFormCount;
+                        if (std::string(Names::getFormName(speciesId, formId)) != localizedFormName)
+                        {
+                            ++wrongFormCount;
+                        }
                     }
                 }
-                context.check(checkedForms > 0, "no localized form names were reachable at all", label);
-                context.check(wrongForms == 0, "getFormName ignored the localized form table", label + " wrong=" + std::to_string(wrongForms) + " of " + std::to_string(checkedForms));
+                context.check(checkedFormCount > 0, "no localized form names were reachable at all", languageLabel);
+                context.check(wrongFormCount == 0, "getFormName ignored the localized form table", languageLabel + " wrong=" + std::to_string(wrongFormCount) + " of " + std::to_string(checkedFormCount));
             }
 
             // getDisplayName's composition. English keeps the natural prefix ("Alolan Vulpix");
@@ -271,19 +298,23 @@ namespace Test
             // on getDisplayName. A form English does not name must stay a bare species name in
             // EVERY language, which is the part that would regress silently.
             {
-                const std::string base = "Vulpix";
+                const std::string speciesName = "Vulpix";
                 for (size_t languageIndex = 0; languageIndex < Names::LANGUAGE_COUNT; ++languageIndex)
                 {
                     Names::setDisplayLanguage(languageIndex);
-                    const std::string label = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
+                    const std::string languageLabel = std::string("language=") + Names::nameLanguageSuffix(languageIndex);
                     const std::string formName = Names::getFormName(37, 1);   // Alolan Vulpix
-                    const std::string composed = Names::getDisplayName(37, 1, base);
+                    const std::string displayName = Names::getDisplayName(37, 1, speciesName);
                     if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH)
-                        context.check(composed == formName + " " + base, "English display name is not the natural prefix form", label + " got=" + composed);
+                    {
+                        context.check(displayName == formName + " " + speciesName, "English display name is not the natural prefix form", languageLabel + " got=" + displayName);
+                    }
                     else
-                        context.check(composed == base + " (" + formName + ")", "a non-English display name is not the parenthetical form", label + " got=" + composed);
+                    {
+                        context.check(displayName == speciesName + " (" + formName + ")", "a non-English display name is not the parenthetical form", languageLabel + " got=" + displayName);
+                    }
                     // Pikachu form 0 is unnamed, so it composes to nothing in any language.
-                    context.check(Names::getDisplayName(25, 0, base) == base, "an unnamed form still altered the display name", label + " got=" + Names::getDisplayName(25, 0, base));
+                    context.check(Names::getDisplayName(25, 0, speciesName) == speciesName, "an unnamed form still altered the display name", languageLabel + " got=" + Names::getDisplayName(25, 0, speciesName));
                 }
             }
 
@@ -292,38 +323,39 @@ namespace Test
             // flag bits, while the Gen 3 set COMPOSES its contest names ("Cool Ribbon Hyper") and
             // so exercises a different path through the same lookup.
             {
-                uint8_t allSet[0x50];
-                std::memset(allSet, 0xFF, sizeof(allSet));
+                uint8_t allRibbonBytes[0x50];
+                std::memset(allRibbonBytes, 0xFF, sizeof(allRibbonBytes));
                 const Enums::GameVersion ribbonGroups[] = {
                     Enums::GameVersion::SWSH, Enums::GameVersion::GG, Enums::GameVersion::FRLG};
                 for (Enums::GameVersion group : ribbonGroups)
                 {
                     Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
-                    const std::vector<std::string> englishRibbons = Names::getMonRibbons(allSet, group);
+                    const std::vector<std::string> englishRibbons = Names::getMonRibbons(allRibbonBytes, group);
                     context.check(!englishRibbons.empty(), "no ribbons decoded for a group", Enums::getGameVersionName(group));
                     for (size_t languageIndex = 0; languageIndex < Names::LANGUAGE_COUNT; ++languageIndex)
                     {
-                        if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH)
-                            continue;
+                        if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH) continue;
                         Names::setDisplayLanguage(languageIndex);
-                        const std::vector<std::string> ribbons = Names::getMonRibbons(allSet, group);
-                        const std::string label = Enums::getGameVersionName(group) + " language=" + Names::nameLanguageSuffix(languageIndex);
-                        if (!context.check(ribbons.size() == englishRibbons.size(), "a language decoded a different number of ribbons", label))
-                            continue;
-                        size_t untranslated = 0, missingRow = 0;
-                        for (size_t index = 0; index < ribbons.size(); ++index)
+                        const std::vector<std::string> localizedRibbons = Names::getMonRibbons(allRibbonBytes, group);
+                        const std::string languageLabel = Enums::getGameVersionName(group) + " language=" + Names::nameLanguageSuffix(languageIndex);
+                        if (!context.check(localizedRibbons.size() == englishRibbons.size(), "a language decoded a different number of ribbons", languageLabel)) continue;
+                        size_t untranslatedCount = 0;
+                        size_t missingRowCount = 0;
+                        for (size_t ribbonIndex = 0; ribbonIndex < localizedRibbons.size(); ++ribbonIndex)
                         {
-                            const char *expected = Names::getRibbonNameLocalized(englishRibbons[index].c_str(), languageIndex);
-                            if (expected == nullptr || expected[0] == '\0')
+                            const char *expectedRibbonName = Names::getRibbonNameLocalized(englishRibbons[ribbonIndex].c_str(), languageIndex);
+                            if (expectedRibbonName == nullptr || expectedRibbonName[0] == '\0')
                             {
-                                ++missingRow;   // every producible name should have a row
+                                ++missingRowCount;   // every producible name should have a row
                                 continue;
                             }
-                            if (ribbons[index] != expected)
-                                ++untranslated;
+                            if (localizedRibbons[ribbonIndex] != expectedRibbonName)
+                            {
+                                ++untranslatedCount;
+                            }
                         }
-                        context.check(missingRow == 0, "a ribbon PKSE can show has no localized row", label + " missing=" + std::to_string(missingRow));
-                        context.check(untranslated == 0, "getMonRibbons ignored the localized ribbon table", label + " wrong=" + std::to_string(untranslated) + " of " + std::to_string(ribbons.size()));
+                        context.check(missingRowCount == 0, "a ribbon PKSE can show has no localized row", languageLabel + " missing=" + std::to_string(missingRowCount));
+                        context.check(untranslatedCount == 0, "getMonRibbons ignored the localized ribbon table", languageLabel + " wrong=" + std::to_string(untranslatedCount) + " of " + std::to_string(localizedRibbons.size()));
                     }
                 }
             }
@@ -336,141 +368,146 @@ namespace Test
 
         void checkSpeciesNames(Context &context)
         {
-            std::set<std::string> seen;
-            for (uint16_t sIndex = 1; sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
+            std::set<std::string> seenSpeciesNames;
+            for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
             {
-                const char *count = Trainer::getSpeciesName(sIndex);
-                if (!context.check(named(count), "species has no name", "species=" + std::to_string(sIndex)))
-                    continue;
+                const char *speciesName = Trainer::getSpeciesName(speciesId);
+                if (!context.check(isNamed(speciesName), "species has no name", "species=" + std::to_string(speciesId))) continue;
                 // "Unknown" is the table's own out-of-range sentinel, and the legality checker tests
                 // for it by value. A real species answering with it is a hole in the table.
-                context.check(std::string(count) != "Unknown", "species names as the unknown sentinel", "species=" + std::to_string(sIndex));
+                context.check(std::string(speciesName) != "Unknown", "species names as the unknown sentinel", "species=" + std::to_string(speciesId));
                 // Two species sharing a name means one row was pasted over another; the UI then shows
                 // the same name for two different Pokemon and nothing else notices.
-                context.check(seen.insert(count).second, "two species share a name", sp(sIndex));
+                context.check(seenSpeciesNames.insert(speciesName).second, "two species share a name", speciesLabel(speciesId));
             }
         }
 
         void checkMoveNames(Context &context)
         {
-            for (uint16_t mIndex = 1; mIndex <= Pokemon::LEARN_MAX_MOVE_ID; ++mIndex)
+            for (uint16_t moveId = 1; moveId <= Pokemon::LEARN_MAX_MOVE_ID; ++moveId)
             {
                 // "-" is what getMoveName returns past the end of its table, so a table shorter than
                 // LEARN_MAX_MOVE_ID fails here instead of reading as named.
-                const char *moveName = Names::getMoveName(mIndex);
-                context.check(named(moveName) && std::string(moveName) != "-", "move has no name", "move=" + std::to_string(mIndex));
+                const char *moveName = Names::getMoveName(moveId);
+                context.check(isNamed(moveName) && std::string(moveName) != "-", "move has no name", "move=" + std::to_string(moveId));
             }
         }
 
         void checkMiscNames(Context &context)
         {
             for (uint8_t typeIndex = 0; typeIndex < Names::getTypeNameCount(); ++typeIndex)
-                context.check(named(Names::getTypeName(typeIndex)), "type has no name", "type=" + std::to_string(typeIndex));
-
-            for (uint8_t nIndex = 0; nIndex < 25; ++nIndex)
             {
-                const char *name = Trainer::getNatureName(nIndex);
-                context.check(named(name) && std::string(name) != "Unknown", "nature has no name", "nature=" + std::to_string(nIndex));
+                context.check(isNamed(Names::getTypeName(typeIndex)), "type has no name", "type=" + std::to_string(typeIndex));
+            }
+
+            for (uint8_t natureId = 0; natureId < 25; ++natureId)
+            {
+                const char *natureName = Trainer::getNatureName(natureId);
+                context.check(isNamed(natureName) && std::string(natureName) != "Unknown", "nature has no name", "nature=" + std::to_string(natureId));
             }
 
             // Abilities are swept through the personal table rather than over the raw id space,
             // because the id space is not the interesting set: an ability that no species has is
             // unreachable, while an ability a species DOES have that names as "Unknown" is an
             // ability the details view cannot show.
-            std::set<uint16_t> abilities;
-            for (uint16_t sIndex = 1; sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
+            std::set<uint16_t> abilityIds;
+            for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
             {
-                const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(sIndex, 0);
-                abilities.insert(pi.ability1);
-                abilities.insert(pi.ability2);
-                abilities.insert(pi.abilityHidden);
+                const Pokemon::PersonalInfo &personalInfo = Pokemon::getPersonalInfo(speciesId, 0);
+                abilityIds.insert(personalInfo.ability1);
+                abilityIds.insert(personalInfo.ability2);
+                abilityIds.insert(personalInfo.abilityHidden);
             }
-            abilities.erase(0);
-            for (uint16_t a : abilities)
+            abilityIds.erase(0);
+            for (uint16_t abilityId : abilityIds)
             {
-                const char *name = Trainer::getAbilityName(a);
-                context.check(named(name) && std::string(name) != "Unknown", "ability used by a species has no name", "ability=" + std::to_string(a));
+                const char *abilityName = Trainer::getAbilityName(abilityId);
+                context.check(isNamed(abilityName) && std::string(abilityName) != "Unknown", "ability used by a species has no name", "ability=" + std::to_string(abilityId));
             }
-            context.note("abilities referenced by the personal table", "count=" + std::to_string(abilities.size()));
+            context.note("abilities referenced by the personal table", "count=" + std::to_string(abilityIds.size()));
         }
 
         void checkExperience(Context &context)
         {
             // Six growth rates. The table is shared all the way back to Gen 1 (the rates were
             // checked and are identical for all 151), so a break here is a break everywhere.
-            for (uint8_t rate = 0; rate < 6; ++rate)
+            for (uint8_t growthRate = 0; growthRate < 6; ++growthRate)
             {
                 uint32_t previousExp = 0;
-                for (uint8_t levelValue = 1; levelValue <= 100; ++levelValue)
+                for (uint8_t level = 1; level <= 100; ++level)
                 {
-                    const uint32_t need = Pokemon::getExpForLevel(levelValue, rate);
-                    if (levelValue > 1)
+                    const uint32_t levelExp = Pokemon::getExpForLevel(level, growthRate);
+                    if (level > 1)
                     {
-                        context.check(need > previousExp, "EXP for a level is not above the previousExpious level's", "rate=" + std::to_string(rate) + " level=" + std::to_string(levelValue) + " exp=" + std::to_string(need) + " previousExp=" + std::to_string(previousExp));
+                        context.check(levelExp > previousExp, "EXP for a level is not above the previous level's", "rate=" + std::to_string(growthRate) + " level=" + std::to_string(level) + " exp=" + std::to_string(levelExp) + " previousExp=" + std::to_string(previousExp));
                     }
-                    previousExp = need;
+                    previousExp = levelExp;
                     // The round trip is what everything that DERIVES level from EXP depends on --
                     // PA8, PB7 and PK3 all do, and a level that is one off changes every stat.
-                    context.check(Pokemon::getLevelFromExp(need, rate) == levelValue, "level derived from a level's own EXP is wrong", "rate=" + std::to_string(rate) + " level=" + std::to_string(levelValue) + " exp=" + std::to_string(need) + " got=" + std::to_string(Pokemon::getLevelFromExp(need, rate)));
+                    context.check(Pokemon::getLevelFromExp(levelExp, growthRate) == level, "level derived from a level's own EXP is wrong", "rate=" + std::to_string(growthRate) + " level=" + std::to_string(level) + " exp=" + std::to_string(levelExp) + " got=" + std::to_string(Pokemon::getLevelFromExp(levelExp, growthRate)));
                 }
             }
-            for (uint16_t sIndex = 1; sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
-                context.check(Pokemon::getGrowthRate(sIndex) < 6, "species has an out-of-range growth rate", sp(sIndex) + " rate=" + std::to_string(Pokemon::getGrowthRate(sIndex)));
+            for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
+            {
+                context.check(Pokemon::getGrowthRate(speciesId) < 6, "species has an out-of-range growth rate", speciesLabel(speciesId) + " rate=" + std::to_string(Pokemon::getGrowthRate(speciesId)));
+            }
         }
 
-        void checkPersonal(Context &context, uint16_t first, uint16_t last)
+        void checkPersonal(Context &context, uint16_t firstSpeciesId, uint16_t lastSpeciesId)
         {
-            for (uint16_t sIndex = first; sIndex <= last && sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
+            for (uint16_t speciesId = firstSpeciesId; speciesId <= lastSpeciesId && speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
             {
-                const Pokemon::PersonalInfo &base = Pokemon::getPersonalInfo(sIndex, 0);
+                const Pokemon::PersonalInfo &basePersonalInfo = Pokemon::getPersonalInfo(speciesId, 0);
 
-                if (!context.check(base.formCount >= 1, "species has no forms at all", sp(sIndex)))
-                    continue;
+                if (!context.check(basePersonalInfo.formCount >= 1, "species has no forms at all", speciesLabel(speciesId))) continue;
 
                 // formIndex is the redirection into the alternate-form half of the flat table.
                 // formCount > 1 with formIndex == 0 means every alternate form silently resolves
                 // back to form 0 -- same stats, same abilities, same types, no error anywhere.
-                context.check((base.formCount > 1) == (base.formIndex != 0), "form count and form-table index disagree", sp(sIndex) + " formCount=" + std::to_string(base.formCount) + " formIndex=" + std::to_string(base.formIndex));
+                context.check((basePersonalInfo.formCount > 1) == (basePersonalInfo.formIndex != 0), "form count and form-table index disagree", speciesLabel(speciesId) + " formCount=" + std::to_string(basePersonalInfo.formCount) + " formIndex=" + std::to_string(basePersonalInfo.formIndex));
 
-                context.check(canonicalGenderRatio(base.genderRatio), "gender ratio is not a canonical value", sp(sIndex) + " ratio=" + std::to_string(base.genderRatio));
+                context.check(isCanonicalGenderRatio(basePersonalInfo.genderRatio), "gender ratio is not a canonical value", speciesLabel(speciesId) + " ratio=" + std::to_string(basePersonalInfo.genderRatio));
 
-                for (uint8_t formIndex = 0; formIndex < base.formCount; ++formIndex)
+                for (uint8_t formId = 0; formId < basePersonalInfo.formCount; ++formId)
                 {
-                    const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(sIndex, formIndex);
-                    const std::string where = sp(sIndex) + " form=" + std::to_string(formIndex);
+                    const Pokemon::PersonalInfo &formPersonalInfo = Pokemon::getPersonalInfo(speciesId, formId);
+                    const std::string where = speciesLabel(speciesId) + " form=" + std::to_string(formId);
 
-                    context.check(pi.type1 < Names::getTypeCount(), "form has an out-of-range primary type", where + " type1=" + std::to_string(pi.type1));
-                    context.check(pi.type2 < Names::getTypeCount() || pi.type2 == Pokemon::TYPE_NONE, "form has an out-of-range secondary type", where + " type2=" + std::to_string(pi.type2));
-                    context.check(pi.ability1 != 0, "form has no first ability", where);
+                    context.check(formPersonalInfo.type1 < Names::getTypeCount(), "form has an out-of-range primary type", where + " type1=" + std::to_string(formPersonalInfo.type1));
+                    context.check(formPersonalInfo.type2 < Names::getTypeCount() || formPersonalInfo.type2 == Pokemon::TYPE_NONE, "form has an out-of-range secondary type", where + " type2=" + std::to_string(formPersonalInfo.type2));
+                    context.check(formPersonalInfo.ability1 != 0, "form has no first ability", where);
                     // Battle-only forms (Mega, Ash-Greninja, Ultra Necrozma) and the Gen 7 totem forms
                     // exist only in battle or on NPCs, so no game can hold one -- every other form must
                     // be in at least one.
-                    if (!Pokemon::isBattleOnlyForm(sIndex, formIndex) && !isTotemForm(sIndex, formIndex))
-                        context.check(pi.presence != 0, "form is present in no game at all", where);
+                    if (!Pokemon::isBattleOnlyForm(speciesId, formId) && !isTotemForm(speciesId, formId))
+                    {
+                        context.check(formPersonalInfo.presence != 0, "form is present in no game at all", where);
+                    }
                 }
             }
         }
 
         void checkFormNames(Context &context)
         {
-            int unnamed = 0;
-            for (uint16_t sIndex = 1; sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
+            int unnamedFormCount = 0;
+            for (uint16_t speciesId = 1; speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
             {
-                const Pokemon::PersonalInfo &base = Pokemon::getPersonalInfo(sIndex, 0);
-                if (base.formCount <= 1)
-                    continue;
-                for (uint8_t formIndex = 1; formIndex < base.formCount; ++formIndex)
+                const Pokemon::PersonalInfo &basePersonalInfo = Pokemon::getPersonalInfo(speciesId, 0);
+                if (basePersonalInfo.formCount <= 1) continue;
+                for (uint8_t formId = 1; formId < basePersonalInfo.formCount; ++formId)
                 {
                     // An unnamed alternate form displays EXACTLY like form 0 -- getDisplayName falls
                     // through to the bare species name -- so a wrong form index looks like nothing
                     // at all. This is how Castform, Cramorant and Eternatus stayed unnamed.
                     // A failure: every alternate form in the table has a name today, so a new one
                     // without is the same bug again.
-                    if (!context.check(named(Names::getFormName(sIndex, formIndex)), "alternate form has no name", sp(sIndex) + " form=" + std::to_string(formIndex) + " formCount=" + std::to_string(base.formCount)))
-                        ++unnamed;
+                    if (!context.check(isNamed(Names::getFormName(speciesId, formId)), "alternate form has no name", speciesLabel(speciesId) + " form=" + std::to_string(formId) + " formCount=" + std::to_string(basePersonalInfo.formCount)))
+                    {
+                        ++unnamedFormCount;
+                    }
                 }
             }
-            context.note("alternate forms with no name", "count=" + std::to_string(unnamed));
+            context.note("alternate forms with no name", "count=" + std::to_string(unnamedFormCount));
         }
 
         void checkGen1Tables(Context &context)
@@ -479,59 +516,50 @@ namespace Test
             // data and need no save, so they get verified even on a console that has no .sav to
             // point at -- which is the common case.
             using namespace Pokemon;
-            for (uint16_t sIndex = 1; sIndex <= MAX_SPECIES_GEN1; ++sIndex)
+            for (uint16_t speciesId = 1; speciesId <= MAX_SPECIES_GEN1; ++speciesId)
             {
-                const uint8_t internal = nationalToG1(sIndex);
-                if (!context.check(internal != 0, "Gen 1 species has no internal index", sp(sIndex)))
-                    continue;
+                const uint8_t gen1SpeciesIndex = nationalToG1(speciesId);
+                if (!context.check(gen1SpeciesIndex != 0, "Gen 1 species has no internal index", speciesLabel(speciesId))) continue;
                 // The Gen 1 species index is arbitrary (Bulbasaur 0x99, Ivysaur 0x09), so a wrong
                 // one is a plausible number that reads out as a different Pokemon.
-                context.check(g1ToNational(internal) == sIndex, "Gen 1 species index does not round trip", sp(sIndex) + " internal=" + std::to_string(internal) + " back=" + std::to_string(g1ToNational(internal)));
+                context.check(g1ToNational(gen1SpeciesIndex) == speciesId, "Gen 1 species index does not round trip", speciesLabel(speciesId) + " internal=" + std::to_string(gen1SpeciesIndex) + " back=" + std::to_string(g1ToNational(gen1SpeciesIndex)));
 
-                const PersonalRecord &bs = getPersonalInfo1RBY(sIndex, 0);
-                if (!context.check(bs.hp != 0, "Gen 1 species has no base-stat row", sp(sIndex)))
-                    continue;
-                context.check(bs.hp > 0 && bs.atk > 0 && bs.spa > 0, "Gen 1 base stats are zero", sp(sIndex));
+                const PersonalRecord &baseStats = getPersonalInfo1RBY(speciesId, 0);
+                if (!context.check(baseStats.hp != 0, "Gen 1 species has no base-stat row", speciesLabel(speciesId))) continue;
+                context.check(baseStats.hp > 0 && baseStats.atk > 0 && baseStats.spa > 0, "Gen 1 base stats are zero", speciesLabel(speciesId));
                 // Gen 1's ROM type ids are its own (Bug 7, Ghost 8, specials at 20-26) and are
                 // converted at generation time; a type that will not round trip means the two
                 // numberings disagree, which draws the wrong type icon.
-                context.check(bs.type1 != 255, "Gen 1 types are unmapped", sp(sIndex));
-                context.check(g1TypeToPKSE(pkseTypeToG1(bs.type1)) == bs.type1, "Gen 1 primary type does not round trip", sp(sIndex));
+                context.check(baseStats.type1 != 255, "Gen 1 types are unmapped", speciesLabel(speciesId));
+                context.check(g1TypeToPKSE(pkseTypeToG1(baseStats.type1)) == baseStats.type1, "Gen 1 primary type does not round trip", speciesLabel(speciesId));
                 // A MONO-TYPED SPECIES REPORTS TYPE_NONE IN SLOT 2, not a repeat of slot 1 -- the
                 // table's convention, and what stops the badge row drawing "Normal Normal". The ROM
                 // stores the id twice and Pokemon1RBY::setSpecies re-expands the sentinel when it
                 // writes a record, so there is nothing here to round trip.
-                if (bs.type2 != Pokemon::PERSONAL_TYPE_NONE)
+                if (baseStats.type2 != Pokemon::PERSONAL_TYPE_NONE)
                 {
-                    context.check(g1TypeToPKSE(pkseTypeToG1(bs.type2)) == bs.type2, "Gen 1 secondary type does not round trip", sp(sIndex));
+                    context.check(g1TypeToPKSE(pkseTypeToG1(baseStats.type2)) == baseStats.type2, "Gen 1 secondary type does not round trip", speciesLabel(speciesId));
                 }
-                context.check(canonicalGenderRatio(bs.genderRatio), "Gen 1 substituted gender ratio is not canonical", sp(sIndex) + " ratio=" + std::to_string(bs.genderRatio));
+                context.check(isCanonicalGenderRatio(baseStats.genderRatio), "Gen 1 substituted gender ratio is not canonical", speciesLabel(speciesId) + " ratio=" + std::to_string(baseStats.genderRatio));
                 // Growth rates were checked to be identical to Gen 3, which is why Experience.cpp is
                 // reused. If that ever stops being true this is where it shows up.
-                context.check(bs.growthRate == getGrowthRate(sIndex), "Gen 1 growth rate differs from the shared table", sp(sIndex) + " gen1=" + std::to_string(bs.growthRate) + " shared=" + std::to_string(getGrowthRate(sIndex)));
+                context.check(baseStats.growthRate == getGrowthRate(speciesId), "Gen 1 growth rate differs from the shared table", speciesLabel(speciesId) + " gen1=" + std::to_string(baseStats.growthRate) + " shared=" + std::to_string(getGrowthRate(speciesId)));
             }
 
             context.check(g1TypeToPKSE(6) == 255, "Gen 1 ROM type 6 (the unused Bird type) maps to a real type");
 
-            for (uint16_t mIndex = 1; mIndex <= MAX_MOVE_GEN1; ++mIndex)
+            for (uint16_t moveId = 1; moveId <= MAX_MOVE_GEN1; ++moveId)
             {
-                const uint8_t powerPoints = getMovePPGen1(mIndex);
-                context.check(powerPoints > 0 && powerPoints <= 40, "Gen 1 move PP out of range", "move=" + std::to_string(mIndex) + " pp=" + std::to_string(powerPoints));
+                const uint8_t powerPoints = getMovePPGen1(moveId);
+                context.check(powerPoints > 0 && powerPoints <= 40, "Gen 1 move PP out of range", "move=" + std::to_string(moveId) + " pp=" + std::to_string(powerPoints));
                 // The record's PP field is six bits. Three PP Ups must still fit it.
-                context.check(getMovePPGen1WithUps(mIndex, 3) <= 63, "Gen 1 PP with three PP Ups overflows six bits", "move=" + std::to_string(mIndex) + " pp=" + std::to_string(getMovePPGen1WithUps(mIndex, 3)));
+                context.check(getMovePPGen1WithUps(moveId, 3) <= 63, "Gen 1 PP with three PP Ups overflows six bits", "move=" + std::to_string(moveId) + " pp=" + std::to_string(getMovePPGen1WithUps(moveId, 3)));
             }
         }
     }
 
     namespace
     {
-        /// Egg SOURCES must be reachable, not merely nameable.
-        ///
-        /// "in BDSP, egg met location is 'Nursery Couple' and I cannot find that in the list" -- and
-        /// the reporter was right. The name was in the table all along, so a hatched egg DISPLAYED
-        /// correctly; what was missing was any way to select it, because the egg picker enumerated
-        /// bank 0 (places) and egg sources live in bank 6 (people). This checks the property that
-        /// was actually broken: every origin that names an egg source can also offer it.
         /// Every save-format group's ENTITY capabilities, checked against the buffer itself.
         ///
         /// The capability predicates (hasHandler, hasNature, hasBall, ...) exist because a getter
@@ -556,8 +584,7 @@ namespace Test
                 const size_t recordSize = Trainer::Bank::recordSizeFor(group);
                 std::vector<std::byte> record(recordSize, std::byte{0});
                 auto entity = Trainer::Bank::makePokemon(group, record);
-                if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel))
-                    continue;
+                if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel)) continue;
 
                 // Terastallization is Scarlet/Violet's alone: PK9 is the only record PKHeX gives an
                 // ITeraType, and Legends: Z-A shares the entity layout without sharing the mechanic.
@@ -571,8 +598,8 @@ namespace Test
                 context.check(!bankStamp.empty(), "a pokemon has no origin stamp at all", groupLabel);
                 if (!entity->hasOriginGame())
                 {
-                    const char *expected = (group == Enums::GameVersion::GSC) ? "Gen 2" : "Gen 1";
-                    context.check(bankStamp == expected, "a versionless format's origin stamp names the wrong generation", groupLabel + " stamp=\"" + bankStamp + "\" expected=\"" + expected + "\"");
+                    const char *expectedStamp = (group == Enums::GameVersion::GSC) ? "Gen 2" : "Gen 1";
+                    context.check(bankStamp == expectedStamp, "a versionless format's origin stamp names the wrong generation", groupLabel + " stamp=\"" + bankStamp + "\" expected=\"" + expectedStamp + "\"");
                 }
 
                 // THE GAMES STAMP NOTHING BEFORE THE KALOS PENTAGON, so Gen 3, 4 and 5 must resolve
@@ -590,8 +617,13 @@ namespace Test
                     // pokemon's FORMAT and its ORIGIN disagree: a Virtual Console, GO or Let's Go
                     // record lives in a Gen 7 format, so testing the generation first would stamp
                     // an Alola clover on every transferred Red/Blue pokemon.
-                    struct MarkCase { uint8_t version; Trainer::OriginMark mark; const char *game; };
-                    static const MarkCase cases[] = {
+                    struct MarkCase
+                    {
+                        uint8_t version;
+                        Trainer::OriginMark mark;
+                        const char *game;
+                    };
+                    static const MarkCase markCases[] = {
                         {2, Trainer::OriginMark::None, "Ruby"},
                         {4, Trainer::OriginMark::None, "FireRed"},
                         {10, Trainer::OriginMark::None, "Diamond"},
@@ -610,15 +642,15 @@ namespace Test
                         {50, Trainer::OriginMark::Gen9Paldea, "Scarlet"},
                         {52, Trainer::OriginMark::Gen9ZA, "Legends Z-A"},
                     };
-                    const uint8_t restoreVersion = entity->originGame();
-                    for (const MarkCase &markCase : cases)
+                    const uint8_t originalOriginGame = entity->originGame();
+                    for (const MarkCase &markCase : markCases)
                     {
                         entity->setOriginGame(markCase.version);
                         // this format cannot hold that version; not this test's business
                         if (entity->originGame() != markCase.version) continue;
                         context.check(Trainer::originMarkFor(*entity) == markCase.mark, "a pokemon's origin marking does not match the game it came from", groupLabel + " version=" + std::to_string(markCase.version) + " (" + markCase.game + ")");
                     }
-                    entity->setOriginGame(restoreVersion);
+                    entity->setOriginGame(originalOriginGame);
                 }
 
                 const std::u16string handlerProbe = u"HT";
@@ -647,6 +679,13 @@ namespace Test
             }
         }
 
+        /// Egg SOURCES must be reachable, not merely nameable.
+        ///
+        /// "in BDSP, egg met location is 'Nursery Couple' and I cannot find that in the list" -- and
+        /// the reporter was right. The name was in the table all along, so a hatched egg DISPLAYED
+        /// correctly; what was missing was any way to select it, because the egg picker enumerated
+        /// bank 0 (places) and egg sources live in bank 6 (people). This checks the property that
+        /// was actually broken: every origin that names an egg source can also offer it.
         void checkEggSourceLocations(Context &context)
         {
             // The origins with a bank-6 table. Gen 3, Gen 4 (which banks its ids differently) and
@@ -656,54 +695,38 @@ namespace Test
             for (uint8_t originVersion : originsWithEggSources)
             {
                 const Names::LocationTable eggSources = Names::getEggSourceLocationTable(originVersion);
-                if (!context.check(eggSources.count > 0, "an origin that should name egg sources has none", "origin=" + std::to_string(static_cast<int>(originVersion))))
-                    continue;
-                int named = 0;
-                for (uint16_t index = 0; index < eggSources.count; ++index)
+                if (!context.check(eggSources.count > 0, "an origin that should name egg sources has none", "origin=" + std::to_string(static_cast<int>(originVersion)))) continue;
+                int namedSourceCount = 0;
+                for (uint16_t sourceIndex = 0; sourceIndex < eggSources.count; ++sourceIndex)
                 {
-                    if (eggSources.names[index] == nullptr || eggSources.names[index][0] == '\0')
-                        continue;
-                    ++named;
+                    if (eggSources.names[sourceIndex] == nullptr || eggSources.names[sourceIndex][0] == '\0') continue;
+                    ++namedSourceCount;
                     // The id the picker offers must resolve back to the same name the picker drew,
                     // or selecting a row writes a value that displays as something else.
-                    const uint16_t locationId = static_cast<uint16_t>(Names::EGG_SOURCE_LOCATION_BASE + index);
-                    const char *resolved = Names::getMetLocationName(originVersion, locationId);
-                    context.check(resolved != nullptr && std::string(resolved) == eggSources.names[index], "an egg-source id does not resolve back to its own name", "origin=" + std::to_string(static_cast<int>(originVersion)) + " id=" + std::to_string(locationId) + " table=\"" + eggSources.names[index] + "\"" + " resolved=\"" + (resolved ? resolved : "") + "\"");
+                    const uint16_t locationId = static_cast<uint16_t>(Names::EGG_SOURCE_LOCATION_BASE + sourceIndex);
+                    const char *resolvedName = Names::getMetLocationName(originVersion, locationId);
+                    context.check(resolvedName != nullptr && std::string(resolvedName) == eggSources.names[sourceIndex], "an egg-source id does not resolve back to its own name", "origin=" + std::to_string(static_cast<int>(originVersion)) + " id=" + std::to_string(locationId) + " table=\"" + eggSources.names[sourceIndex] + "\"" + " resolved=\"" + (resolvedName ? resolvedName : "") + "\"");
                 }
-                context.check(named > 0, "an origin's egg-source table is entirely blank", "origin=" + std::to_string(static_cast<int>(originVersion)));
+                context.check(namedSourceCount > 0, "an origin's egg-source table is entirely blank", "origin=" + std::to_string(static_cast<int>(originVersion)));
             }
 
-            // The exact case from the issue, pinned so it cannot regress quietly.
+            // The exact case that was reported, pinned so it cannot regress quietly.
             for (uint8_t brilliantDiamondOrShiningPearl : {48, 49})
             {
                 const Names::LocationTable eggSources = Names::getEggSourceLocationTable(static_cast<uint8_t>(brilliantDiamondOrShiningPearl));
                 bool offersNurseryCouple = false;
-                for (uint16_t index = 0; index < eggSources.count; ++index)
-                    if (eggSources.names[index] && std::string(eggSources.names[index]) == "Nursery Couple")
+                for (uint16_t sourceIndex = 0; sourceIndex < eggSources.count; ++sourceIndex)
+                {
+                    if (eggSources.names[sourceIndex] && std::string(eggSources.names[sourceIndex]) == "Nursery Couple")
+                    {
                         offersNurseryCouple = true;
+                    }
+                }
                 context.check(offersNurseryCouple, "BDSP no longer offers \"Nursery Couple\" as an egg source", "origin=" + std::to_string(brilliantDiamondOrShiningPearl));
             }
         }
     }
 
-    /**
-     * EVERY TESTED TITLE MUST RESOLVE TO A SAVE-FORMAT GROUP.
-     *
-     * getGameGroup() is a switch with a `default: return Invalid`, so a title nobody added a case
-     * for does not fail — it quietly answers "no such group". That is the exact shape CLAUDE.md
-     * warns about: a missing lookup read as a definitive negative.
-     *
-     * It cost Gen 1 its entire self-test coverage. The runner accepts a file only when
-     * getGameGroup(folderTitle) matches the group the save parsed as, and Red, Green, Blue and
-     * Yellow had no case at all — so every Gen 1 save sitting correctly in its own title folder
-     * was REFUSED, and told the user "sav.dat is a Red/Blue/Yellow save, not Red": the group name,
-     * reported as though it were some other game. Nothing else in the run would have said so,
-     * because a refused save and an absent one both end as "this title has no save".
-     *
-     * The check is one line and belongs here rather than in the runner: it needs no save, no
-     * console and no folder, so it answers on the host in microseconds and covers every title at
-     * once — including whichever one is added next.
-     */
     /**
      * NO TWO TITLE IDS MAY SHARE A BACKUP FOLDER.
      *
@@ -732,13 +755,12 @@ namespace Test
 
         for (const Enums::PerLanguageTitle &title : Enums::PER_LANGUAGE_TITLES)
         {
-            for (const Enums::PerLanguageTitle &other : Enums::PER_LANGUAGE_TITLES)
+            for (const Enums::PerLanguageTitle &otherTitle : Enums::PER_LANGUAGE_TITLES)
             {
-                if (other.titleId == title.titleId)
-                    continue;
-                const std::string where = Save::titleIdText(title.titleId) + " vs " + Save::titleIdText(other.titleId);
-                context.check(Save::titleFolderName(title.titleId, title.version) != Save::titleFolderName(other.titleId, other.version), "two title ids share one backup folder", where + " -> " + Save::titleFolderName(title.titleId, title.version));
-                context.check(Save::titleDisplayLabel(title.titleId, title.version) != Save::titleDisplayLabel(other.titleId, other.version), "two titles are drawn with the same label, so the picker cannot tell them apart", where + " -> " + Save::titleDisplayLabel(title.titleId, title.version));
+                if (otherTitle.titleId == title.titleId) continue;
+                const std::string where = Save::titleIdText(title.titleId) + " vs " + Save::titleIdText(otherTitle.titleId);
+                context.check(Save::titleFolderName(title.titleId, title.version) != Save::titleFolderName(otherTitle.titleId, otherTitle.version), "two title ids share one backup folder", where + " -> " + Save::titleFolderName(title.titleId, title.version));
+                context.check(Save::titleDisplayLabel(title.titleId, title.version) != Save::titleDisplayLabel(otherTitle.titleId, otherTitle.version), "two titles are drawn with the same label, so the picker cannot tell them apart", where + " -> " + Save::titleDisplayLabel(title.titleId, title.version));
             }
         }
 
@@ -748,14 +770,14 @@ namespace Test
         // for the Italian, German and Japanese SKUs are not in the table yet and this has to hold
         // for whatever turns up.
         {
-            const uint64_t firstUnknown = 0x0100AAA0BBBB0000ull;
-            const uint64_t secondUnknown = 0x0100CCC0DDDD0000ull;
-            const Enums::GameVersion probed = Enums::GameVersion::FRLG; // what content can answer
-            context.check(Enums::getGameVersion(firstUnknown) == Enums::GameVersion::Invalid, "the unknown-title-id check is using an id PKSE actually knows", Save::titleIdText(firstUnknown));
-            context.check(Save::titleFolderName(firstUnknown, probed) != Save::titleFolderName(secondUnknown, probed), "two unrecognised title ids share one backup folder", Save::titleFolderName(firstUnknown, probed));
-            context.check(Save::titleDisplayLabel(firstUnknown, probed) != Save::titleDisplayLabel(secondUnknown, probed), "two unrecognised titles are drawn with the same label", Save::titleDisplayLabel(firstUnknown, probed));
+            const uint64_t firstUnknownTitleId = 0x0100AAA0BBBB0000ull;
+            const uint64_t secondUnknownTitleId = 0x0100CCC0DDDD0000ull;
+            const Enums::GameVersion contentGroup = Enums::GameVersion::FRLG;
+            context.check(Enums::getGameVersion(firstUnknownTitleId) == Enums::GameVersion::Invalid, "the unknown-title-id check is using an id PKSE actually knows", Save::titleIdText(firstUnknownTitleId));
+            context.check(Save::titleFolderName(firstUnknownTitleId, contentGroup) != Save::titleFolderName(secondUnknownTitleId, contentGroup), "two unrecognised title ids share one backup folder", Save::titleFolderName(firstUnknownTitleId, contentGroup));
+            context.check(Save::titleDisplayLabel(firstUnknownTitleId, contentGroup) != Save::titleDisplayLabel(secondUnknownTitleId, contentGroup), "two unrecognised titles are drawn with the same label", Save::titleDisplayLabel(firstUnknownTitleId, contentGroup));
             // And it must not collide with a title whose id IS known, either.
-            context.check(Save::titleFolderName(firstUnknown, probed) != Save::titleFolderName(Enums::PER_LANGUAGE_TITLES[0].titleId, Enums::PER_LANGUAGE_TITLES[0].version), "an unrecognised title id shares a folder with a known one", Save::titleFolderName(firstUnknown, probed));
+            context.check(Save::titleFolderName(firstUnknownTitleId, contentGroup) != Save::titleFolderName(Enums::PER_LANGUAGE_TITLES[0].titleId, Enums::PER_LANGUAGE_TITLES[0].version), "an unrecognised title id shares a folder with a known one", Save::titleFolderName(firstUnknownTitleId, contentGroup));
         }
     }
 
@@ -787,8 +809,8 @@ namespace Test
         {
             const Save::InstalledTitle onlyEnglish{Enums::PER_LANGUAGE_TITLES[1].titleId,
                                                    Enums::PER_LANGUAGE_TITLES[1].version};
-            const std::vector<Save::InstalledTitle> installed{onlyEnglish};
-            context.check(!Save::legacyFolderIsAmbiguous(onlyEnglish, installed), "a legacy folder was refused although only one installed title could have made it", Save::legacyTitleFolderName(onlyEnglish.gameVersion));
+            const std::vector<Save::InstalledTitle> installedTitles{onlyEnglish};
+            context.check(!Save::legacyFolderIsAmbiguous(onlyEnglish, installedTitles), "a legacy folder was refused although only one installed title could have made it", Save::legacyTitleFolderName(onlyEnglish.gameVersion));
         }
 
         // TWO SKUS OF ONE GAME INSTALLED -> AMBIGUOUS. This is the case that caused the bug, and the
@@ -799,8 +821,8 @@ namespace Test
             const Save::InstalledTitle french{Enums::PER_LANGUAGE_TITLES[2].titleId,
                                               Enums::PER_LANGUAGE_TITLES[2].version};
             context.check(Save::legacyTitleFolderName(english.gameVersion) == Save::legacyTitleFolderName(french.gameVersion), "two SKUs of one game no longer share a legacy folder name, so this check is moot", Save::legacyTitleFolderName(english.gameVersion));
-            const std::vector<Save::InstalledTitle> installed{english, french};
-            context.check(Save::legacyFolderIsAmbiguous(english, installed) && Save::legacyFolderIsAmbiguous(french, installed), "a legacy folder shared by two installed SKUs was not refused as ambiguous", Save::legacyTitleFolderName(english.gameVersion));
+            const std::vector<Save::InstalledTitle> installedTitles{english, french};
+            context.check(Save::legacyFolderIsAmbiguous(english, installedTitles) && Save::legacyFolderIsAmbiguous(french, installedTitles), "a legacy folder shared by two installed SKUs was not refused as ambiguous", Save::legacyTitleFolderName(english.gameVersion));
         }
 
         // A DIFFERENT GAME DOES NOT MAKE IT AMBIGUOUS. FireRed and LeafGreen have different names,
@@ -812,19 +834,36 @@ namespace Test
             const Save::InstalledTitle leafGreen{Enums::PER_LANGUAGE_TITLES[7].titleId,
                                                  Enums::PER_LANGUAGE_TITLES[7].version};
             context.check(fireRed.gameVersion != leafGreen.gameVersion, "the cross-game migration check is using two SKUs of the same game", Save::titleIdText(fireRed.titleId));
-            const std::vector<Save::InstalledTitle> installed{fireRed, leafGreen};
-            context.check(!Save::legacyFolderIsAmbiguous(fireRed, installed) && !Save::legacyFolderIsAmbiguous(leafGreen, installed), "owning one SKU of each game wrongly made both legacy folders ambiguous", Save::legacyTitleFolderName(fireRed.gameVersion));
+            const std::vector<Save::InstalledTitle> installedTitles{fireRed, leafGreen};
+            context.check(!Save::legacyFolderIsAmbiguous(fireRed, installedTitles) && !Save::legacyFolderIsAmbiguous(leafGreen, installedTitles), "owning one SKU of each game wrongly made both legacy folders ambiguous", Save::legacyTitleFolderName(fireRed.gameVersion));
         }
     }
 
+    /**
+     * EVERY TESTED TITLE MUST RESOLVE TO A SAVE-FORMAT GROUP.
+     *
+     * getGameGroup() is a switch with a `default: return Invalid`, so a title nobody added a case
+     * for does not fail — it quietly answers "no such group". That is the exact shape CLAUDE.md
+     * warns about: a missing lookup read as a definitive negative.
+     *
+     * It cost Gen 1 its entire self-test coverage. The runner accepts a file only when
+     * getGameGroup(folderTitle) matches the group the save parsed as, and Red, Green, Blue and
+     * Yellow had no case at all — so every Gen 1 save sitting correctly in its own title folder
+     * was REFUSED, and told the user "sav.dat is a Red/Blue/Yellow save, not Red": the group name,
+     * reported as though it were some other game. Nothing else in the run would have said so,
+     * because a refused save and an absent one both end as "this title has no save".
+     *
+     * The check is one line and belongs here rather than in the runner: it needs no save, no
+     * console and no folder, so it answers on the host in microseconds and covers every title at
+     * once — including whichever one is added next.
+     */
     void checkTitleRouting(Context &context)
     {
         for (const Enums::GameVersion title : TESTED_TITLES)
         {
             const Enums::GameVersion group = Enums::getGameGroup(title);
             const std::string where = "title=" + Enums::getGameVersionName(title) + " (" + std::to_string(static_cast<int>(title)) + ")";
-            if (!context.check(group != Enums::GameVersion::Invalid, "a tested title does not resolve to any save-format group", where))
-                continue;
+            if (!context.check(group != Enums::GameVersion::Invalid, "a tested title does not resolve to any save-format group", where)) continue;
             // A group must also NAME itself. The runner prints this string when it refuses a
             // misfiled save, so an unnamed group produces "is a Unknown save, not Red".
             context.check(!Enums::getGameVersionName(group).empty() && Enums::getGameVersionName(group) != "Unknown", "a tested title's group has no name", where);
@@ -843,15 +882,15 @@ namespace Test
     void checkTeraTypes(Context &context)
     {
         using namespace Pokemon;
-        for (uint8_t type = 0; type <= TYPE_FAIRY; ++type)
+        for (uint8_t typeId = 0; typeId <= TYPE_FAIRY; ++typeId)
         {
-            const std::string where = "type=" + std::to_string(type);
+            const std::string where = "type=" + std::to_string(typeId);
             // Never overridden -> the original stands.
-            context.check(resolveTeraType(type, TERA_TYPE_OVERRIDE_NONE) == type, "an un-overridden Tera type did not resolve to the original", where);
+            context.check(resolveTeraType(typeId, TERA_TYPE_OVERRIDE_NONE) == typeId, "an un-overridden Tera type did not resolve to the original", where);
             // A Tera Shard override wins outright, whatever the original was.
-            context.check(resolveTeraType(TYPE_NORMAL, type) == type, "a Tera type override did not win over the original", where);
+            context.check(resolveTeraType(TYPE_NORMAL, typeId) == typeId, "a Tera type override did not win over the original", where);
             // A type id names itself in the string table.
-            context.check(teraTypeNameIndex(type) == type, "a Tera type id did not map to its own name index", where);
+            context.check(teraTypeNameIndex(typeId) == typeId, "a Tera type id did not map to its own name index", where);
         }
         // Stellar survives from either byte, and lands on the NAME index rather than its stored value.
         context.check(resolveTeraType(TERA_TYPE_STELLAR, TERA_TYPE_OVERRIDE_NONE) == TERA_TYPE_STELLAR, "a Stellar original did not resolve to Stellar", "original=99");
@@ -886,8 +925,11 @@ namespace Test
     void checkTradeEvolutions(Context &context)
     {
         using namespace Pokemon;
-        constexpr uint16_t KADABRA = 64, ALAKAZAM = 65, SCYTHER = 123, SCIZOR = 212;
-        constexpr uint16_t CLAMPERL = 366;
+        constexpr uint16_t kadabraSpeciesId = 64;
+        constexpr uint16_t alakazamSpeciesId = 65;
+        constexpr uint16_t scytherSpeciesId = 123;
+        constexpr uint16_t scizorSpeciesId = 212;
+        constexpr uint16_t clamperlSpeciesId = 366;
 
         for (Enums::GameVersion group : Test::ALL_SAVE_GROUPS)
         {
@@ -898,12 +940,12 @@ namespace Test
             {
                 for (uint8_t formId = 0; formId < 4; ++formId)
                 {
-                    TradeEvolution rows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
-                    const int rowCount = getTradeEvolutions(group, speciesId, formId, rows, TRADE_EVOLUTIONS_MAX_PER_SPECIES);
+                    TradeEvolution tradeRows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
+                    const int rowCount = getTradeEvolutions(group, speciesId, formId, tradeRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES);
                     groupRowCount += rowCount;
                     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
                     {
-                        const TradeEvolution &row = rows[rowIndex];
+                        const TradeEvolution &row = tradeRows[rowIndex];
                         const std::string where = groupLabel + " species=" + std::to_string(speciesId) + " form=" + std::to_string(formId);
                         context.check(row.speciesId == speciesId && row.formId == formId, "a trade evolution lookup returned a row for a different species/form", where + " row=" + std::to_string(row.speciesId) + "/" + std::to_string(row.formId));
                         context.check(row.destinationSpeciesId != 0 && row.destinationSpeciesId <= Pokemon::PERSONAL_MAX_SPECIES, "a trade evolution names a destination species outside the dex", where + " destination=" + std::to_string(row.destinationSpeciesId));
@@ -934,8 +976,8 @@ namespace Test
                             // Karrablast and Shelmet are traded FOR each other, so each one's
                             // partner row has to point back at it.
                             TradeEvolution partnerRows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
-                            const int partnerCount = getTradeEvolutions(group, row.partnerSpeciesId, 0, partnerRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES);
-                            context.check(partnerCount == 1 && partnerRows[0].partnerSpeciesId == speciesId, "a partner-species trade evolution is not reciprocated", where + " partner=" + std::to_string(row.partnerSpeciesId));
+                            const int partnerRowCount = getTradeEvolutions(group, row.partnerSpeciesId, 0, partnerRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES);
+                            context.check(partnerRowCount == 1 && partnerRows[0].partnerSpeciesId == speciesId, "a partner-species trade evolution is not reciprocated", where + " partner=" + std::to_string(row.partnerSpeciesId));
                         }
                         else
                         {
@@ -951,20 +993,19 @@ namespace Test
             const size_t recordSize = Trainer::Bank::recordSizeFor(group);
             std::vector<std::byte> record(recordSize, std::byte{0});
             auto entity = Trainer::Bank::makePokemon(group, record);
-            if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel))
-                continue;
+            if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel)) continue;
 
             TradeEvolution kadabraRows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
-            if (getTradeEvolutions(group, KADABRA, 0, kadabraRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 1)
+            if (getTradeEvolutions(group, kadabraSpeciesId, 0, kadabraRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 1)
             {
-                entity->setSpecies(KADABRA);
+                entity->setSpecies(kadabraSpeciesId);
                 entity->setForm(0);
                 entity->setLevel(30);
                 const uint32_t experienceBefore = entity->exp();
                 context.check(!applyTradeEvolution(*entity, 1), "a trade evolution ran for a candidate the species does not have", groupLabel);
-                context.check(entity->speciesID() == KADABRA, "an out-of-range trade evolution changed the species anyway", groupLabel);
+                context.check(entity->speciesID() == kadabraSpeciesId, "an out-of-range trade evolution changed the species anyway", groupLabel);
                 context.check(applyTradeEvolution(*entity, 0), "an unconditional trade evolution was refused", groupLabel);
-                context.check(entity->speciesID() == ALAKAZAM, "a trade evolution did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
+                context.check(entity->speciesID() == alakazamSpeciesId, "a trade evolution did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
                 context.check(entity->exp() == experienceBefore, "a trade evolution moved the pokemon's EXP", groupLabel + " before=" + std::to_string(experienceBefore) + " after=" + std::to_string(entity->exp()));
             }
             else
@@ -973,25 +1014,25 @@ namespace Test
             }
 
             TradeEvolution scytherRows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
-            if (getTradeEvolutions(group, SCYTHER, 0, scytherRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 1 && scytherRows[0].trigger == TradeEvolutionTrigger::HeldItem && entity->hasHeldItem())
+            if (getTradeEvolutions(group, scytherSpeciesId, 0, scytherRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 1 && scytherRows[0].trigger == TradeEvolutionTrigger::HeldItem && entity->hasHeldItem())
             {
                 // THE ITEM IS NOT A GATE. Holding something else entirely still evolves, and the
                 // something else survives -- consuming whatever happens to be in the field would
                 // destroy an unrelated item every time.
                 const uint16_t unrelatedItemId = static_cast<uint16_t>(scytherRows[0].requiredItemId + 1);
-                entity->setSpecies(SCYTHER);
+                entity->setSpecies(scytherSpeciesId);
                 entity->setForm(0);
                 entity->setHeldItem(unrelatedItemId);
                 context.check(applyTradeEvolution(*entity, 0), "a held-item trade evolution was refused for want of the item", groupLabel);
-                context.check(entity->speciesID() == SCIZOR, "a trade evolution without the item did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
+                context.check(entity->speciesID() == scizorSpeciesId, "a trade evolution without the item did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
                 context.check(entity->heldItem() == unrelatedItemId, "a trade evolution consumed an item its row does not ask for", groupLabel + " held=" + std::to_string(entity->heldItem()));
 
-                entity->setSpecies(SCYTHER);
+                entity->setSpecies(scytherSpeciesId);
                 entity->setForm(0);
                 entity->setHeldItem(scytherRows[0].requiredItemId);
                 context.check(getTradeEvolutionOffer(*entity).heldItemIndex == 0, "a held item did not name the row that asks for it", groupLabel + " item=" + std::to_string(scytherRows[0].requiredItemId));
                 context.check(applyTradeEvolution(*entity, 0), "a held-item trade evolution was refused while holding the item", groupLabel + " item=" + std::to_string(scytherRows[0].requiredItemId));
-                context.check(entity->speciesID() == SCIZOR, "a held-item trade evolution did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
+                context.check(entity->speciesID() == scizorSpeciesId, "a held-item trade evolution did not change the species", groupLabel + " species=" + std::to_string(entity->speciesID()));
                 context.check(entity->heldItem() == 0, "a held-item trade evolution did not consume the item", groupLabel + " held=" + std::to_string(entity->heldItem()));
             }
             else
@@ -1003,17 +1044,17 @@ namespace Test
             // different Pokemon, so with neither item held the offer must REFUSE to answer -- that
             // -1 is what sends the UI to ask instead of silently picking Huntail.
             TradeEvolution clamperlRows[TRADE_EVOLUTIONS_MAX_PER_SPECIES]{};
-            if (getTradeEvolutions(group, CLAMPERL, 0, clamperlRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 2 && entity->hasHeldItem())
+            if (getTradeEvolutions(group, clamperlSpeciesId, 0, clamperlRows, TRADE_EVOLUTIONS_MAX_PER_SPECIES) == 2 && entity->hasHeldItem())
             {
                 context.check(clamperlRows[0].destinationSpeciesId != clamperlRows[1].destinationSpeciesId, "two trade evolutions of one species lead to the same place", groupLabel);
-                entity->setSpecies(CLAMPERL);
+                entity->setSpecies(clamperlSpeciesId);
                 entity->setForm(0);
                 entity->setHeldItem(0);
                 context.check(getTradeEvolutionOffer(*entity).resolvedIndex() < 0, "an ambiguous trade evolution resolved itself instead of asking", groupLabel);
 
                 for (int candidateIndex = 0; candidateIndex < 2; ++candidateIndex)
                 {
-                    entity->setSpecies(CLAMPERL);
+                    entity->setSpecies(clamperlSpeciesId);
                     entity->setForm(0);
                     entity->setHeldItem(clamperlRows[candidateIndex].requiredItemId);
                     const TradeEvolutionOffer heldOffer = getTradeEvolutionOffer(*entity);
@@ -1039,9 +1080,9 @@ namespace Test
     void checkHandlerTrade(Context &context)
     {
         using namespace Pokemon;
-        constexpr uint16_t PIKACHU = 25;
-        constexpr uint8_t PROBE_FRIENDSHIP = 123; // distinctive: no species has this as its base
-        constexpr uint16_t MOVE_ID_RETURN = 216;
+        constexpr uint16_t pikachuSpeciesId = 25;
+        constexpr uint8_t probeFriendship = 123; // distinctive: no species has this as its base
+        constexpr uint16_t returnMoveId = 216;
         const std::u16string partnerName = u"Donor";
 
         for (Enums::GameVersion group : Test::ALL_SAVE_GROUPS)
@@ -1050,12 +1091,11 @@ namespace Test
             const size_t recordSize = Trainer::Bank::recordSizeFor(group);
             std::vector<std::byte> record(recordSize, std::byte{0});
             auto entity = Trainer::Bank::makePokemon(group, record);
-            if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel))
-                continue;
-            entity->setSpecies(PIKACHU);
+            if (!context.check(entity != nullptr, "no entity class for a supported save group", groupLabel)) continue;
+            entity->setSpecies(pikachuSpeciesId);
             entity->setForm(0);
             entity->setLevel(20);
-            entity->setFriendship(PROBE_FRIENDSHIP);
+            entity->setFriendship(probeFriendship);
 
             // A "BLANK" ENTITY IS NOT ZEROS. Bank::makePokemon hands the constructor an all-zero
             // buffer and every constructor DECRYPTS what it is handed, so the record arrives full of
@@ -1064,7 +1104,9 @@ namespace Test
             // the memory has to be cleared before testing the write, because the writer deliberately
             // refuses to overwrite one that already exists. Both branches are tested below.
             if (entity->hasHandlerMemories())
+            {
                 entity->setHTMemory(0);
+            }
 
             TradePartner partner;
             partner.trainerName = partnerName;
@@ -1073,13 +1115,12 @@ namespace Test
             partner.consoleCountry = 0x31;
             partner.consoleRegion = 0x07;
 
-            const bool applied = applyTradeRoundTrip(*entity, partner);
+            const bool tradeApplied = applyTradeRoundTrip(*entity, partner);
 
             // A FORMAT WITH NO HANDLER MUST REFUSE. Before Gen 6 a trade writes nothing at all, so
             // silently "succeeding" would claim an edit that did not happen.
-            context.check(applied == entity->hasHandler(), "applyTradeRoundTrip disagrees with whether the format has a handler", groupLabel + " applied=" + (applied ? "1" : "0") + " hasHandler=" + (entity->hasHandler() ? "1" : "0"));
-            if (!entity->hasHandler())
-                continue;
+            context.check(tradeApplied == entity->hasHandler(), "applyTradeRoundTrip disagrees with whether the format has a handler", groupLabel + " applied=" + (tradeApplied ? "1" : "0") + " hasHandler=" + (entity->hasHandler() ? "1" : "0"));
+            if (!entity->hasHandler()) continue;
 
             context.check(entity->htName() == partnerName, "the trade did not store the partner's name", groupLabel);
             context.check(entity->htGender() == 1, "the trade did not store the partner's gender", groupLabel + " gender=" + std::to_string(entity->htGender()));
@@ -1093,17 +1134,17 @@ namespace Test
 
             if (entity->hasHandlerLanguage())
             {
-                const uint8_t expected = Enums::safeLanguageForGroup(group, static_cast<uint8_t>(Enums::LanguageID::French));
-                context.check(entity->htLanguage() == expected, "the trade did not store the partner's language", groupLabel + " read=" + std::to_string(entity->htLanguage()) + " expected=" + std::to_string(expected));
+                const uint8_t expectedLanguage = Enums::safeLanguageForGroup(group, static_cast<uint8_t>(Enums::LanguageID::French));
+                context.check(entity->htLanguage() == expectedLanguage, "the trade did not store the partner's language", groupLabel + " read=" + std::to_string(entity->htLanguage()) + " expected=" + std::to_string(expectedLanguage));
             }
 
             // THE NEW HANDLER STARTS AT THE SPECIES' BASE FRIENDSHIP, except where a visible stat is
             // computed from friendship and a reset would move it.
-            const uint8_t baseFriendship = getPersonalRecord(group, PIKACHU, 0).baseFriendship;
+            const uint8_t baseFriendship = getPersonalRecord(group, pikachuSpeciesId, 0).baseFriendship;
             const bool copiesFriendship = !entity->hasHandlerLanguage() && !entity->hasGeolocation();
             if (copiesFriendship)
             {
-                context.check(entity->htFriendship() == PROBE_FRIENDSHIP, "a format that must copy friendship on trade reset it to base instead", groupLabel + " read=" + std::to_string(entity->htFriendship()));
+                context.check(entity->htFriendship() == probeFriendship, "a format that must copy friendship on trade reset it to base instead", groupLabel + " read=" + std::to_string(entity->htFriendship()));
             }
             else
             {
@@ -1139,23 +1180,23 @@ namespace Test
                 // in order and a non-empty one after an empty one is invalid, so pushing a blank
                 // entry would shift real entries down behind a gap and turn a legal record illegal.
                 {
-                    std::vector<std::byte> geoRecord(recordSize, std::byte{0});
-                    auto geoHolder = Trainer::Bank::makePokemon(group, geoRecord);
-                    if (geoHolder != nullptr)
+                    std::vector<std::byte> geolocationRecord(recordSize, std::byte{0});
+                    auto geolocationHolder = Trainer::Bank::makePokemon(group, geolocationRecord);
+                    if (geolocationHolder != nullptr)
                     {
-                        geoHolder->setSpecies(PIKACHU);
-                        geoHolder->setGeolocationCountry(0, 0x31);
-                        geoHolder->setGeolocationRegion(0, 0x07);
+                        geolocationHolder->setSpecies(pikachuSpeciesId);
+                        geolocationHolder->setGeolocationCountry(0, 0x31);
+                        geolocationHolder->setGeolocationRegion(0, 0x07);
                         for (int slotIndex = 1; slotIndex < Pokemon::Pokemon::GEOLOCATION_SLOT_COUNT; ++slotIndex)
                         {
-                            geoHolder->setGeolocationCountry(slotIndex, 0);
-                            geoHolder->setGeolocationRegion(slotIndex, 0);
+                            geolocationHolder->setGeolocationCountry(slotIndex, 0);
+                            geolocationHolder->setGeolocationRegion(slotIndex, 0);
                         }
                         TradePartner regionlessPartner;
                         regionlessPartner.trainerName = u"NoRegion";
                         regionlessPartner.gender = 0;
-                        applyTradeRoundTrip(*geoHolder, regionlessPartner);
-                        context.check(geoHolder->geolocationCountry(0) == 0x31 && geoHolder->geolocationRegion(0) == 0x07 && geoHolder->geolocationCountry(1) == 0, "a partner with no console region disturbed the geolocation history", groupLabel + " slot0=" + std::to_string(geoHolder->geolocationCountry(0)) + " slot1=" + std::to_string(geoHolder->geolocationCountry(1)));
+                        applyTradeRoundTrip(*geolocationHolder, regionlessPartner);
+                        context.check(geolocationHolder->geolocationCountry(0) == 0x31 && geolocationHolder->geolocationRegion(0) == 0x07 && geolocationHolder->geolocationCountry(1) == 0, "a partner with no console region disturbed the geolocation history", groupLabel + " slot0=" + std::to_string(geolocationHolder->geolocationCountry(0)) + " slot1=" + std::to_string(geolocationHolder->geolocationCountry(1)));
                     }
                 }
 
@@ -1165,13 +1206,13 @@ namespace Test
                 auto returnHolder = Trainer::Bank::makePokemon(group, returnRecord);
                 if (returnHolder != nullptr)
                 {
-                    returnHolder->setSpecies(PIKACHU);
+                    returnHolder->setSpecies(pikachuSpeciesId);
                     returnHolder->setForm(0);
                     returnHolder->setLevel(20);
-                    returnHolder->setFriendship(PROBE_FRIENDSHIP);
-                    returnHolder->setMove(0, MOVE_ID_RETURN);
+                    returnHolder->setFriendship(probeFriendship);
+                    returnHolder->setMove(0, returnMoveId);
                     applyTradeRoundTrip(*returnHolder, partner);
-                    context.check(returnHolder->htFriendship() == PROBE_FRIENDSHIP, "a Return holder's friendship was not carried across the handler switch", groupLabel + " read=" + std::to_string(returnHolder->htFriendship()) + " expected=" + std::to_string(PROBE_FRIENDSHIP));
+                    context.check(returnHolder->htFriendship() == probeFriendship, "a Return holder's friendship was not carried across the handler switch", groupLabel + " read=" + std::to_string(returnHolder->htFriendship()) + " expected=" + std::to_string(probeFriendship));
                 }
 
                 // EVERY FEELING A LINK-TRADE MEMORY CAN CARRY MUST BE ONE THE GAMES ALLOW. The feeling
@@ -1182,20 +1223,21 @@ namespace Test
                 {
                     std::vector<std::byte> feelingRecord(recordSize, std::byte{0});
                     auto feelingHolder = Trainer::Bank::makePokemon(group, feelingRecord);
-                    if (feelingHolder == nullptr)
-                        break;
-                    feelingHolder->setSpecies(PIKACHU);
+                    if (feelingHolder == nullptr) break;
+                    feelingHolder->setSpecies(pikachuSpeciesId);
                     feelingHolder->setEncryptionConstant(encryptionProbe);
                     feelingHolder->setHTMemory(0);
                     applyTradeRoundTrip(*feelingHolder, partner);
-                    const uint8_t feeling = feelingHolder->htMemoryFeeling();
+                    const uint8_t memoryFeeling = feelingHolder->htMemoryFeeling();
                     bool feelingPermitted = false;
-                    for (uint8_t candidate : permittedFeelings)
+                    for (uint8_t permittedFeeling : permittedFeelings)
                     {
-                        if (candidate == feeling)
+                        if (permittedFeeling == memoryFeeling)
+                        {
                             feelingPermitted = true;
+                        }
                     }
-                    context.check(feelingPermitted, "a link-trade memory carries a feeling the games do not allow", groupLabel + " encryptionConstant=" + std::to_string(encryptionProbe) + " feeling=" + std::to_string(feeling));
+                    context.check(feelingPermitted, "a link-trade memory carries a feeling the games do not allow", groupLabel + " encryptionConstant=" + std::to_string(encryptionProbe) + " feeling=" + std::to_string(memoryFeeling));
                 }
 
                 // AN EXISTING MEMORY IS NOT OVERWRITTEN. A Pokemon that has been traded before
@@ -1206,11 +1248,11 @@ namespace Test
                 auto keepHolder = Trainer::Bank::makePokemon(group, keepRecord);
                 if (keepHolder != nullptr)
                 {
-                    constexpr uint8_t EXISTING_MEMORY = 42;
-                    keepHolder->setSpecies(PIKACHU);
-                    keepHolder->setHTMemory(EXISTING_MEMORY);
+                    constexpr uint8_t existingMemory = 42;
+                    keepHolder->setSpecies(pikachuSpeciesId);
+                    keepHolder->setHTMemory(existingMemory);
                     applyTradeRoundTrip(*keepHolder, partner);
-                    context.check(keepHolder->htMemory() == EXISTING_MEMORY, "a trade overwrote a handler memory that was already there", groupLabel + " read=" + std::to_string(keepHolder->htMemory()));
+                    context.check(keepHolder->htMemory() == existingMemory, "a trade overwrote a handler memory that was already there", groupLabel + " read=" + std::to_string(keepHolder->htMemory()));
                 }
             }
         }
@@ -1239,8 +1281,8 @@ namespace Test
                 const bool involvesArceus = donorGroup == GameVersion::PLA || recordGroup == GameVersion::PLA;
                 const bool bothGen6 = (donorGroup == GameVersion::XY || donorGroup == GameVersion::ORAS) && (recordGroup == GameVersion::XY || recordGroup == GameVersion::ORAS);
                 const bool bothGen7 = (donorGroup == GameVersion::SM || donorGroup == GameVersion::USUM) && (recordGroup == GameVersion::SM || recordGroup == GameVersion::USUM);
-                const bool expected = !involvesArceus && (donorGroup == recordGroup || bothGen6 || bothGen7);
-                context.check(canTrade == expected, "gamesCanTrade disagrees with the link rule", where + " canTrade=" + (canTrade ? "1" : "0"));
+                const bool expectedCanTrade = !involvesArceus && (donorGroup == recordGroup || bothGen6 || bothGen7);
+                context.check(canTrade == expectedCanTrade, "gamesCanTrade disagrees with the link rule", where + " canTrade=" + (canTrade ? "1" : "0"));
             }
         }
         // THE TITLE FILTER THE DONOR PICKER USES. A concrete title resolves to its group, and a
@@ -1252,8 +1294,7 @@ namespace Test
             const size_t recordSize = Trainer::Bank::recordSizeFor(recordGroup);
             std::vector<std::byte> record(recordSize, std::byte{0});
             auto entity = Trainer::Bank::makePokemon(recordGroup, record);
-            if (entity == nullptr)
-                continue;
+            if (entity == nullptr) continue;
             int offeredCount = 0;
             for (Enums::GameVersion titleVersion : Test::TESTED_TITLES)
             {
@@ -1306,7 +1347,7 @@ namespace Test
         constexpr uint16_t floetteSpeciesId = 670;
         constexpr uint16_t florgesSpeciesId = 671;
         constexpr uint16_t fletchinderSpeciesId = 662;
-        constexpr uint8_t blueFlowerForm = 3;
+        constexpr uint8_t blueFlowerFormId = 3;
         constexpr uint16_t bigPecksAbilityId = 145;
         constexpr uint16_t stenchAbilityId = 1;
         constexpr uint16_t kyleTrainerId = 48926; // the Violet City trade's Onix
@@ -1317,7 +1358,9 @@ namespace Test
             for (const auto &issue : report.issues)
             {
                 if (issue.severity != Legality::Severity::Info)
+                {
                     problems += (problems.empty() ? "" : "; ") + issue.text;
+                }
             }
             return problems;
         };
@@ -1335,14 +1378,14 @@ namespace Test
             pokemon->recalculateStats();
             return pokemon;
         };
-        auto expectLegal = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const char *what, const std::string &label)
+        auto expectLegal = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const char *what, const std::string &detail)
         {
             const Legality::Report report = Legality::analyze(pokemon, group);
-            context.check(report.ok(), what, label + " -- " + problemsIn(report));
+            context.check(report.ok(), what, detail + " -- " + problemsIn(report));
         };
-        auto expectFlagged = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const char *what, const std::string &label)
+        auto expectFlagged = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const char *what, const std::string &detail)
         {
-            context.check(!Legality::analyze(pokemon, group).ok(), what, label);
+            context.check(!Legality::analyze(pokemon, group).ok(), what, detail);
         };
 
         {
@@ -1418,12 +1461,12 @@ namespace Test
         // so a table that only counts forms WITH their own entry dropped every edge between them.
         {
             uint16_t ancestorSpeciesId = 0;
-            uint8_t ancestorForm = 0;
-            const bool floetteFound = Pokemon::getPreEvolution(Enums::GameVersion::XY, florgesSpeciesId, blueFlowerForm, ancestorSpeciesId, ancestorForm);
-            context.check(floetteFound && ancestorSpeciesId == floetteSpeciesId && ancestorForm == blueFlowerForm, "a Blue Flower Florges does not descend from a Blue Flower Floette", "found=" + std::to_string(floetteFound) + " species=" + std::to_string(ancestorSpeciesId) + " form=" + std::to_string(ancestorForm));
-            const bool flabebeFound = Pokemon::getPreEvolution(Enums::GameVersion::XY, floetteSpeciesId, blueFlowerForm, ancestorSpeciesId, ancestorForm);
-            context.check(flabebeFound && ancestorSpeciesId == flabebeSpeciesId && ancestorForm == blueFlowerForm, "a Blue Flower Floette does not descend from a Blue Flower Flabébé", "found=" + std::to_string(flabebeFound) + " species=" + std::to_string(ancestorSpeciesId) + " form=" + std::to_string(ancestorForm));
-            const bool florgesHasLearnset = Pokemon::getLearnableBits(florgesSpeciesId, blueFlowerForm, Enums::GameVersion::XY) != nullptr;
+            uint8_t ancestorFormId = 0;
+            const bool floetteFound = Pokemon::getPreEvolution(Enums::GameVersion::XY, florgesSpeciesId, blueFlowerFormId, ancestorSpeciesId, ancestorFormId);
+            context.check(floetteFound && ancestorSpeciesId == floetteSpeciesId && ancestorFormId == blueFlowerFormId, "a Blue Flower Florges does not descend from a Blue Flower Floette", "found=" + std::to_string(floetteFound) + " species=" + std::to_string(ancestorSpeciesId) + " form=" + std::to_string(ancestorFormId));
+            const bool flabebeFound = Pokemon::getPreEvolution(Enums::GameVersion::XY, floetteSpeciesId, blueFlowerFormId, ancestorSpeciesId, ancestorFormId);
+            context.check(flabebeFound && ancestorSpeciesId == flabebeSpeciesId && ancestorFormId == blueFlowerFormId, "a Blue Flower Floette does not descend from a Blue Flower Flabébé", "found=" + std::to_string(flabebeFound) + " species=" + std::to_string(ancestorSpeciesId) + " form=" + std::to_string(ancestorFormId));
+            const bool florgesHasLearnset = Pokemon::getLearnableBits(florgesSpeciesId, blueFlowerFormId, Enums::GameVersion::XY) != nullptr;
             context.check(florgesHasLearnset, "a cosmetic form has no learnset, so its moves are never checked", "Blue Flower Florges in X/Y");
         }
 
@@ -1433,8 +1476,7 @@ namespace Test
         {
             std::vector<std::byte> record(Trainer::Bank::recordSizeFor(group), std::byte{0});
             auto fletchinder = Trainer::Bank::makePokemon(group, record);
-            if (!context.check(fletchinder != nullptr, "no entity class for a supported save group", Enums::getGameVersionName(group)))
-                continue;
+            if (!context.check(fletchinder != nullptr, "no entity class for a supported save group", Enums::getGameVersionName(group))) continue;
             fletchinder->setSpecies(fletchinderSpeciesId);
             fletchinder->setForm(0); // a zeroed record decrypts to garbage in every field, form included
             fletchinder->setAbility(bigPecksAbilityId);
@@ -1455,11 +1497,11 @@ namespace Test
         void checkKnownValues(Context &context)
         {
             // Names, in English: the display language is pinned for the check and put back after.
-            const size_t displayLanguage = Names::displayLanguageIndex();
+            const size_t originalLanguage = Names::displayLanguageIndex();
             Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
-            auto expectName = [&](const char *kind, int id, const char *got, const char *want)
+            auto expectName = [&](const char *tableKind, int entryId, const char *actualName, const char *expectedName)
             {
-                context.check(got && std::string(got) == want, "a table names a known id wrongly", std::string(kind) + "=" + std::to_string(id) + " got=\"" + (got ? got : "") + "\" want=\"" + want + "\"");
+                context.check(actualName && std::string(actualName) == expectedName, "a table names a known id wrongly", std::string(tableKind) + "=" + std::to_string(entryId) + " got=\"" + (actualName ? actualName : "") + "\" want=\"" + expectedName + "\"");
             };
             expectName("species", 1, Trainer::getSpeciesName(1), "Bulbasaur");
             expectName("species", 25, Trainer::getSpeciesName(25), "Pikachu");
@@ -1475,12 +1517,14 @@ namespace Test
             expectName("nature", 24, Trainer::getNatureName(24), "Quirky");
             expectName("item", 1, Names::getItemNameFor(Enums::GameVersion::SWSH, 1), "Master Ball");
             expectName("item", 17, Names::getItemNameFor(Enums::GameVersion::SWSH, 17), "Potion");
-            Names::setDisplayLanguage(displayLanguage);
+            Names::setDisplayLanguage(originalLanguage);
 
             // The six growth curves at level 100, in the games' own curve order.
-            const uint32_t level100[6] = {1000000, 600000, 1640000, 1059860, 800000, 1250000};
-            for (uint8_t rate = 0; rate < 6; ++rate)
-                context.check(Pokemon::getExpForLevel(100, rate) == level100[rate], "a growth curve has the wrong EXP total at level 100", "rate=" + std::to_string(rate) + " got=" + std::to_string(Pokemon::getExpForLevel(100, rate)) + " want=" + std::to_string(level100[rate]));
+            const uint32_t level100Exp[6] = {1000000, 600000, 1640000, 1059860, 800000, 1250000};
+            for (uint8_t growthRate = 0; growthRate < 6; ++growthRate)
+            {
+                context.check(Pokemon::getExpForLevel(100, growthRate) == level100Exp[growthRate], "a growth curve has the wrong EXP total at level 100", "rate=" + std::to_string(growthRate) + " got=" + std::to_string(Pokemon::getExpForLevel(100, growthRate)) + " want=" + std::to_string(level100Exp[growthRate]));
+            }
             context.check(Pokemon::getGrowthRate(1) == 3, "Bulbasaur is not on the Medium Slow curve", "rate=" + std::to_string(Pokemon::getGrowthRate(1)));
             context.check(Pokemon::getGrowthRate(25) == 0, "Pikachu is not on the Medium Fast curve", "rate=" + std::to_string(Pokemon::getGrowthRate(25)));
 
@@ -1491,43 +1535,46 @@ namespace Test
             {
                 using Enums::GameVersion;
                 const std::string where = "group=" + Enums::getGameVersionName(group);
-                const bool gen1 = group == GameVersion::RBY;
-                const bool beforeGen6 = gen1 || group == GameVersion::GSC || Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
-                struct Expected
+                const bool isGen1 = group == GameVersion::RBY;
+                const bool beforeGen6 = isGen1 || group == GameVersion::GSC || Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
+                struct ExpectedBaseStats
                 {
-                    uint16_t species;
-                    uint8_t hp, atk, def, spe, spa, spd;
+                    uint16_t speciesId;
+                    uint8_t hp;
+                    uint8_t atk;
+                    uint8_t def;
+                    uint8_t spe;
+                    uint8_t spa;
+                    uint8_t spd;
                 };
-                const Expected rows[2] = {
+                const ExpectedBaseStats expectedRows[2] = {
                     {1, 45, 49, 49, 45, 65, 65},
                     {25, 35, 55, (uint8_t)(beforeGen6 ? 30 : 40), 90, 50, (uint8_t)(beforeGen6 ? 40 : 50)},
                 };
-                for (const Expected &row : rows)
+                for (const ExpectedBaseStats &row : expectedRows)
                 {
-                    const Pokemon::PersonalRecord &record = Pokemon::getPersonalRecord(group, row.species, 0);
-                    if (record.hp == 0)
+                    const Pokemon::PersonalRecord &personalRecord = Pokemon::getPersonalRecord(group, row.speciesId, 0);
+                    if (personalRecord.hp == 0)
                     {
-                        context.skip("a species is not in this game's personal table, so its base stats were not checked", where + " species=" + std::to_string(row.species));
+                        context.skip("a species is not in this game's personal table, so its base stats were not checked", where + " species=" + std::to_string(row.speciesId));
                         continue;
                     }
-                    const bool same = record.hp == row.hp && record.atk == row.atk && record.def == row.def && record.spe == row.spe && record.spa == row.spa && (gen1 || record.spd == row.spd);
-                    context.check(same, "a personal table has the wrong base stats for a known species", where + " species=" + std::to_string(row.species) + " got=" + std::to_string(record.hp) + "/" + std::to_string(record.atk) + "/" + std::to_string(record.def) + "/" + std::to_string(record.spe) + "/" + std::to_string(record.spa) + "/" + std::to_string(record.spd));
+                    const bool baseStatsMatch = personalRecord.hp == row.hp && personalRecord.atk == row.atk && personalRecord.def == row.def && personalRecord.spe == row.spe && personalRecord.spa == row.spa && (isGen1 || personalRecord.spd == row.spd);
+                    context.check(baseStatsMatch, "a personal table has the wrong base stats for a known species", where + " species=" + std::to_string(row.speciesId) + " got=" + std::to_string(personalRecord.hp) + "/" + std::to_string(personalRecord.atk) + "/" + std::to_string(personalRecord.def) + "/" + std::to_string(personalRecord.spe) + "/" + std::to_string(personalRecord.spa) + "/" + std::to_string(personalRecord.spd));
                 }
 
                 // Base PP. The Legends games run their own battle rules, so they are left out.
-                if (group == GameVersion::PLA || group == GameVersion::ZA)
-                    continue;
+                if (group == GameVersion::PLA || group == GameVersion::ZA) continue;
                 const struct
                 {
-                    uint16_t move;
-                    uint8_t pp;
+                    uint16_t moveId;
+                    uint8_t basePP;
                 } ppRows[3] = {{1, 35}, {33, 35}, {85, 15}};
                 for (const auto &ppRow : ppRows)
                 {
-                    if (!Names::isMovePresent(ppRow.move, group))
-                        continue;
-                    const uint8_t pp = Names::getMoveBasePP(ppRow.move, group);
-                    context.check(pp == ppRow.pp, "a move has the wrong base PP", where + " move=" + std::to_string(ppRow.move) + " got=" + std::to_string(pp) + " want=" + std::to_string(ppRow.pp));
+                    if (!Names::isMovePresent(ppRow.moveId, group)) continue;
+                    const uint8_t actualBasePP = Names::getMoveBasePP(ppRow.moveId, group);
+                    context.check(actualBasePP == ppRow.basePP, "a move has the wrong base PP", where + " move=" + std::to_string(ppRow.moveId) + " got=" + std::to_string(actualBasePP) + " want=" + std::to_string(ppRow.basePP));
                 }
             }
         }

@@ -4,6 +4,7 @@
 
 #include "Pokemon/Pokemon8LA.h"
 #include "Pokemon/PersonalInfo8LA.h"
+#include "Pokemon/PersonalInfoTable.h"
 
 namespace Names
 {
@@ -391,5 +392,28 @@ namespace Pokemon
             writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x1C), newPID);
             refreshChecksum();
         }
+    }
+
+    namespace
+    {
+        // PKHeX PA8.GetScalarPercent: 80% to 120%. The volatile keeps the compiler from fusing the
+        // multiply into the add, which the game does not do and which changes the last bit.
+        float sizeScalarPercent8LA(uint8_t sizeScalar)
+        {
+            volatile float scaledPercent = (sizeScalar / 255.0f) * 0.40000004f;
+            return scaledPercent + 0.8f;
+        }
+    }
+
+    void Pokemon8LA::resetSizeAbsolutes() noexcept
+    {
+        const PersonalInfo &personalInfo = getPersonalInfo(speciesID(), form());
+        const float heightPercent = sizeScalarPercent8LA(static_cast<uint8_t>(data[0x50]));
+        const float weightPercent = sizeScalarPercent8LA(static_cast<uint8_t>(data[0x51]));
+        const float heightValue = personalInfo.height * heightPercent;
+        const float weightValue = personalInfo.weight * (heightPercent * weightPercent);
+        std::memcpy(&data[0xAC], &heightValue, sizeof heightValue);
+        std::memcpy(&data[0xB0], &weightValue, sizeof weightValue);
+        refreshChecksum();
     }
 }

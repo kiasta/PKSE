@@ -1,6 +1,6 @@
 /**
  * WHAT IT RUNS AGAINST. The framework tests ONE SAVE PER TITLE, and the plan lists EVERY title --
- * all thirty-five of them, from Red to Legends: Z-A. Grouping by generation was the earlier design
+ * all thirty-eight of them, from Red to Legends: Z-A. Grouping by generation was the earlier design
  * and it hid real differences: Violet and Legends: Z-A are both Gen 9 but are not the same save
  * format, and testing one while calling it "Gen 9" left the other untested and unmentioned.
  *
@@ -15,7 +15,7 @@
  * happened under that name.
  *
  * A title with NO save on the console is reported as a skip, loudly. A pass that quietly covered
- * five titles out of thirty-five is worse than no pass at all.
+ * five titles out of thirty-eight is worse than no pass at all.
  *
  * NOTHING THE USER OWNS IS WRITTEN. Every save is copied into sdmc:/PKSE/tests/work/ first and every
  * write test happens there; the live game save is never injected into (the inject flag is passed
@@ -64,7 +64,6 @@ namespace Test
         AccountUid accountUid{};
         std::string sourcePath; // loose-file path, else empty
 
-
         /// "Sword" -- how this target is named everywhere in the report.
         std::string display() const;
     };
@@ -73,13 +72,6 @@ namespace Test
     /// the run order.
     const Enums::GameVersion *testedTitles() noexcept;
     int testedTitleCount() noexcept;
-
-    /// The sibling that actually gets the save when a pair cannot be told apart, or Invalid for a
-    /// title that names itself.
-    ///
-    /// Red/Blue, Gold/Silver, Diamond/Pearl and HeartGold/SoulSilver each share a save layout with
-    /// no version byte in it, so one file could be either game and never says which. Both titles
-    /// are still LISTED -- dropping the second would hide it -- and the second is reported as
 
     /// Does a save for this title arrive as a FILE the user copies onto the SD card, rather than as
     /// installed save data? It decides which instruction an empty plan row shows, and the two are
@@ -113,18 +105,17 @@ namespace Test
         /// looking at a folder with a file in it; the plan row shows this instead.
         static std::string rejectedSaveReason(Enums::GameVersion title);
 
-
         /// Directories searched for a loose save file, in order. Exposed so the picker can tell the
         /// user where to put one when a title comes up empty.
-        static const char *const *looseScanDirs() noexcept;
-        static int looseScanDirCount() noexcept;
+        static const char *const *looseScanDirectories() noexcept;
+        static int looseScanDirectoryCount() noexcept;
 
         /// Begins a run over `targets` (at most one per title). `missingTitles` names the titles
         /// that had no save at all, so they can be recorded as skips rather than quietly omitted.
         void start(std::vector<Target> targets, std::vector<Enums::GameVersion> missingTitles);
 
-        /// Does work for up to `budgetMs` milliseconds, then returns. False once the run is over.
-        bool step(int budgetMs);
+        /// Does work for up to `budgetMilliseconds`, then returns. False once the run is over.
+        bool step(int budgetMilliseconds);
 
         /// Stops early and writes what has been found so far. The report is marked PARTIAL rather
         /// than discarded: a run abandoned three suites in because the first one was clearly broken
@@ -158,8 +149,9 @@ namespace Test
             std::string journey; // "boxes"
             std::string action;  // "boxes: move the cursor right"
             std::string changed; // "slot"  -- the diff this action produced
-            bool changedSomethingUndeclared = false;    // the action changed something undeclared
-            int step = 0, total = 0;
+            bool changedSomethingUndeclared = false;
+            int step = 0;
+            int stepCount = 0;
         };
         static void setDriveCaption(const DriveCaption &caption);
         static const DriveCaption &driveCaption() noexcept;
@@ -173,16 +165,16 @@ namespace Test
 
         State state() const noexcept { return runState; }
         const Report &report() const noexcept { return runReport; }
-        const std::string &reportPath() const noexcept { return outPath; }
+        const std::string &reportPath() const noexcept { return reportFilePath; }
 
         /// "Gen 8 / Sword" and "entity 4/13" -- the two halves of the on-screen progress readout.
-        const std::string &phaseTarget() const noexcept { return uiTarget; }
-        const std::string &phaseDetail() const noexcept { return uiDetail; }
+        const std::string &phaseTarget() const noexcept { return phaseTargetText; }
+        const std::string &phaseDetail() const noexcept { return phaseDetailText; }
         /// 0..1 through the CURRENT target (or the global/cross pass). Deliberately not an overall
         /// fraction: the per-target chunk counts are only known once that target is loaded, and a
         /// bar that recalculates its own scale mid-run reads as broken.
         float phaseProgress() const noexcept;
-        int targetIndex() const noexcept { return (int)targetIdx; }
+        int targetIndex() const noexcept { return (int)currentTargetIndex; }
         int targetCount() const noexcept { return (int)plan.size(); }
 
     private:
@@ -215,9 +207,9 @@ namespace Test
         State runState = State::Idle;
         Phase phase = Phase::Idle;
 
-        size_t targetIdx = 0;
-        int suiteIdx = 0; // index into suites()
-        int chunkIdx = 0;
+        size_t currentTargetIndex = 0;
+        int currentSuiteIndex = 0; // index into suites()
+        int currentChunkIndex = 0;
         int chunkCount = -1; // -1 = the current suite has not been planned yet
         /// The report's check and skip counts when the current suite was planned. A suite that ends
         /// with neither having moved checked nothing, and that is reported rather than left to read
@@ -230,13 +222,14 @@ namespace Test
         struct Loaded;
         std::unique_ptr<Loaded> loaded;
         Trainer::Trainer *trainer = nullptr;
-        std::string workDir;
+        std::string workDirectory;
         /// The scratch file a LOOSE target was copied to; empty for an installed title. See
         /// Context::savePath for why this is carried rather than searched for.
         std::string workSavePath;
 
-        std::string outPath;
-        std::string uiTarget, uiDetail;
+        std::string reportFilePath;
+        std::string phaseTargetText;
+        std::string phaseDetailText;
         std::string runStamp;
         long startedAt = 0;
         long finishedAt = 0;

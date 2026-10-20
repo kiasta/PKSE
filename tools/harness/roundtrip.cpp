@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,7 @@ static std::string g_saveRoot;
 #include "Trainer/Trainer7LGPE.h"
 #include "Trainer/Trainer8SWSH.h"
 #include "Trainer/Trainer8LA.h"
+#include "Pokemon/DexTable8LA.h"
 #include "Trainer/Trainer9SV.h"
 #include "Trainer/Trainer9LZA.h"
 #include "Encryption/Encryption.h"
@@ -457,6 +459,180 @@ void itemEditsStayInPlaceSWSH(const char* label, const std::string& path) {
     }
 }
 
+/// Legends: Arceus: the Pokedex writer must count a Pokemon toward its species' research once, when it
+/// arrives, exactly as PKHeX's OnPokeGet does -- one catch, one alpha for an alpha, one for each size
+/// task the species has and the Pokemon's size meets -- and never again. Re-registering storage on every
+/// save once added one per stored Pokemon per save, and an unedited round trip cannot see it because
+/// every other byte that writer touches is a flag it may legitimately set.
+void catchResearchCountsOnceLA(const char* label, const std::string& path) {
+    std::vector<uint8_t> before = readFile(path);
+    if (before.empty()) {
+        std::printf("  SKIP  %-22s (%s)\n", label, SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    using Field = Trainer::ResearchField8LA;
+    using SizeTask = Pokemon::SizeResearchTask8LA;
+    const Field countFields[] = { Field::CatchCount, Field::AlphaCount, Field::LargeCount, Field::SmallCount, Field::HeavyCount, Field::LightCount };
+    auto pokedexBytes = [](const Trainer::Trainer8LA& trainer) {
+        for (const auto& block : trainer.getBlocks()) {
+            if (block.key == Trainer::POKEDEX8_LA) {
+                return block.data;
+            }
+        }
+        return std::vector<uint8_t>();
+    };
+    // Every research field of every species, plus the next update counter: what a write must not move.
+    auto changedFieldCount = [&](const std::vector<uint8_t>& beforeBytes, const std::vector<uint8_t>& afterBytes) {
+        size_t fieldCount = Trainer::Trainer8LA::nextResearchUpdateCounter(beforeBytes) != Trainer::Trainer8LA::nextResearchUpdateCounter(afterBytes);
+        for (uint16_t speciesId = 1; speciesId < Pokemon::DEX8LA_MAX_SPECIES; ++speciesId) {
+            for (Field field : countFields) {
+                fieldCount += Trainer::Trainer8LA::researchField(beforeBytes, speciesId, field) != Trainer::Trainer8LA::researchField(afterBytes, speciesId, field);
+            }
+            fieldCount += Trainer::Trainer8LA::researchField(beforeBytes, speciesId, Field::UpdateCounter) != Trainer::Trainer8LA::researchField(afterBytes, speciesId, Field::UpdateCounter);
+        }
+        return fieldCount;
+    };
+    auto writeFloat = [](Pokemon::Pokemon& pokemon, size_t offset, float floatValue) {
+        std::memcpy(pokemon.getData().data() + offset, &floatValue, sizeof floatValue);
+    };
+    int failureCount = 0;
+    auto report = [&](bool passed, const std::string& what) {
+        std::printf("        %s %s\n", passed ? "ok  " : "FAIL", what.c_str());
+        failureCount += passed ? 0 : 1;
+    };
+    const std::string testLabel = std::string(label) + " [catch research]";
+
+    Trainer::Trainer8LA trainer(Encryption::decrypt(before.data(), before.size()));
+    const std::vector<uint8_t> loadedPokedex = pokedexBytes(trainer);
+    trainer.updatePokedexBlock();
+    trainer.updatePokedexBlock();
+    report(changedFieldCount(loadedPokedex, pokedexBytes(trainer)) == 0, "two unedited writes change no research field");
+
+    // The source: a non-alpha whose species has a size task, so the arrivals below can exercise one.
+    const Pokemon::Pokemon8LA* sourcePokemon = nullptr;
+    SizeTask sourceTask = SizeTask::CatchLarge;
+    uint8_t sourceThreshold = 0;
+    std::vector<std::unique_ptr<::Pokemon::Pokemon>*> emptySlots;
+    for (auto& box : trainer.boxes) {
+        for (auto& slotPokemon : box) {
+            if (!slotPokemon || slotPokemon->speciesID() == 0) {
+                emptySlots.push_back(&slotPokemon);
+                continue;
+            }
+            const auto* candidate = static_cast<const Pokemon::Pokemon8LA*>(slotPokemon.get());
+            for (SizeTask task : { SizeTask::CatchLarge, SizeTask::CatchSmall, SizeTask::CatchHeavy, SizeTask::CatchLight }) {
+                if (!sourcePokemon && !candidate->isAlpha() && Pokemon::getSizeResearchThreshold8LA(candidate->speciesID(), task, sourceThreshold)) {
+                    sourcePokemon = candidate;
+                    sourceTask = task;
+                }
+            }
+        }
+    }
+    if (!sourcePokemon || emptySlots.size() < 4) {
+        std::printf("  FAIL  %-22s no non-alpha Pokemon with a size task, or fewer than four empty box slots\n", testLabel.c_str());
+        ++g_fail;
+        return;
+    }
+    const uint16_t speciesId = sourcePokemon->speciesID();
+    const bool taskIsWeight = sourceTask == SizeTask::CatchHeavy || sourceTask == SizeTask::CatchLight;
+    const bool taskIsUpperBound = sourceTask == SizeTask::CatchSmall || sourceTask == SizeTask::CatchLight;
+    const float thresholdValue = taskIsWeight ? static_cast<float>(sourceThreshold / 10.0) : static_cast<float>(sourceThreshold);
+    const size_t sizeOffset = taskIsWeight ? 0xB0 : 0xAC;
+    const size_t taskFieldIndex = 2 + static_cast<size_t>(sourceTask);
+    std::printf("        species %u, size task %zu, threshold %u\n", speciesId, static_cast<size_t>(sourceTask), sourceThreshold);
+
+    // Each arrival on its own, against the dex as it stands, then a second write that must change nothing.
+    struct Arrival { const char* name; float sizeValue; bool alpha; std::vector<int> expectedIncrements; };
+    const float meetingSize = taskIsUpperBound ? thresholdValue * 0.5f : thresholdValue * 2.0f;
+    const float missingSize = taskIsUpperBound ? thresholdValue * 2.0f : thresholdValue * 0.5f;
+    std::vector<Arrival> arrivals = {
+        { "meets the size task", meetingSize, false, { 1, 0, 0, 0, 0, 0 } },
+        { "misses the size task", missingSize, false, { 1, 0, 0, 0, 0, 0 } },
+        { "an alpha that meets it", meetingSize, true, { 1, 1, 0, 0, 0, 0 } },
+        { "no recorded size", 0.0f, false, { 1, 0, 0, 0, 0, 0 } },
+    };
+    arrivals[0].expectedIncrements[taskFieldIndex] = 1;
+    arrivals[2].expectedIncrements[taskFieldIndex] = 1;
+    for (size_t arrivalIndex = 0; arrivalIndex < arrivals.size(); ++arrivalIndex) {
+        const Arrival& arrival = arrivals[arrivalIndex];
+        auto arrivingPokemon = sourcePokemon->clone();
+        writeFloat(*arrivingPokemon, sizeOffset, arrival.sizeValue);
+        if (arrival.alpha) {
+            arrivingPokemon->getData()[0x16] |= std::byte{0x20};
+        }
+        arrivingPokemon->refreshChecksum();
+        const std::vector<uint8_t> beforeArrival = pokedexBytes(trainer);
+        *emptySlots[arrivalIndex] = std::move(arrivingPokemon);
+        trainer.updatePokedexBlock();
+        const std::vector<uint8_t> afterArrival = pokedexBytes(trainer);
+        bool countsMatch = true;
+        std::string countText;
+        for (size_t fieldIndex = 0; fieldIndex < std::size(countFields); ++fieldIndex) {
+            const int increment = Trainer::Trainer8LA::researchField(afterArrival, speciesId, countFields[fieldIndex]) - Trainer::Trainer8LA::researchField(beforeArrival, speciesId, countFields[fieldIndex]);
+            countsMatch = countsMatch && increment == arrival.expectedIncrements[fieldIndex];
+            countText += (fieldIndex ? "/" : "") + std::to_string(increment);
+        }
+        size_t otherSpeciesChanges = 0;
+        for (uint16_t otherSpeciesId = 1; otherSpeciesId < Pokemon::DEX8LA_MAX_SPECIES; ++otherSpeciesId) {
+            if (otherSpeciesId == speciesId) {
+                continue;
+            }
+            for (Field field : countFields) {
+                otherSpeciesChanges += Trainer::Trainer8LA::researchField(beforeArrival, otherSpeciesId, field) != Trainer::Trainer8LA::researchField(afterArrival, otherSpeciesId, field);
+            }
+        }
+        report(countsMatch && otherSpeciesChanges == 0, std::string("arrival that ") + arrival.name + ": catch/alpha/large/small/heavy/light +" + countText + (otherSpeciesChanges ? ", other species changed" : ""));
+        trainer.updatePokedexBlock();
+        report(changedFieldCount(afterArrival, pokedexBytes(trainer)) == 0, std::string("  ...and the next write counts it no further"));
+    }
+
+    // The absolutes PKSE gives a converted or created Pokemon must be the ones the game computes: every
+    // Pokemon this save holds was sized by the game itself.
+    size_t sizedPokemonCount = 0;
+    size_t mismatchedPokemonCount = 0;
+    Trainer::Trainer8LA freshTrainer(Encryption::decrypt(before.data(), before.size()));
+    std::vector<const ::Pokemon::Pokemon*> storedPokemonList;
+    for (const auto& partyPokemon : freshTrainer.party) {
+        storedPokemonList.push_back(partyPokemon.get());
+    }
+    for (const auto& box : freshTrainer.boxes) {
+        for (const auto& slotPokemon : box) {
+            storedPokemonList.push_back(slotPokemon.get());
+        }
+    }
+    {
+        for (const ::Pokemon::Pokemon* slotPokemon : storedPokemonList) {
+            if (!slotPokemon || slotPokemon->speciesID() == 0) {
+                continue;
+            }
+            const auto& storedPokemon = static_cast<const Pokemon::Pokemon8LA&>(*slotPokemon);
+            auto resizedPokemon = storedPokemon.clone();
+            auto& resized = static_cast<Pokemon::Pokemon8LA&>(*resizedPokemon);
+            resized.resetSizeAbsolutes();
+            const float storedHeight = storedPokemon.heightAbsolute();
+            const float storedWeight = storedPokemon.weightAbsolute();
+            const float resizedHeight = resized.heightAbsolute();
+            const float resizedWeight = resized.weightAbsolute();
+            ++sizedPokemonCount;
+            if (std::memcmp(&storedHeight, &resizedHeight, sizeof(float)) != 0 || std::memcmp(&storedWeight, &resizedWeight, sizeof(float)) != 0) {
+                if (mismatchedPokemonCount == 0) {
+                    std::printf("        first size mismatch: species %u stored %.9g/%.9g computed %.9g/%.9g\n", storedPokemon.speciesID(), storedHeight, storedWeight, resizedHeight, resizedWeight);
+                }
+                ++mismatchedPokemonCount;
+            }
+        }
+    }
+    report(sizedPokemonCount != 0 && mismatchedPokemonCount == 0, "resetSizeAbsolutes reproduces the game's sizes bit for bit (" + std::to_string(sizedPokemonCount - mismatchedPokemonCount) + " of " + std::to_string(sizedPokemonCount) + ")");
+
+    if (failureCount == 0) {
+        std::printf("  PASS  %-22s each arrival counts once, as PKHeX OnPokeGet does; storage is never re-counted\n", testLabel.c_str());
+        ++g_pass;
+    } else {
+        std::printf("  FAIL  %-22s %d research check(s) failed\n", testLabel.c_str(), failureCount);
+        ++g_fail;
+    }
+}
+
 /// Sword/Shield: REMOVING an item must empty its slot and move nothing else.
 ///
 /// Items are matched to the slot they were read from by item id rather than by list position,
@@ -513,6 +689,136 @@ void itemRemovalEmptiesOneSlotSWSH(const char* label, const std::string& path) {
 
 }
 
+/// The Let's Go Pokedex's size records, as Trainer7LGPE.cpp lays them out: four groups (minimum and
+/// maximum height, minimum and maximum weight) of 186 six-byte entries at 0xF78 in the Zukan block.
+size_t sizeRecordOffsetLGPE(int sizeGroup, int entryIndex) {
+    return 0xF78 + 6 * static_cast<size_t>(entryIndex + sizeGroup * 186);
+}
+
+/// The partner Pikachu (form 8) and partner Eevee (form 1). PKHeX's Zukan7b.SetDex registers
+/// neither, because the dex has no entry for either form.
+bool isPartnerLGPE(const Pokemon::Pokemon& pokemon) {
+    return (pokemon.speciesID() == 25 && pokemon.form() == 8) || (pokemon.speciesID() == 133 && pokemon.form() == 1);
+}
+
+std::vector<uint8_t> zukanBlockLGPE(const Trainer::Trainer7LGPE& trainer) {
+    for (const auto& block : trainer.getBlocks()) {
+        if (block.key == Trainer::ZUKAN7_LGPE) {
+            return block.data;
+        }
+    }
+    return {};
+}
+
+/// Let's Go Pikachu/Eevee: the one format with its own block builder, and until now no harness wrote
+/// one back at all, so an unedited write that changed bytes was only ever seen on the console. Each
+/// writer runs alone first, re-parsing from scratch, so a difference names the writer that made it;
+/// then "all" runs them in the order saveTrainerInfoLetsGo does, which is what a real save writes.
+///
+/// The Pokedex writer registers everything in storage on every write, so it may change a save whose
+/// dex does not yet show a Pokemon it holds -- a Pokemon made shiny by an editor, say, whose shiny
+/// sighting was never recorded. That is a KNOWN divergence, held to three rules instead: it touches
+/// nothing but the Pokedex block, a second write changes nothing, and a partner Pikachu or Eevee
+/// never writes its species' size records.
+void roundTripLGPE(const char* label, const std::string& path) {
+    const std::vector<uint8_t> before = readFile(path);
+    if (before.size() < Trainer::SAVE_SIZE7_LGPE) {
+        std::printf("  SKIP  %-22s (%s)\n", label, SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    const std::vector<uint8_t> area(before.begin(), before.begin() + Trainer::SAVE_SIZE7_LGPE);
+    auto report = [](bool passed, const std::string& what) {
+        std::printf("  %s  %s\n", passed ? "PASS" : "FAIL", what.c_str());
+        ++(passed ? g_pass : g_fail);
+    };
+    static constexpr const char* pokedexNote = "the Pokedex registered stored Pokemon its flags did not yet show";
+    auto writeAll = [](Trainer::Trainer7LGPE& trainer) {
+        trainer.updateItemBlock();
+        trainer.updateBoxBlock();
+        trainer.updatePartyBlock();
+        trainer.updateTrainerInfoBlock();
+        trainer.updatePokedexBlock();
+    };
+    const struct { const char* name; void (*write)(Trainer::Trainer7LGPE&); const char* known; } steps[] = {
+        { "items",   [](Trainer::Trainer7LGPE& trainer) { trainer.updateItemBlock(); },                            nullptr },
+        { "boxes",   [](Trainer::Trainer7LGPE& trainer) { trainer.updateBoxBlock(); },                             nullptr },
+        { "party",   [](Trainer::Trainer7LGPE& trainer) { trainer.updateBoxBlock(); trainer.updatePartyBlock(); }, nullptr },
+        { "trainer", [](Trainer::Trainer7LGPE& trainer) { trainer.updateTrainerInfoBlock(); },                     nullptr },
+        { "pokedex", [](Trainer::Trainer7LGPE& trainer) { trainer.updatePokedexBlock(); },                         pokedexNote },
+    };
+    for (const auto& step : steps) {
+        Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(area));
+        step.write(trainer);
+        std::vector<uint8_t> after = before;
+        Trainer::writeBlocksToSaveData7LGPE(after, trainer.getBlocks());
+        compareBytes(std::string(label) + " [" + step.name + "]", before, after, step.known);
+    }
+
+    Trainer::Trainer7LGPE originalTrainer(Trainer::createBlocksFromSaveData7LGPE(area));
+    Trainer::Trainer7LGPE firstTrainer(Trainer::createBlocksFromSaveData7LGPE(area));
+    writeAll(firstTrainer);
+    std::vector<uint8_t> firstWrite = before;
+    Trainer::writeBlocksToSaveData7LGPE(firstWrite, firstTrainer.getBlocks());
+    compareBytes(std::string(label) + " [all]", before, firstWrite, pokedexNote);
+
+    // Only the Pokedex block may differ. Compared block by block after re-parsing what was written,
+    // so a writer that strayed into another block is named rather than hidden in the byte count.
+    const std::vector<uint8_t> firstArea(firstWrite.begin(), firstWrite.begin() + Trainer::SAVE_SIZE7_LGPE);
+    Trainer::Trainer7LGPE reloadedTrainer(Trainer::createBlocksFromSaveData7LGPE(firstArea));
+    std::string changedBlocks;
+    for (const auto& originalBlock : originalTrainer.getBlocks()) {
+        if (originalBlock.key == Trainer::ZUKAN7_LGPE) {
+            continue;
+        }
+        for (const auto& reloadedBlock : reloadedTrainer.getBlocks()) {
+            if (reloadedBlock.key == originalBlock.key && reloadedBlock.data != originalBlock.data) {
+                changedBlocks += " " + std::to_string(originalBlock.key);
+            }
+        }
+    }
+    report(changedBlocks.empty(), std::string(label) + " [all] an unedited write changes no block but the Pokedex" + (changedBlocks.empty() ? "" : " (changed:" + changedBlocks + ")"));
+
+    // Whatever the first write registered, the second must find nothing left to do.
+    writeAll(reloadedTrainer);
+    std::vector<uint8_t> secondWrite = firstWrite;
+    Trainer::writeBlocksToSaveData7LGPE(secondWrite, reloadedTrainer.getBlocks());
+    compareBytes(std::string(label) + " [second write]", firstWrite, secondWrite);
+
+    // A partner Pikachu or Eevee must leave its species' size records alone. Checked only for a
+    // species whose every stored Pokemon is the partner, so no other Pokemon could have moved them.
+    for (const uint16_t partnerSpecies : { static_cast<uint16_t>(25), static_cast<uint16_t>(133) }) {
+        size_t partnerCount = 0;
+        size_t otherCount = 0;
+        auto countPokemon = [&](const Pokemon::Pokemon* pokemon) {
+            if (!pokemon || pokemon->speciesID() != partnerSpecies || pokemon->isEgg()) {
+                return;
+            }
+            ++(isPartnerLGPE(*pokemon) ? partnerCount : otherCount);
+        };
+        for (const auto& pokemon : originalTrainer.party) {
+            countPokemon(pokemon.get());
+        }
+        for (const auto& box : originalTrainer.boxes) {
+            for (const auto& pokemon : box) {
+                countPokemon(pokemon.get());
+            }
+        }
+        if (partnerCount == 0 || otherCount != 0) {
+            continue;
+        }
+        const std::vector<uint8_t> zukanBefore = zukanBlockLGPE(originalTrainer);
+        const std::vector<uint8_t> zukanAfter = zukanBlockLGPE(firstTrainer);
+        size_t changedRecordCount = 0;
+        for (int sizeGroup = 0; sizeGroup < 4; ++sizeGroup) {
+            const size_t recordOffset = sizeRecordOffsetLGPE(sizeGroup, partnerSpecies - 1);
+            if (recordOffset + 6 <= zukanBefore.size() && recordOffset + 6 <= zukanAfter.size() && !std::equal(zukanBefore.begin() + recordOffset, zukanBefore.begin() + recordOffset + 6, zukanAfter.begin() + recordOffset)) {
+                ++changedRecordCount;
+            }
+        }
+        report(changedRecordCount == 0, std::string(label) + " [pokedex] the partner " + (partnerSpecies == 25 ? "Pikachu" : "Eevee") + " writes no size record (" + std::to_string(changedRecordCount) + " changed)");
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::printf("usage: roundtrip <save-root>\n  Expects, relative to <save-root>:\n  One folder per TITLE, any filename inside:\n    FireRed/            Let's Go Pikachu/\n    Sword/  Shield/  Violet/  Legends Z-A/  Legends Arceus/\n");
@@ -543,6 +849,9 @@ int main(int argc, char** argv) {
     roundTripSCBlock<Trainer::Trainer9LZA>("Legends Z-A",     SaveTree::legendsZA(root));
     roundTripSCBlock<Trainer::Trainer9SV>("Violet",           SaveTree::violet(root));
     roundTripSCBlock<Trainer::Trainer8LA>("Legends Arceus",   SaveTree::legendsArceus(root));
+    catchResearchCountsOnceLA("Legends Arceus",                SaveTree::legendsArceus(root));
+    roundTripLGPE("Let's Go Pikachu",                         SaveTree::letsGoPikachu(root));
+    roundTripLGPE("Let's Go Eevee",                           SaveTree::letsGoEevee(root));
 
     std::printf("\n%d passed, %d known divergence(s), %d FAILED\n", g_pass, g_known, g_fail);
     if (g_known)

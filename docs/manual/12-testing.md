@@ -123,6 +123,10 @@ write the game itself would make:
   contiguous copy at `0x1209`, Gold/Silver five separate pieces — and real saves ship with it stale.
   Writing refreshes it from the primary: 211, 250 and 29 bytes on three real saves. Only bytes inside
   those mirrors and the two checksum words may move (chapter 05).
+- **Pokedex registration**, in the games whose writer registers everything in storage (the Switch
+  games and Let's Go): a stored Pokemon the dex does not show yet gets its flags, such as a Pokemon an
+  editor made shiny after it was caught. Only the Pokedex may move, and a second write must change
+  nothing; a write that keeps changing it is registering something the game would not.
 - **A no$gba container** comes back in different bytes, because its run-length code is coded again;
   the save inside it must still match.
 

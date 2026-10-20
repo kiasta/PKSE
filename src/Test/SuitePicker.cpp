@@ -31,22 +31,27 @@ namespace Test
 
     namespace
     {
-        namespace Btn
+        namespace Button
         {
-            constexpr u64 BUTTON_A = HidNpadButton_A, BUTTON_B = HidNpadButton_B, BUTTON_Y = HidNpadButton_Y;
-            constexpr u64 Right = HidNpadButton_Right, Left = HidNpadButton_Left;
+            constexpr u64 BUTTON_A = HidNpadButton_A;
+            constexpr u64 BUTTON_B = HidNpadButton_B;
+            constexpr u64 BUTTON_Y = HidNpadButton_Y;
+            constexpr u64 DPAD_RIGHT = HidNpadButton_Right;
+            constexpr u64 DPAD_LEFT = HidNpadButton_Left;
         }
 
         /// Runs a fresh picker through `presses`, then presses A, and reports what it selected.
         /// Returns 0 if nothing was selected.
-        uint64_t pickAfter(Context &context, const char *label, const u64 *presses, int count)
+        uint64_t pickAfter(Context &context, const char *journeyName, const u64 *presses, int pressCount)
         {
             UI::SaveSelectScreen savePicker;
-            Journey j(context, savePicker, nullptr, nullptr, label);
-            j.settle("picker: open", Allow::AllowNothing, 2);
-            for (int index = 0; index < count; ++index)
-                j.act("picker: move the cursor", presses[index], Allow::AllowNothing);
-            j.act("picker: press A on the focused title", Btn::BUTTON_A, Allow::AllowNothing);
+            Journey journey(context, savePicker, nullptr, nullptr, journeyName);
+            journey.settle("picker: open", Allow::AllowNothing, 2);
+            for (int pressIndex = 0; pressIndex < pressCount; ++pressIndex)
+            {
+                journey.act("picker: move the cursor", presses[pressIndex], Allow::AllowNothing);
+            }
+            journey.act("picker: press A on the focused title", Button::BUTTON_A, Allow::AllowNothing);
             return savePicker.hasSelectedTitle() ? savePicker.getSelectedTitleId() : 0ULL;
         }
     }
@@ -55,51 +60,58 @@ namespace Test
 
     void pickerRun(Context &context, int)
     {
-        const std::vector<Target> found = Runner::discover();
-        int installed = 0;
-        for (const auto &t : found)
-            if (t.titleId != 0)
-                ++installed;
+        const std::vector<Target> discoveredTargets = Runner::discover();
+        int installedCount = 0;
+        for (const auto &target : discoveredTargets)
+        {
+            if (target.titleId != 0)
+            {
+                ++installedCount;
+            }
+        }
 
-        if (installed == 0)
+        if (installedCount == 0)
         {
             context.skip("no installed Pokemon save on this console, so the save picker was not driven");
             return;
         }
 
-        if (context.rep)
-            context.rep->addTrace("[picker] driving the save picker (" + std::to_string(installed) + " installed saves)");
+        if (context.report)
+        {
+            context.report->addTrace("[picker] driving the save picker (" + std::to_string(installedCount) + " installed saves)");
+        }
 
         // 1. It opens, renders, and offers something.
         {
             UI::SaveSelectScreen savePicker;
-            Journey j(context, savePicker, nullptr, nullptr, "picker-open");
-            j.settle("picker: open and render", Allow::AllowNothing, 3);
-            j.expect(!savePicker.shouldExit(), "the save picker asked to close as soon as it opened");
-            j.expect(!savePicker.hasSelectedTitle(), "the save picker selected a title before any input");
+            Journey journey(context, savePicker, nullptr, nullptr, "picker-open");
+            journey.settle("picker: open and render", Allow::AllowNothing, 3);
+            journey.expect(!savePicker.shouldExit(), "the save picker asked to close as soon as it opened");
+            journey.expect(!savePicker.hasSelectedTitle(), "the save picker selected a title before any input");
         }
 
         // 2. A selects a title, and it is one the console actually has.
-        const uint64_t first = pickAfter(context, "picker-select", nullptr, 0);
-        if (!context.check(first != 0, "pressing A on the save picker did not select a title", "installed=" + std::to_string(installed)))
-            return;
+        const uint64_t firstTitleId = pickAfter(context, "picker-select", nullptr, 0);
+        if (!context.check(firstTitleId != 0, "pressing A on the save picker did not select a title", "installed=" + std::to_string(installedCount))) return;
 
-        bool known = false;
-        for (const auto &t : found)
-            if (t.titleId == first)
+        bool titleFound = false;
+        for (const auto &target : discoveredTargets)
+        {
+            if (target.titleId == firstTitleId)
             {
-                known = true;
+                titleFound = true;
                 break;
             }
-        context.check(known, "the save picker selected a title id the runner never found", hex("titleId", first, 16));
+        }
+        context.check(titleFound, "the save picker selected a title id the runner never found", hexField("titleId", firstTitleId, 16));
 
         // 3. The cursor actually moves -- only decidable when there is more than one title.
-        if (installed > 1)
+        if (installedCount > 1)
         {
-            const u64 right[] = {Btn::Right};
-            const uint64_t second = pickAfter(context, "picker-move", right, 1);
-            context.check(second != 0, "pressing A after moving right did not select a title");
-            context.check(second != first, "Right did not move the save picker's cursor", hex("both", first, 16));
+            const u64 rightPresses[] = {Button::DPAD_RIGHT};
+            const uint64_t secondTitleId = pickAfter(context, "picker-move", rightPresses, 1);
+            context.check(secondTitleId != 0, "pressing A after moving right did not select a title");
+            context.check(secondTitleId != firstTitleId, "Right did not move the save picker's cursor", hexField("both", firstTitleId, 16));
         }
         else
         {
@@ -107,16 +119,26 @@ namespace Test
         }
 
         // 4. The file browser -- the Gen 1 entry point -- opens and closes again.
+        //
+        // B goes up one folder and closes the browser only at sdmc:/, and the browser opens a folder
+        // or two below it (sdmc:/PKSE/ or sdmc:/PKSE/saves/), so B is pressed until it closes, up to
+        // a bound deeper than any folder the browser starts in.
         {
+            constexpr int maximumUpPresses = 8;
             UI::SaveSelectScreen savePicker;
-            Journey j(context, savePicker, nullptr, nullptr, "picker-browser");
-            j.settle("picker: open", Allow::AllowNothing, 2);
-            j.act("picker: Y opens the file browser", Btn::BUTTON_Y, Allow::AllowNothing);
-            j.expect(savePicker.isFileBrowserOpen(), "Y on the save picker did not open the file browser");
-            j.act("picker: B closes the file browser", Btn::BUTTON_B, Allow::AllowNothing);
-            j.expect(!savePicker.isFileBrowserOpen(), "B did not close the file browser");
-            j.expect(!savePicker.shouldExit(), "closing the file browser exited the save picker");
-            j.expect(!savePicker.hasSelectedFile(), "closing the file browser selected a file anyway");
+            Journey journey(context, savePicker, nullptr, nullptr, "picker-browser");
+            journey.settle("picker: open", Allow::AllowNothing, 2);
+            journey.act("picker: Y opens the file browser", Button::BUTTON_Y, Allow::AllowNothing);
+            journey.expect(savePicker.isFileBrowserOpen(), "Y on the save picker did not open the file browser");
+            int upPressCount = 0;
+            while (savePicker.isFileBrowserOpen() && upPressCount < maximumUpPresses)
+            {
+                journey.act("picker: B goes up a folder, closing the browser at the SD root", Button::BUTTON_B, Allow::AllowNothing);
+                ++upPressCount;
+            }
+            journey.expect(!savePicker.isFileBrowserOpen(), "B never closed the file browser", "presses=" + std::to_string(upPressCount));
+            journey.expect(!savePicker.shouldExit(), "closing the file browser exited the save picker");
+            journey.expect(!savePicker.hasSelectedFile(), "closing the file browser selected a file anyway");
         }
     }
 }

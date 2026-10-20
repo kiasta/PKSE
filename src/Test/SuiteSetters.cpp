@@ -72,53 +72,42 @@ namespace Test
         /// predicate for. Each row is from PKHeX's entity class for that format (PK1, PK2, PK3, PK4,
         /// PK5, PB7). Anything not listed here is expected to be stored, so a new format or a new
         /// field starts out held to the strict answer.
-        bool formatLacksField(Enums::GameVersion group, const std::string &field)
+        bool formatLacksField(Enums::GameVersion group, const std::string &fieldName)
         {
             using Enums::GameVersion;
-            const bool gen1 = group == GameVersion::RBY;
-            const bool gen2 = group == GameVersion::GSC;
-            const bool gen3 = Enums::isGen3Group(group);
-            const bool gen45 = group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
-            const bool letsGo = group == GameVersion::GG;
+            const bool isGeneration1 = group == GameVersion::RBY;
+            const bool isGeneration2 = group == GameVersion::GSC;
+            const bool isGeneration3 = Enums::isGen3Group(group);
+            const bool isGeneration4Or5 = group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
+            const bool isLetsGo = group == GameVersion::GG;
             const bool hasStatNature = group == GameVersion::SWSH || group == GameVersion::BDSP || group == GameVersion::PLA || group == GameVersion::SV || group == GameVersion::ZA;
 
             // No secret id before Gen 3: the trainer id is 16 bits.
-            if (field == "sid16")
-                return gen1 || gen2;
+            if (fieldName == "sid16") return isGeneration1 || isGeneration2;
             // PK1 has no OT gender. PK2 keeps it in the caught data, which every GSC record has room
             // for (Gold and Silver just never write it).
-            if (field == "otGender")
-                return gen1;
+            if (fieldName == "otGender") return isGeneration1;
             // PK1 and PK2 have no language byte; the language belongs to the save.
-            if (field == "language")
-                return gen1 || gen2;
+            if (fieldName == "language") return isGeneration1 || isGeneration2;
             // Gen 1-3 forms are not stored: Unown's comes from its DVs or PID, and Gen 3's Castform
             // and Deoxys forms come from the game.
-            if (field == "form")
-                return gen1 || gen2 || gen3;
+            if (fieldName == "form") return isGeneration1 || isGeneration2 || isGeneration3;
             // The minted stat nature is Gen 8 onward, and Let's Go has none.
-            if (field == "statNature")
-                return !hasStatNature;
+            if (fieldName == "statNature") return !hasStatNature;
             // Gens 3-5 use the PID as the encryption constant; Gens 4 and 5 store no separate one.
             // (Gen 3's setter writes the PID itself, so it round trips there.)
-            if (field == "encryptionConstant")
-                return gen45;
+            if (fieldName == "encryptionConstant") return isGeneration4Or5;
             // PK4 and PK5 store the ability id; the slot is derived from the PID, not stored.
-            if (field == "abilityNumber")
-                return gen45;
+            if (fieldName == "abilityNumber") return isGeneration4Or5;
             // Relearn moves are Gen 6 onward.
-            if (field.rfind("relearn", 0) == 0)
-                return gen1 || gen2 || gen3 || gen45;
+            if (fieldName.rfind("relearn", 0) == 0) return isGeneration1 || isGeneration2 || isGeneration3 || isGeneration4Or5;
             // The HP DV is derived from the other four in Gens 1 and 2.
-            if (field == "ivHP")
-                return gen1 || gen2;
+            if (fieldName == "ivHP") return isGeneration1 || isGeneration2;
             // PB7 has EV bytes, but Let's Go has no way to earn EVs and PKHeX's legality requires them
-            // to be 0, so PKSE deliberately does not write them. Not a missing field: a refusal.
-            if (field.rfind("ev", 0) == 0)
-                return letsGo;
+            // to be 0, so PKSE deliberately does not write them. Not a missing fieldName: a refusal.
+            if (fieldName.rfind("ev", 0) == 0) return isLetsGo;
             // No eggs in Gen 1 or in Let's Go.
-            if (field == "egg")
-                return gen1 || letsGo;
+            if (fieldName == "egg") return isGeneration1 || isLetsGo;
             return false;
         }
 
@@ -154,106 +143,108 @@ namespace Test
         }
     }
 
-    int settersPlan(Context &context) { return context.trainer ? 1 : 0; }
+    int settersPlan(Context &context)
+    {
+        return context.trainer ? 1 : 0;
+    }
 
     void settersRun(Context &context, int)
     {
-        Trainer::Trainer *tr = context.trainer;
-        if (!tr)
-            return;
+        Trainer::Trainer *trainer = context.trainer;
+        if (!trainer) return;
 
-        auto blank = tr->createBlankPokemon();
-        if (!context.check(blank != nullptr, "createBlankPokemon() returned nothing"))
-            return;
-        Pokemon::Pokemon &pokemon = *blank;
+        auto blankPokemon = trainer->createBlankPokemon();
+        if (!context.check(blankPokemon != nullptr, "createBlankPokemon() returned nothing")) return;
+        Pokemon::Pokemon &pokemon = *blankPokemon;
 
         const std::string whereLabel = "blank " + Enums::getGameVersionName(context.group) + " entity";
-        std::string notStored;
+        std::string notStoredFields;
 
-        // The generic field probe. `get`/`set` are lambdas over the entity so every field reads the
-        // same way here regardless of its width. `expect` is what the format should do with it.
-        auto roundTripField = [&](const char *field, auto get, auto set, const std::vector<uint32_t> &values, Expect expect)
+        // The generic field probe. `readField`/`writeField` are lambdas over the entity so every
+        // field reads the same way here regardless of its width. `expectation` is what the format
+        // should do with it.
+        auto roundTripField = [&](const char *fieldName, auto readField, auto writeField, const std::vector<uint32_t> &probeValues, Expect expectation)
         {
-            const uint32_t before = (uint32_t)get();
-            int probes = 0, stuck = 0, wrong = 0;
-            std::string firstWrong;
-            for (uint32_t newValue : values)
+            const uint32_t originalValue = (uint32_t)readField();
+            int probeCount = 0;
+            int stuckCount = 0;
+            int wrongCount = 0;
+            std::string firstWrongDetail;
+            for (uint32_t newValue : probeValues)
             {
                 // A value the field already holds cannot tell "stored" from "ignored" apart, so it
                 // is not a probe at all.
-                if (newValue == before)
-                    continue;
-                ++probes;
-                set(newValue);
-                const uint32_t readBack = (uint32_t)get();
-                if (readBack == newValue)
-                    continue;
-                if (readBack == before)
+                if (newValue == originalValue)
                 {
-                    ++stuck;
                     continue;
                 }
-                ++wrong;
-                if (firstWrong.empty())
-                    firstWrong = " wrote=" + std::to_string(newValue) + " read=" + std::to_string(readBack);
+                ++probeCount;
+                writeField(newValue);
+                const uint32_t readBack = (uint32_t)readField();
+                if (readBack == newValue)
+                {
+                    continue;
+                }
+                if (readBack == originalValue)
+                {
+                    ++stuckCount;
+                    continue;
+                }
+                ++wrongCount;
+                if (firstWrongDetail.empty())
+                {
+                    firstWrongDetail = " wrote=" + std::to_string(newValue) + " read=" + std::to_string(readBack);
+                }
             }
-            const std::string fieldLabel = whereLabel + std::string(" field=") + field;
-            if (probes == 0)
+            const std::string fieldLabel = whereLabel + std::string(" field=") + fieldName;
+            if (probeCount == 0)
             {
                 context.skip("every probe value for this field was the value it already held, so it could not be tested", fieldLabel);
             }
-            else if (wrong > 0)
+            else if (wrongCount > 0)
             {
-                context.fail("field does not round trip through its setter and getter", fieldLabel + firstWrong);
+                context.fail("field does not round trip through its setter and getter", fieldLabel + firstWrongDetail);
             }
-            else if (stuck > 0 && stuck < probes)
+            else if (stuckCount > 0 && stuckCount < probeCount)
             {
-                context.fail("field stores some values and silently drops others", fieldLabel + " dropped=" + std::to_string(stuck) + "/" + std::to_string(probes));
+                context.fail("field stores some values and silently drops others", fieldLabel + " dropped=" + std::to_string(stuckCount) + "/" + std::to_string(probeCount));
             }
-            else if (expect == Expect::Stored)
+            else if (expectation == Expect::Stored)
             {
-                context.check(stuck == 0, "a field this format has was not stored (no-op setter, or a write the getter does not read)", fieldLabel);
+                context.check(stuckCount == 0, "a field this format has was not stored (no-op setter, or a write the getter does not read)", fieldLabel);
             }
             else
             {
-                if (context.check(stuck == probes, "a field this format is expected NOT to have was stored (the capability predicate or the absence list is wrong)", fieldLabel))
-                    notStored += std::string(notStored.empty() ? "" : ", ") + field;
+                if (context.check(stuckCount == probeCount, "a field this format is expected NOT to have was stored (the capability predicate or the absence list is wrong)", fieldLabel))
+                {
+                    notStoredFields += std::string(notStoredFields.empty() ? "" : ", ") + fieldName;
+                }
             }
-            set(before);
+            writeField(originalValue);
         };
         // The expectation for a field with no capability predicate.
-        auto expected = [&](const std::string &field)
-        { return formatLacksField(context.group, field) ? Expect::Absent : Expect::Stored; };
+        auto expected = [&](const std::string &fieldName) { return formatLacksField(context.group, fieldName) ? Expect::Absent : Expect::Stored; };
         // The expectation for a field that has one.
-        auto expectedIf = [](bool hasField)
-        { return hasField ? Expect::Stored : Expect::Absent; };
+        auto expectedIf = [](bool hasField) { return hasField ? Expect::Stored : Expect::Absent; };
         const bool wideIds = hasWideIds(context.group);
 
-        roundTripField("species", [&]
-           { return pokemon.speciesID(); }, [&](uint32_t newValue)
-           { pokemon.setSpecies((uint16_t)newValue); }, {1u, PROBE_SPECIES}, Expect::Stored);
+        roundTripField("species", [&] { return pokemon.speciesID(); }, [&](uint32_t newValue) { pokemon.setSpecies((uint16_t)newValue); }, {1u, PROBE_SPECIES}, Expect::Stored);
         pokemon.setSpecies(PROBE_SPECIES); // deliberately NOT restored: everything below wants a real species
 
-        const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(PROBE_SPECIES, 0);
-        if (pi.formCount > 2)
-            roundTripField("form", [&]
-               { return pokemon.formID(); }, [&](uint32_t newValue)
-               { pokemon.setForm((uint8_t)newValue); }, {1u, 2u}, expected("form"));
+        const Pokemon::PersonalInfo &personalInfo = Pokemon::getPersonalInfo(PROBE_SPECIES, 0);
+        if (personalInfo.formCount > 2)
+        {
+            roundTripField("form", [&] { return pokemon.formID(); }, [&](uint32_t newValue) { pokemon.setForm((uint8_t)newValue); }, {1u, 2u}, expected("form"));
+        }
 
-        roundTripField("pid", [&]
-           { return pokemon.pid(); }, [&](uint32_t newValue)
-           { pokemon.setPID(newValue); }, {0x12345678u, 0xABCDEF01u}, expectedIf(pokemon.hasPID()));
+        roundTripField("pid", [&] { return pokemon.pid(); }, [&](uint32_t newValue) { pokemon.setPID(newValue); }, {0x12345678u, 0xABCDEF01u}, expectedIf(pokemon.hasPID()));
         if (pokemon.hasPID())
-            roundTripField("encryptionConstant", [&]
-               { return pokemon.encryptionConstant(); }, [&](uint32_t newValue)
-               { pokemon.setEncryptionConstant(newValue); }, {0x0BADF00Du, 0x1u}, expected("encryptionConstant"));
+        {
+            roundTripField("encryptionConstant", [&] { return pokemon.encryptionConstant(); }, [&](uint32_t newValue) { pokemon.setEncryptionConstant(newValue); }, {0x0BADF00Du, 0x1u}, expected("encryptionConstant"));
+        }
 
-        roundTripField("tid16", [&]
-           { return pokemon.tid16(); }, [&](uint32_t newValue)
-           { pokemon.setTID16((uint16_t)newValue); }, {12345u, 0x0102u}, Expect::Stored);
-        roundTripField("sid16", [&]
-           { return pokemon.sid16(); }, [&](uint32_t newValue)
-           { pokemon.setSID16((uint16_t)newValue); }, {54321u, 0x0201u}, expected("sid16"));
+        roundTripField("tid16", [&] { return pokemon.tid16(); }, [&](uint32_t newValue) { pokemon.setTID16((uint16_t)newValue); }, {12345u, 0x0102u}, Expect::Stored);
+        roundTripField("sid16", [&] { return pokemon.sid16(); }, [&](uint32_t newValue) { pokemon.setSID16((uint16_t)newValue); }, {54321u, 0x0201u}, expected("sid16"));
 
         // The two halves and the composite must agree. A format that stores them at unrelated
         // offsets would still pass the two probes above and fail here.
@@ -266,35 +257,25 @@ namespace Test
         // unrelated offsets.
         pokemon.setTID16(0x1234);
         pokemon.setSID16(0x5678);
-        const uint16_t gotTid = pokemon.tid16();
-        const uint16_t gotSid = pokemon.sid16();
-        context.check(pokemon.id32() == ((static_cast<uint32_t>(gotSid) << 16) | gotTid), "id32 is not sid16<<16 | tid16", whereLabel + " " + hex("id32", pokemon.id32(), 8) + " " + hex("tid16", gotTid, 4) + " " + hex("sid16", gotSid, 4));
+        const uint16_t storedTID16 = pokemon.tid16();
+        const uint16_t storedSID16 = pokemon.sid16();
+        context.check(pokemon.id32() == ((static_cast<uint32_t>(storedSID16) << 16) | storedTID16), "id32 is not sid16<<16 | tid16", whereLabel + " " + hexField("id32", pokemon.id32(), 8) + " " + hexField("tid16", storedTID16, 4) + " " + hexField("sid16", storedSID16, 4));
 
         // A format with no secret id has a SIXTEEN-BIT id32, so a 32-bit probe would drop its top
         // half -- a real property of the format, exactly like the four-bit originGame field below,
         // rather than a broken round trip. Size the probe to what the format holds.
-        const bool hasSecretId = (gotSid == 0x5678);
+        const bool hasSecretId = (storedSID16 == 0x5678);
         roundTripField("id32", [&] { return pokemon.id32(); }, [&](uint32_t newValue) { pokemon.setId32(newValue); }, hasSecretId ? std::vector<uint32_t>{0xDEADBEEFu, 0x00010002u} : std::vector<uint32_t>{0x0000BEEFu, 0x00000002u}, Expect::Stored);
 
-        roundTripField("otGender", [&]
-           { return pokemon.otGender(); }, [&](uint32_t newValue)
-           { pokemon.setOTGender((uint8_t)newValue); }, {1u, 0u}, expected("otGender"));
-        roundTripField("language", [&]
-           { return pokemon.language(); }, [&](uint32_t newValue)
-           { pokemon.setLanguage((uint8_t)newValue); }, {2u, 5u}, expected("language"));
+        roundTripField("otGender", [&] { return pokemon.otGender(); }, [&](uint32_t newValue) { pokemon.setOTGender((uint8_t)newValue); }, {1u, 0u}, expected("otGender"));
+        roundTripField("language", [&] { return pokemon.language(); }, [&](uint32_t newValue) { pokemon.setLanguage((uint8_t)newValue); }, {2u, 5u}, expected("language"));
         // FireRed and LeafGreen. Deliberately small ids: Gen 3's origin field is FOUR BITS, so a
         // modern game's version byte (Sword is 44) truncates to 12 there -- a real property of the
         // format, not a round-trip failure, and probing with one would report the format as broken.
-        roundTripField("originGame", [&]
-           { return pokemon.originGame(); }, [&](uint32_t newValue)
-           { pokemon.setOriginGame((uint8_t)newValue); }, {4u, 5u}, expectedIf(pokemon.hasOriginGame()));
+        roundTripField("originGame", [&] { return pokemon.originGame(); }, [&](uint32_t newValue) { pokemon.setOriginGame((uint8_t)newValue); }, {4u, 5u}, expectedIf(pokemon.hasOriginGame()));
 
-        roundTripField("nature", [&]
-           { return pokemon.nature(); }, [&](uint32_t newValue)
-           { pokemon.setNature((uint8_t)newValue); }, {5u, 24u}, expectedIf(pokemon.hasNature()));
-        roundTripField("statNature", [&]
-           { return pokemon.statNature(); }, [&](uint32_t newValue)
-           { pokemon.setStatNature((uint8_t)newValue); }, {7u, 3u}, expected("statNature"));
+        roundTripField("nature", [&] { return pokemon.nature(); }, [&](uint32_t newValue) { pokemon.setNature((uint8_t)newValue); }, {5u, 24u}, expectedIf(pokemon.hasNature()));
+        roundTripField("statNature", [&] { return pokemon.statNature(); }, [&](uint32_t newValue) { pokemon.setStatNature((uint8_t)newValue); }, {7u, 3u}, expected("statNature"));
         if (pokemon.hasAbility())
         {
             // Probed on a species with a REAL ability choice, not on PROBE_SPECIES. Gen 3 stores the
@@ -303,13 +284,9 @@ namespace Test
             // to be clear there, and Pokemon3FRLG follows it. Pikachu is such a species, so probing
             // on it asks a question the format is right to answer "no" to.
             pokemon.setSpecies(ABILITY_PROBE_SPECIES);
-            const Pokemon::PersonalInfo &ap = Pokemon::getPersonalInfo(ABILITY_PROBE_SPECIES, 0);
-            roundTripField("ability", [&]
-               { return pokemon.ability(); }, [&](uint32_t newValue)
-               { pokemon.setAbility((uint16_t)newValue); }, {(uint32_t)ap.ability1, (uint32_t)ap.ability2}, Expect::Stored);
-            roundTripField("abilityNumber", [&]
-               { return pokemon.abilityNumber(); }, [&](uint32_t newValue)
-               { pokemon.setAbilityNumber((uint8_t)newValue); }, {1u, 2u}, expected("abilityNumber"));
+            const Pokemon::PersonalInfo &abilityPersonalInfo = Pokemon::getPersonalInfo(ABILITY_PROBE_SPECIES, 0);
+            roundTripField("ability", [&] { return pokemon.ability(); }, [&](uint32_t newValue) { pokemon.setAbility((uint16_t)newValue); }, {(uint32_t)abilityPersonalInfo.ability1, (uint32_t)abilityPersonalInfo.ability2}, Expect::Stored);
+            roundTripField("abilityNumber", [&] { return pokemon.abilityNumber(); }, [&](uint32_t newValue) { pokemon.setAbilityNumber((uint8_t)newValue); }, {1u, 2u}, expected("abilityNumber"));
 
             // There is deliberately no "the slot resolves to an ability" check. It is not a property
             // these formats share: PK8/PK9 store the ability ID (0x14) and the slot number (0x16) as
@@ -319,46 +296,24 @@ namespace Test
             // would fail correct code on five of the seven formats.
             pokemon.setSpecies(PROBE_SPECIES);
         }
-        roundTripField("heldItem", [&]
-           { return pokemon.heldItem(); }, [&](uint32_t newValue)
-           { pokemon.setHeldItem((uint16_t)newValue); }, {17u, wideIds ? 275u : 200u}, expectedIf(pokemon.hasHeldItem()));
-        roundTripField("friendship", [&]
-           { return pokemon.friendship(); }, [&](uint32_t newValue)
-           { pokemon.setFriendship((uint8_t)newValue); }, {70u, 255u}, expectedIf(pokemon.hasFriendship()));
-        roundTripField("ball", [&]
-           { return pokemon.ball(); }, [&](uint32_t newValue)
-           { pokemon.setBall((uint8_t)newValue); }, {4u, 1u}, expectedIf(pokemon.hasBall()));
-        roundTripField("gender", [&]
-           { return pokemon.gender(); }, [&](uint32_t newValue)
-           { pokemon.setGender((uint8_t)newValue); }, {0u, 1u}, expectedIf(pokemon.hasStoredGender()));
+        roundTripField("heldItem", [&] { return pokemon.heldItem(); }, [&](uint32_t newValue) { pokemon.setHeldItem((uint16_t)newValue); }, {17u, wideIds ? 275u : 200u}, expectedIf(pokemon.hasHeldItem()));
+        roundTripField("friendship", [&] { return pokemon.friendship(); }, [&](uint32_t newValue) { pokemon.setFriendship((uint8_t)newValue); }, {70u, 255u}, expectedIf(pokemon.hasFriendship()));
+        roundTripField("ball", [&] { return pokemon.ball(); }, [&](uint32_t newValue) { pokemon.setBall((uint8_t)newValue); }, {4u, 1u}, expectedIf(pokemon.hasBall()));
+        roundTripField("gender", [&] { return pokemon.gender(); }, [&](uint32_t newValue) { pokemon.setGender((uint8_t)newValue); }, {0u, 1u}, expectedIf(pokemon.hasStoredGender()));
         // Gen 2's hasMetData() says whether THIS record carries caught data, not whether the format
         // can: every PK2 has the bytes, and a blank one answers false until they are written. So the
         // met fields are expected stored there whatever the blank record says.
         const bool metDataExpected = pokemon.hasMetData() || context.group == Enums::GameVersion::GSC;
-        roundTripField("metLocation", [&]
-           { return pokemon.metLocation(); }, [&](uint32_t newValue)
-           { pokemon.setMetLocation((uint16_t)newValue); }, {6u, 1u}, expectedIf(metDataExpected));
-        roundTripField("metLevel", [&]
-           { return pokemon.metLevel(); }, [&](uint32_t newValue)
-           { pokemon.setMetLevel((uint8_t)newValue); }, {5u, 50u}, expectedIf(metDataExpected));
+        roundTripField("metLocation", [&] { return pokemon.metLocation(); }, [&](uint32_t newValue) { pokemon.setMetLocation((uint16_t)newValue); }, {6u, 1u}, expectedIf(metDataExpected));
+        roundTripField("metLevel", [&] { return pokemon.metLevel(); }, [&](uint32_t newValue) { pokemon.setMetLevel((uint8_t)newValue); }, {5u, 50u}, expectedIf(metDataExpected));
         // The date has its own predicate: Gen 3 has a met location and level but no date.
-        roundTripField("metYear", [&]
-           { return pokemon.metYear(); }, [&](uint32_t newValue)
-           { pokemon.setMetYear((uint8_t)newValue); }, {24u, 1u}, expectedIf(pokemon.hasMetDate()));
-        roundTripField("metMonth", [&]
-           { return pokemon.metMonth(); }, [&](uint32_t newValue)
-           { pokemon.setMetMonth((uint8_t)newValue); }, {12u, 1u}, expectedIf(pokemon.hasMetDate()));
-        roundTripField("metDay", [&]
-           { return pokemon.metDay(); }, [&](uint32_t newValue)
-           { pokemon.setMetDay((uint8_t)newValue); }, {28u, 1u}, expectedIf(pokemon.hasMetDate()));
-        roundTripField("pokerus", [&]
-           { return pokemon.isPokerusInfected() ? 1u : 0u; }, [&](uint32_t newValue)
-           { pokemon.setPokerus(newValue ? 0x12 : 0); }, {1u, 0u}, expectedIf(pokemon.hasPokerus()));
+        roundTripField("metYear", [&] { return pokemon.metYear(); }, [&](uint32_t newValue) { pokemon.setMetYear((uint8_t)newValue); }, {24u, 1u}, expectedIf(pokemon.hasMetDate()));
+        roundTripField("metMonth", [&] { return pokemon.metMonth(); }, [&](uint32_t newValue) { pokemon.setMetMonth((uint8_t)newValue); }, {12u, 1u}, expectedIf(pokemon.hasMetDate()));
+        roundTripField("metDay", [&] { return pokemon.metDay(); }, [&](uint32_t newValue) { pokemon.setMetDay((uint8_t)newValue); }, {28u, 1u}, expectedIf(pokemon.hasMetDate()));
+        roundTripField("pokerus", [&] { return pokemon.isPokerusInfected() ? 1u : 0u; }, [&](uint32_t newValue) { pokemon.setPokerus(newValue ? 0x12 : 0); }, {1u, 0u}, expectedIf(pokemon.hasPokerus()));
 
         // The two probes differ in every bit so a mask error cannot pass both.
-        roundTripField("hyperTrainFlags", [&]
-           { return (uint32_t)pokemon.hyperTrainFlags(); }, [&](uint32_t newValue)
-           { pokemon.setHyperTrainFlags((uint8_t)newValue); }, {0x15u, 0x2Au}, expectedIf(pokemon.hasHyperTraining()));
+        roundTripField("hyperTrainFlags", [&] { return (uint32_t)pokemon.hyperTrainFlags(); }, [&](uint32_t newValue) { pokemon.setHyperTrainFlags((uint8_t)newValue); }, {0x15u, 0x2Au}, expectedIf(pokemon.hasHyperTraining()));
 
         // A Hyper Trained stat must READ as a maximal IV while the stored IV stays where it was.
         // Both halves matter: the stat calculation depends on the first, and the legality tables and
@@ -376,7 +331,7 @@ namespace Test
         }
 
         static const char *statNames[6] = {"HP", "Atk", "Def", "Spe", "SpA", "SpD"};
-        auto ivGet = [&](int statIndex) -> uint32_t
+        auto readIV = [&](int statIndex) -> uint32_t
         {
             switch (statIndex)
             {
@@ -394,22 +349,22 @@ namespace Test
                 return pokemon.ivSPD();
             }
         };
-        for (int index = 0; index < 6; ++index)
+        for (int statIndex = 0; statIndex < 6; ++statIndex)
         {
             // The HP DV of Gens 1 and 2 is DERIVED from the low bits of the other four -- not stored,
             // not settable -- so it correctly refuses to take a value of its own.
-            const std::string field = std::string("iv") + statNames[index];
-            roundTripField(field.c_str(), [&] { return ivGet(index); }, [&](uint32_t newValue) { pokemon.setIV(index, (uint8_t)newValue); }, {(uint32_t)pokemon.maxIV(), 0u, (uint32_t)(pokemon.maxIV() / 2)}, expected(field));
+            const std::string fieldName = std::string("iv") + statNames[statIndex];
+            roundTripField(fieldName.c_str(), [&] { return readIV(statIndex); }, [&](uint32_t newValue) { pokemon.setIV(statIndex, (uint8_t)newValue); }, {(uint32_t)pokemon.maxIV(), 0u, (uint32_t)(pokemon.maxIV() / 2)}, expected(fieldName));
         }
-        for (int index = 0; index < 6; ++index)
+        for (int statIndex = 0; statIndex < 6; ++statIndex)
         {
             // evWide / setEVWide, never the 8-bit pair: Gen 1's Stat Experience is 16 bits and the
             // narrow accessors saturate, so testing through them would pass while losing data.
-            const std::string field = std::string("ev") + statNames[index];
-            roundTripField(field.c_str(), [&] { return (uint32_t)pokemon.evWide(index); }, [&](uint32_t newValue) { pokemon.setEVWide(index, (uint16_t)newValue); }, {(uint32_t)pokemon.maxEV(), 0u, (uint32_t)(pokemon.maxEV() / 2)}, expected(field));
+            const std::string fieldName = std::string("ev") + statNames[statIndex];
+            roundTripField(fieldName.c_str(), [&] { return (uint32_t)pokemon.evWide(statIndex); }, [&](uint32_t newValue) { pokemon.setEVWide(statIndex, (uint16_t)newValue); }, {(uint32_t)pokemon.maxEV(), 0u, (uint32_t)(pokemon.maxEV() / 2)}, expected(fieldName));
         }
         {
-            auto avGet = [&](int statIndex) -> uint32_t
+            auto readAV = [&](int statIndex) -> uint32_t
             {
                 switch (statIndex)
                 {
@@ -427,44 +382,34 @@ namespace Test
                     return pokemon.avSPD();
                 }
             };
-            for (int index = 0; index < 6; ++index)
+            for (int statIndex = 0; statIndex < 6; ++statIndex)
             {
-                const std::string field = std::string("av") + statNames[index];
-                roundTripField(field.c_str(), [&]
-                   { return avGet(index); }, [&](uint32_t newValue)
-                   { pokemon.setAV(index, (uint8_t)newValue); }, {200u, 0u, 100u}, expectedIf(pokemon.hasAwakeningValues()));
+                const std::string fieldName = std::string("av") + statNames[statIndex];
+                roundTripField(fieldName.c_str(), [&] { return readAV(statIndex); }, [&](uint32_t newValue) { pokemon.setAV(statIndex, (uint8_t)newValue); }, {200u, 0u, 100u}, expectedIf(pokemon.hasAwakeningValues()));
             }
         }
 
         for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
         {
             const std::string moveFieldName = "move" + std::to_string(moveIndex + 1);
-            roundTripField(moveFieldName.c_str(), [&]
-               { return pokemon.move(moveIndex); }, [&](uint32_t newValue)
-               { pokemon.setMove(moveIndex, (uint16_t)newValue); }, {33u, wideIds ? 266u : 150u}, Expect::Stored);
+            roundTripField(moveFieldName.c_str(), [&] { return pokemon.move(moveIndex); }, [&](uint32_t newValue) { pokemon.setMove(moveIndex, (uint16_t)newValue); }, {33u, wideIds ? 266u : 150u}, Expect::Stored);
             const std::string ppFieldName = "movePP" + std::to_string(moveIndex + 1);
-            roundTripField(ppFieldName.c_str(), [&]
-               { return pokemon.movePP(moveIndex); }, [&](uint32_t newValue)
-               { pokemon.setMovePP(moveIndex, (uint8_t)newValue); }, {20u, 5u}, Expect::Stored);
-            const std::string ppUps = "movePPUps" + std::to_string(moveIndex + 1);
-            roundTripField(ppUps.c_str(), [&]
-               { return pokemon.movePPUps(moveIndex); }, [&](uint32_t newValue)
-               { pokemon.setMovePPUps(moveIndex, (uint8_t)newValue); }, {3u, 1u}, Expect::Stored);
+            roundTripField(ppFieldName.c_str(), [&] { return pokemon.movePP(moveIndex); }, [&](uint32_t newValue) { pokemon.setMovePP(moveIndex, (uint8_t)newValue); }, {20u, 5u}, Expect::Stored);
+            const std::string ppUpsFieldName = "movePPUps" + std::to_string(moveIndex + 1);
+            roundTripField(ppUpsFieldName.c_str(), [&] { return pokemon.movePPUps(moveIndex); }, [&](uint32_t newValue) { pokemon.setMovePPUps(moveIndex, (uint8_t)newValue); }, {3u, 1u}, Expect::Stored);
             const std::string relearnFieldName = "relearn" + std::to_string(moveIndex + 1);
-            roundTripField(relearnFieldName.c_str(), [&]
-               { return pokemon.relearnMove(moveIndex); }, [&](uint32_t newValue)
-               { pokemon.setRelearnMove(moveIndex, (uint16_t)newValue); }, {33u, 266u}, expected(relearnFieldName));
+            roundTripField(relearnFieldName.c_str(), [&] { return pokemon.relearnMove(moveIndex); }, [&](uint32_t newValue) { pokemon.setRelearnMove(moveIndex, (uint16_t)newValue); }, {33u, 266u}, expected(relearnFieldName));
         }
 
         // Two legitimate designs live behind these: PK8/PK9 STORE a level byte in the party tail,
         // while PA8, PB7 and PK3 derive it from EXP. Both are correct; what is not correct is a
         // level that follows neither.
         {
-            const uint8_t rate = Pokemon::getGrowthRate(PROBE_SPECIES);
-            const uint32_t exp50 = Pokemon::getExpForLevel(50, rate);
-            pokemon.setExp(exp50);
-            const uint8_t afterExp = pokemon.level();
-            if (afterExp == 50)
+            const uint8_t growthRate = Pokemon::getGrowthRate(PROBE_SPECIES);
+            const uint32_t level50Exp = Pokemon::getExpForLevel(50, growthRate);
+            pokemon.setExp(level50Exp);
+            const uint8_t levelAfterExp = pokemon.level();
+            if (levelAfterExp == 50)
             {
                 context.note("level is derived from EXP in this format", whereLabel);
             }
@@ -473,8 +418,8 @@ namespace Test
                 pokemon.setLevel(50);
                 context.note("level is stored separately from EXP in this format", whereLabel);
             }
-            context.check(pokemon.level() == 50, "level does not follow EXP or its own setter", whereLabel + " expLevel=" + std::to_string(afterExp) + " afterSetLevel=" + std::to_string(pokemon.level()));
-            context.check(pokemon.exp() == exp50, "EXP does not round trip", whereLabel + " wrote=" + std::to_string(exp50) + " read=" + std::to_string(pokemon.exp()));
+            context.check(pokemon.level() == 50, "level does not follow EXP or its own setter", whereLabel + " expLevel=" + std::to_string(levelAfterExp) + " afterSetLevel=" + std::to_string(pokemon.level()));
+            context.check(pokemon.exp() == level50Exp, "EXP does not round trip", whereLabel + " wrote=" + std::to_string(level50Exp) + " read=" + std::to_string(pokemon.exp()));
         }
 
         if (pokemon.canStoreNickname(PROBE_NAME))
@@ -500,8 +445,8 @@ namespace Test
         {
             const std::u16string handlerProbe = u"HT";
             pokemon.setHTName(handlerProbe);
-            const bool stored = (pokemon.htName() == handlerProbe);
-            context.check(stored == pokemon.hasHandler(), "hasHandler() disagrees with whether the format can actually store one", whereLabel + " hasHandler=" + (pokemon.hasHandler() ? "1" : "0") + " stored=" + (stored ? "1" : "0"));
+            const bool handlerStored = (pokemon.htName() == handlerProbe);
+            context.check(handlerStored == pokemon.hasHandler(), "hasHandler() disagrees with whether the format can actually store one", whereLabel + " hasHandler=" + (pokemon.hasHandler() ? "1" : "0") + " stored=" + (handlerStored ? "1" : "0"));
             if (pokemon.hasHandler())
             {
                 // The flag says who is IN CHARGE, which is what decides whose friendship, affection
@@ -592,47 +537,66 @@ namespace Test
             const uint8_t genderBefore = pokemon.gender();
             const bool pidDecidesGender = pidDecidesGenderIn(context.group);
             const int originGeneration = Enums::getVersionGeneration(pokemon.originGame());
-            const bool gen5Bit = (context.group == Enums::GameVersion::BW || context.group == Enums::GameVersion::B2W2) && originGeneration != 3 && originGeneration != 4;
-            const int abilityBitIndex = !pidDecidesGender ? -1 : gen5Bit ? 16 : 0;
+            const bool usesGeneration5AbilityBit = (context.group == Enums::GameVersion::BW || context.group == Enums::GameVersion::B2W2) && originGeneration != 3 && originGeneration != 4;
+            const int abilityBitIndex = !pidDecidesGender ? -1 : usesGeneration5AbilityBit ? 16 : 0;
             const uint32_t abilityBitBefore = abilityBitIndex < 0 ? 0 : (pokemon.pid() >> abilityBitIndex) & 1;
             const uint8_t genderRatio = Pokemon::getPersonalInfo(pokemon.speciesID(), pokemon.form()).genderRatio;
-            int notShiny = 0, stillShiny = 0, natureChanged = 0, genderChanged = 0, genderDisagrees = 0, abilityBitChanged = 0;
+            int notShinyCount = 0;
+            int stillShinyCount = 0;
+            int natureChangedCount = 0;
+            int genderChangedCount = 0;
+            int genderDisagreesCount = 0;
+            int abilityBitChangedCount = 0;
             std::string firstFailure;
-            auto noteFailure = [&](int &counter, const char *what)
+            auto noteFailure = [&](int &failureCount, const char *failureName)
             {
-                if (counter++ == 0 && firstFailure.empty())
-                    firstFailure = std::string(what) + " " + hex("pid", pokemon.pid(), 8);
+                if (failureCount++ == 0 && firstFailure.empty())
+                {
+                    firstFailure = std::string(failureName) + " " + hexField("pid", pokemon.pid(), 8);
+                }
             };
             auto checkHeld = [&]()
             {
                 if (pokemon.hasNature() && pokemon.nature() != natureBefore)
-                    noteFailure(natureChanged, "nature");
+                {
+                    noteFailure(natureChangedCount, "nature");
+                }
                 if (pidDecidesGender && pokemon.gender() != genderBefore)
-                    noteFailure(genderChanged, "gender");
+                {
+                    noteFailure(genderChangedCount, "gender");
+                }
                 if (pidDecidesGender && genderRatio != 0 && genderRatio < 254 && pokemon.gender() != (((pokemon.pid() & 0xFF) < genderRatio) ? 1 : 0))
-                    noteFailure(genderDisagrees, "pidGender");
+                {
+                    noteFailure(genderDisagreesCount, "pidGender");
+                }
                 if (abilityBitIndex >= 0 && ((pokemon.pid() >> abilityBitIndex) & 1) != abilityBitBefore)
-                    noteFailure(abilityBitChanged, "abilityBit");
+                {
+                    noteFailure(abilityBitChangedCount, "abilityBit");
+                }
             };
-            constexpr int SHINY_PASSES = 30;
-            for (int passIndex = 0; passIndex < SHINY_PASSES; ++passIndex)
+            constexpr int shinyPassCount = 30;
+            for (int passIndex = 0; passIndex < shinyPassCount; ++passIndex)
             {
                 pokemon.setShiny(true, id32);
                 if (!shinyByFormula(pokemon, context.group, id32))
-                    noteFailure(notShiny, "setShiny(true)");
+                {
+                    noteFailure(notShinyCount, "setShiny(true)");
+                }
                 checkHeld();
                 pokemon.setShiny(false, id32);
                 if (shinyByFormula(pokemon, context.group, id32))
-                    noteFailure(stillShiny, "setShiny(false)");
+                {
+                    noteFailure(stillShinyCount, "setShiny(false)");
+                }
                 checkHeld();
             }
-            const std::string tally = whereLabel + " passes=" + std::to_string(SHINY_PASSES) + " first=" + firstFailure;
-            context.check(notShiny == 0, "setShiny(true) did not make the Pokemon shiny", tally + " misses=" + std::to_string(notShiny));
-            context.check(stillShiny == 0, "setShiny(false) left the Pokemon shiny", tally + " misses=" + std::to_string(stillShiny));
-            context.check(natureChanged == 0, "changing shininess changed the nature", tally + " times=" + std::to_string(natureChanged));
-            context.check(genderChanged == 0, "changing shininess changed the gender", tally + " times=" + std::to_string(genderChanged));
-            context.check(genderDisagrees == 0, "after a shininess change the stored gender disagrees with the PID's", tally + " times=" + std::to_string(genderDisagrees) + " ratio=" + std::to_string(genderRatio));
-            context.check(abilityBitChanged == 0, "changing shininess changed the PID's ability-slot bit", tally + " times=" + std::to_string(abilityBitChanged) + " bit=" + std::to_string(abilityBitIndex));
+            const std::string tallyDetail = whereLabel + " passes=" + std::to_string(shinyPassCount) + " first=" + firstFailure;
+            context.check(notShinyCount == 0, "setShiny(true) did not make the Pokemon shiny", tallyDetail + " misses=" + std::to_string(notShinyCount));
+            context.check(stillShinyCount == 0, "setShiny(false) left the Pokemon shiny", tallyDetail + " misses=" + std::to_string(stillShinyCount));
+            context.check(natureChangedCount == 0, "changing shininess changed the nature", tallyDetail + " times=" + std::to_string(natureChangedCount));
+            context.check(genderChangedCount == 0, "changing shininess changed the gender", tallyDetail + " times=" + std::to_string(genderChangedCount));
+            context.check(genderDisagreesCount == 0, "after a shininess change the stored gender disagrees with the PID's", tallyDetail + " times=" + std::to_string(genderDisagreesCount) + " ratio=" + std::to_string(genderRatio));
+            context.check(abilityBitChangedCount == 0, "changing shininess changed the PID's ability-slot bit", tallyDetail + " times=" + std::to_string(abilityBitChangedCount) + " bit=" + std::to_string(abilityBitIndex));
 
             pokemon.setShiny(true, id32);
             context.check(pokemon.isShiny(id32, pokemon.species()), "isShiny() disagrees with the shiny formula on a shiny Pokemon", whereLabel);
@@ -643,7 +607,7 @@ namespace Test
             if (pokemon.hasPID())
             {
                 pokemon.regeneratePID(id32);
-                context.check(shinyByFormula(pokemon, context.group, id32), "regeneratePID made a shiny Pokemon plain", whereLabel + " " + hex("pid", pokemon.pid(), 8));
+                context.check(shinyByFormula(pokemon, context.group, id32), "regeneratePID made a shiny Pokemon plain", whereLabel + " " + hexField("pid", pokemon.pid(), 8));
                 context.check(!pokemon.hasNature() || pokemon.nature() == natureBefore, "regeneratePID changed the nature", whereLabel + " after=" + std::to_string(pokemon.nature()));
                 context.check(pokemon.gender() == genderBefore, "regeneratePID changed the gender", whereLabel + " after=" + std::to_string(pokemon.gender()));
             }
@@ -655,8 +619,8 @@ namespace Test
                 const uint8_t otherGender = genderBefore == 0 ? 1 : 0;
                 pokemon.setGender(otherGender);
                 context.check(pokemon.gender() == otherGender, "setGender did not change the gender", whereLabel + " wanted=" + std::to_string(otherGender));
-                context.check(pokemon.gender() == (((pokemon.pid() & 0xFF) < genderRatio) ? 1 : 0), "after setGender the stored gender disagrees with the PID's", whereLabel + " " + hex("pid", pokemon.pid(), 8));
-                context.check(shinyByFormula(pokemon, context.group, id32), "setGender made a shiny Pokemon plain", whereLabel + " " + hex("pid", pokemon.pid(), 8));
+                context.check(pokemon.gender() == (((pokemon.pid() & 0xFF) < genderRatio) ? 1 : 0), "after setGender the stored gender disagrees with the PID's", whereLabel + " " + hexField("pid", pokemon.pid(), 8));
+                context.check(shinyByFormula(pokemon, context.group, id32), "setGender made a shiny Pokemon plain", whereLabel + " " + hexField("pid", pokemon.pid(), 8));
                 pokemon.setGender(genderBefore);
             }
 
@@ -670,7 +634,9 @@ namespace Test
         if (eggExpected == Expect::Absent)
         {
             if (context.check(!pokemon.isEgg(), "a format listed as having no eggs stored the egg flag", whereLabel))
-                notStored += std::string(notStored.empty() ? "" : ", ") + "egg";
+            {
+                notStoredFields += std::string(notStoredFields.empty() ? "" : ", ") + "egg";
+            }
         }
         else if (context.check(pokemon.isEgg(), "egg flag does not round trip", whereLabel))
         {
@@ -710,10 +676,10 @@ namespace Test
         {
             using Enums::GameVersion;
             const GameVersion group = context.group;
-            const bool otherFormula = group == GameVersion::RBY || group == GameVersion::GSC || group == GameVersion::GG || group == GameVersion::PLA || group == GameVersion::ZA;
-            if (!otherFormula)
+            const bool usesOtherStatFormula = group == GameVersion::RBY || group == GameVersion::GSC || group == GameVersion::GG || group == GameVersion::PLA || group == GameVersion::ZA;
+            if (!usesOtherStatFormula)
             {
-                const bool beforeGen6 = Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
+                const bool isBeforeGeneration6 = Enums::isGen3Group(group) || group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2;
                 pokemon.setSpecies(PROBE_SPECIES);
                 pokemon.setForm(0);
                 pokemon.setNature(0); // Hardy, neutral
@@ -727,21 +693,23 @@ namespace Test
                     pokemon.setEVWide(statIndex, 0);
                 }
                 pokemon.recalculateStats();
-                const int want[6] = {110, 75, beforeGen6 ? 50 : 60, 110, 70, beforeGen6 ? 60 : 70};
-                const int got[6] = {pokemon.statHPMax(), pokemon.statATK(), pokemon.statDEF(),
-                                    pokemon.statSPE(), pokemon.statSPA(), pokemon.statSPD()};
-                bool same = true;
-                std::string detail;
+                const int expectedStats[6] = {110, 75, isBeforeGeneration6 ? 50 : 60, 110, 70, isBeforeGeneration6 ? 60 : 70};
+                const int calculatedStats[6] = {pokemon.statHPMax(), pokemon.statATK(), pokemon.statDEF(),
+                                                pokemon.statSPE(), pokemon.statSPA(), pokemon.statSPD()};
+                bool statsMatch = true;
+                std::string calculatedStatsDetail;
                 for (int statIndex = 0; statIndex < 6; ++statIndex)
                 {
-                    same = same && got[statIndex] == want[statIndex];
-                    detail += (statIndex ? "/" : "") + std::to_string(got[statIndex]);
+                    statsMatch = statsMatch && calculatedStats[statIndex] == expectedStats[statIndex];
+                    calculatedStatsDetail += (statIndex ? "/" : "") + std::to_string(calculatedStats[statIndex]);
                 }
-                context.check(same && pokemon.nature() == 0, "recalculated stats do not match the game's formula for a known Pokemon", whereLabel + " got=" + detail + " nature=" + std::to_string(pokemon.nature()));
+                context.check(statsMatch && pokemon.nature() == 0, "recalculated stats do not match the game's formula for a known Pokemon", whereLabel + " got=" + calculatedStatsDetail + " nature=" + std::to_string(pokemon.nature()));
             }
         }
 
-        if (!notStored.empty())
-            context.note("fields this format does not store (setter is a no-op, which is correct where the generation genuinely has no such field)", whereLabel + " fields=\"" + notStored + "\"");
+        if (!notStoredFields.empty())
+        {
+            context.note("fields this format does not store (setter is a no-op, which is correct where the generation genuinely has no such field)", whereLabel + " fields=\"" + notStoredFields + "\"");
+        }
     }
 }

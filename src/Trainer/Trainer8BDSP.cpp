@@ -192,24 +192,10 @@ namespace Trainer
             }
             else
             {
-                // Already reads as empty? Leave the game's own bytes exactly as they are. Empty
-                // slots carry stale per-slot bytes the game never cleared, so stamping one
-                // canonical blank over them would rewrite a party nobody edited.
-                //
-                // The all-zero test is not redundant with the species test: the cipher seeds its
-                // PRNG with the encryption constant, so a zeroed slot (EC 0, first PRNG word
-                // 0x0000) ALSO decrypts to species 0 while the rest is checksum-rejected garbage.
-                // Without this, a slot an older build zeroed would be mistaken for a valid blank
-                // and never repaired.
-                bool anyNonZero = false;
-                for (size_t byteIndex = 0; byteIndex < SIZE_PARTY8_BDSP && !anyNonZero; ++byteIndex)
-                    anyNonZero = (saveData[offset + byteIndex] != 0);
-                if (anyNonZero)
+                // Already reads as empty? Leave the game's own bytes exactly as they are.
+                if (slotHoldsGameBlank(offset))
                 {
-                    std::span<const std::byte> slot(reinterpret_cast<const std::byte *>(&saveData[offset]), SIZE_PARTY8_BDSP);
-                    Pokemon8BDSP existing(slot);
-                    if (existing.speciesID() == 0)
-                        continue;
+                    continue;
                 }
                 std::memcpy(&saveData[offset], blank.data(), SIZE_PARTY8_BDSP);
             }
@@ -220,9 +206,10 @@ namespace Trainer
 
     void Trainer8BDSP::updateBoxBlock()
     {
-        // Rewrite the whole box region: occupied slots as encrypted PB8; empty slots as the game's
-        // own encrypted blank (NOT zeros — the game decrypts every slot and checks species, so zeros
-        // would render as a Bad Egg; same lesson as the SwishCrypto games).
+        // Rewrite the whole box region: occupied slots as encrypted PB8; a newly emptied slot as the
+        // game's own encrypted blank, and a slot that was already empty left as it is (NOT zeros —
+        // the game decrypts every slot and checks species, so zeros would render as a Bad Egg; same
+        // lesson as the SwishCrypto games).
         std::vector<uint8_t> blank = boxBlank;
         if (blank.empty())
         {
@@ -247,12 +234,36 @@ namespace Trainer
                     std::memcpy(&saveData[offset], encryptedRecord, SIZE_PARTY8_BDSP);
                     delete[] encryptedRecord;
                 }
-                else
+                else if (!slotHoldsGameBlank(offset))
                 {
                     std::memcpy(&saveData[offset], blank.data(), SIZE_PARTY8_BDSP);
                 }
             }
         }
+    }
+
+    bool Trainer8BDSP::slotHoldsGameBlank(size_t offset) const
+    {
+        // Empty slots carry stale per-slot bytes the game never cleared, so they are not all one
+        // blank: stamping the first one found over the rest rewrote a box nobody edited. A slot the
+        // user emptied still holds its Pokemon here, so it does not pass and gets the blank.
+        //
+        // The all-zero test is not redundant with the species test: the cipher seeds its PRNG with
+        // the encryption constant, so a zeroed slot (EC 0, first PRNG word 0x0000) ALSO decrypts to
+        // species 0 while the rest is checksum-rejected garbage. Without this, a slot an older build
+        // zeroed would be mistaken for a valid blank and never repaired.
+        bool anyNonZero = false;
+        for (size_t byteIndex = 0; byteIndex < SIZE_PARTY8_BDSP && !anyNonZero; ++byteIndex)
+        {
+            anyNonZero = (saveData[offset + byteIndex] != 0);
+        }
+        if (!anyNonZero)
+        {
+            return false;
+        }
+        std::span<const std::byte> slot(reinterpret_cast<const std::byte *>(&saveData[offset]), SIZE_PARTY8_BDSP);
+        Pokemon8BDSP existing(slot);
+        return existing.speciesID() == 0;
     }
 
     std::unique_ptr<::Pokemon::Pokemon> Trainer8BDSP::createBlankPokemon() const
@@ -399,7 +410,12 @@ namespace Trainer
         // after.
         if (saveData.size() < BDSP_MYSTATUS + 0x1A)
             return;
-        setString(&saveData[BDSP_MYSTATUS], 0x1A, utf8ToUtf16(trainerName), 12);
+        // Rewrite the name only if it changed: the game leaves stale characters after the
+        // terminator, and setString clears them, which changed an unedited save.
+        if (utf16ToUtf8(getString(&saveData[BDSP_MYSTATUS], 0x1A)) != trainerName)
+        {
+            setString(&saveData[BDSP_MYSTATUS], 0x1A, utf8ToUtf16(trainerName), 12);
+        }
         if (saveData.size() >= BDSP_MONEY + 4)
             writeUInt32LittleEndian(&saveData[BDSP_MONEY], money);
     }

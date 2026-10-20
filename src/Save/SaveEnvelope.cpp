@@ -20,9 +20,14 @@ namespace Save
         /// Gen 1 and international Gen 2, then Japanese Gen 2.
         constexpr size_t GAME_BOY_SAVE_SIZES[] = {0x8000, 0x10000};
 
-        /// The saves padding can follow, largest first: a file padded up from a DS save is tried as a DS
+        /// The saves padding can follow. DS before GBA: a file padded up from a DS save is tried as a DS
         /// save before the GBA save that also fits inside it (the probe chain has the last word either way).
-        constexpr size_t PADDED_SAVE_SIZES[] = {NINTENDO_DS_SAVE_SIZE, GBA_SAVE_SIZE, 0x10000, 0x8000};
+        /// The Game Boy sizes go smallest first, because Gen 2's probe accepts every layout at either size,
+        /// as PKHeX's does: tried first, 0x10000 would take a padded international save with 0x8000 bytes
+        /// of the padding inside it. The cost is a padded Japanese Crystal save whose upper half is all one
+        /// fill byte, which would open at 0x8000 without its trainer-gender byte; a Japanese cartridge's
+        /// SRAM is 32 KiB, so no real file has that shape.
+        constexpr size_t PADDED_SAVE_SIZES[] = {NINTENDO_DS_SAVE_SIZE, GBA_SAVE_SIZE, GAME_BOY_SAVE_SIZES[0], GAME_BOY_SAVE_SIZES[1]};
 
         constexpr size_t LIBRETRO_GBA_SAVE_RAM_SIZE = 0x22000;
         constexpr size_t LIBRETRO_GBA_EEPROM_SIZE = 0x2000;

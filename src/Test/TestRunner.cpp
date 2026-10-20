@@ -39,10 +39,12 @@ namespace Test
             "sdmc:/PKSE/tests/saves",
         };
 
-        void ensureDir(const std::string &path)
+        void ensureDirectory(const std::string &path)
         {
             if (mkdir(path.c_str(), 0777) != 0 && errno != EEXIST)
+            {
                 Utils::logErrorToFile("SelfTest: mkdir failed", path.c_str());
+            }
         }
 
         /// Files that WERE in a title folder and still did not become a candidate, with why.
@@ -52,28 +54,28 @@ namespace Test
         /// block of zeros, which is what an unwritten Gen 4 slot looks like), it is a save of a
         /// different format than its folder claims, or it parsed but produced nothing. The row for
         /// that title shows the reason instead of pretending the folder was empty.
-        std::vector<std::pair<Enums::GameVersion, std::string>> gRejectedSaves;
+        std::vector<std::pair<Enums::GameVersion, std::string>> g_rejectedSaves;
 
-        bool dirExists(const std::string &path)
+        bool directoryExists(const std::string &path)
         {
             struct stat entryStatus{};
             return stat(path.c_str(), &entryStatus) == 0 && S_ISDIR(entryStatus.st_mode);
         }
 
-        std::string nowStamp()
+        std::string fileTimestamp()
         {
             const time_t nowSeconds = time(nullptr);
-            char buffer[32];
-            strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", localtime(&nowSeconds));
-            return std::string(buffer);
+            char timestampBuffer[32];
+            strftime(timestampBuffer, sizeof(timestampBuffer), "%Y-%m-%d_%H-%M-%S", localtime(&nowSeconds));
+            return std::string(timestampBuffer);
         }
 
-        std::string nowHuman()
+        std::string readableTimestamp()
         {
             const time_t nowSeconds = time(nullptr);
-            char buffer[32];
-            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&nowSeconds));
-            return std::string(buffer);
+            char timestampBuffer[32];
+            strftime(timestampBuffer, sizeof(timestampBuffer), "%Y-%m-%d %H:%M:%S", localtime(&nowSeconds));
+            return std::string(timestampBuffer);
         }
 
         /// A short filesystem-safe tag for a save-format group, used to name its scratch directory.
@@ -124,14 +126,14 @@ namespace Test
             }
         }
 
-
         /// Where `title` sits in TESTED_TITLES, or -1 for a title the run does not cover. This is
         /// the run order and the plan-screen row order, so it is also what targets sort by.
         int titleOrder(Enums::GameVersion title) noexcept
         {
-            for (int index = 0; index < (int)(sizeof(TESTED_TITLES) / sizeof(TESTED_TITLES[0])); ++index)
-                if (TESTED_TITLES[index] == title)
-                    return index;
+            for (int titleIndex = 0; titleIndex < (int)(sizeof(TESTED_TITLES) / sizeof(TESTED_TITLES[0])); ++titleIndex)
+            {
+                if (TESTED_TITLES[titleIndex] == title) return titleIndex;
+            }
             return -1;
         }
 
@@ -139,13 +141,17 @@ namespace Test
         /// punctuation or spacing removed. "HeartGold", "heartgold", "Heart Gold" and "heart-gold"
         /// all come out "heartgold", and "Legends: Z-A" comes out "legendsza". Folder names are
         /// typed by a person, so they must not have to match a colon or a space exactly.
-        std::string flattenTitleName(const std::string &name)
+        std::string flattenTitleName(const std::string &titleName)
         {
-            std::string out;
-            for (unsigned char character : name)
+            std::string flattenedName;
+            for (unsigned char character : titleName)
+            {
                 if (std::isalnum(character))
-                    out += static_cast<char>(std::tolower(character));
-            return out;
+                {
+                    flattenedName += static_cast<char>(std::tolower(character));
+                }
+            }
+            return flattenedName;
         }
 
         /// The title a save DIRECTORY names, or Invalid when the folder is not a title name.
@@ -159,25 +165,24 @@ namespace Test
         /// Matched against the names PKSE already prints for those titles, so there is no second
         /// table of folder spellings to keep in step -- what the report calls a game is what its
         /// folder is called. That requires every title's flattened name to stay DISTINCT and
-        /// non-empty; all 35 currently are, and a new title whose name flattens onto an existing
+        /// non-empty; all 38 currently are, and a new title whose name flattens onto an existing
         /// one would silently resolve its folder to whichever comes first in TESTED_TITLES.
         Enums::GameVersion titleFromFolderName(const std::string &folderName)
         {
-            std::string wanted = flattenTitleName(folderName);
-            if (wanted.empty())
-                return Enums::GameVersion::Invalid;
+            std::string flattenedFolderName = flattenTitleName(folderName);
+            if (flattenedFolderName.empty()) return Enums::GameVersion::Invalid;
 
-            auto lookup = [](const std::string &flattened) -> Enums::GameVersion
+            auto findTitle = [](const std::string &flattenedName) -> Enums::GameVersion
             {
                 for (Enums::GameVersion title : TESTED_TITLES)
-                    if (flattenTitleName(Enums::getGameVersionName(title)) == flattened)
-                        return title;
+                {
+                    if (flattenTitleName(Enums::getGameVersionName(title)) == flattenedName) return title;
+                }
                 return Enums::GameVersion::Invalid;
             };
 
-            const Enums::GameVersion direct = lookup(wanted);
-            if (direct != Enums::GameVersion::Invalid)
-                return direct;
+            const Enums::GameVersion directTitle = findTitle(flattenedFolderName);
+            if (directTitle != Enums::GameVersion::Invalid) return directTitle;
 
             // "Pokemon Yellow" is what people actually type -- it is how the games are titled and
             // how the save files that come out of dumpers are named. No title PKSE knows begins
@@ -186,8 +191,7 @@ namespace Test
             // hit against "Silver"). Making the user rename a folder whose intent is unmistakable
             // is not a rule worth having.
             constexpr const char *titleFolderPrefix = "pokemon";
-            if (wanted.rfind(titleFolderPrefix, 0) == 0)
-                return lookup(wanted.substr(std::char_traits<char>::length(titleFolderPrefix)));
+            if (flattenedFolderName.rfind(titleFolderPrefix, 0) == 0) return findTitle(flattenedFolderName.substr(std::char_traits<char>::length(titleFolderPrefix)));
             return Enums::GameVersion::Invalid;
         }
 
@@ -203,7 +207,6 @@ namespace Test
         const std::string titleName = Enums::getGameVersionName(version);
         return label.empty() ? titleName : titleName + "  (" + label + ")";
     }
-
 
     bool comesFromLooseFile(Enums::GameVersion title) noexcept
     {
@@ -233,14 +236,14 @@ namespace Test
     }
 
     // Thin accessors over the shared array in TestSuite.h, kept because the UI and the report
-    // already call them. The array itself had to leave this file: SuiteTables checks that every
+    // already call them. The array itself lives there because SuiteTables checks that every
     // tested title resolves to a save-format group, and the host harness runs that suite WITHOUT
     // linking TestRunner.cpp -- which reaches dirent, the SD card and the Switch filesystem.
     const Enums::GameVersion *testedTitles() noexcept { return TESTED_TITLES; }
     int testedTitleCount() noexcept { return TESTED_TITLE_COUNT; }
 
-    const char *const *Runner::looseScanDirs() noexcept { return LOOSE_SAVE_DIRECTORIES; }
-    int Runner::looseScanDirCount() noexcept
+    const char *const *Runner::looseScanDirectories() noexcept { return LOOSE_SAVE_DIRECTORIES; }
+    int Runner::looseScanDirectoryCount() noexcept
     {
         return (int)(sizeof(LOOSE_SAVE_DIRECTORIES) / sizeof(LOOSE_SAVE_DIRECTORIES[0]));
     }
@@ -252,37 +255,46 @@ namespace Test
         /// does THIS user have", and the self test wants every save on the console regardless of
         /// which account owns it, because whichever account has a Gen 8 save is the one that gets to
         /// represent Gen 8.
-        void scanSaveSpace(int spaceId, std::vector<Target> &out)
+        void scanSaveSpace(int spaceId, std::vector<Target> &discoveredTargets)
         {
             FsSaveDataInfoReader reader;
-            if (R_FAILED(fsOpenSaveDataInfoReader(&reader, static_cast<FsSaveDataSpaceId>(spaceId))))
-                return;
+            if (R_FAILED(fsOpenSaveDataInfoReader(&reader, static_cast<FsSaveDataSpaceId>(spaceId)))) return;
 
-            FsSaveDataInfo info[24];
+            FsSaveDataInfo saveDataInfos[24];
             s64 readCount = 0;
-            while (R_SUCCEEDED(fsSaveDataInfoReaderRead(&reader, info, 24, &readCount)) && readCount > 0)
+            while (R_SUCCEEDED(fsSaveDataInfoReaderRead(&reader, saveDataInfos, 24, &readCount)) && readCount > 0)
             {
                 for (s64 infoIndex = 0; infoIndex < readCount; infoIndex++)
                 {
-                    if (info[infoIndex].save_data_type != FsSaveDataType_Account)
+                    if (saveDataInfos[infoIndex].save_data_type != FsSaveDataType_Account)
+                    {
                         continue;
+                    }
 
-                    const uint64_t titleId = info[infoIndex].application_id;
+                    const uint64_t titleId = saveDataInfos[infoIndex].application_id;
                     const Enums::GameVersion gameVersion = Enums::getGameVersion(titleId);
                     if (gameVersion == Enums::GameVersion::Invalid)
+                    {
                         continue;
+                    }
                     if (!Enums::isGameSupported(gameVersion))
+                    {
                         continue;
+                    }
 
                     bool alreadyListed = false;
-                    for (const auto &discoveredTarget : out)
-                        if (discoveredTarget.titleId == titleId)
+                    for (const auto &listedTarget : discoveredTargets)
+                    {
+                        if (listedTarget.titleId == titleId)
                         {
                             alreadyListed = true;
                             break;
                         }
+                    }
                     if (alreadyListed)
+                    {
                         continue;
+                    }
 
                     // The title id IS the title for a Switch save -- Sword and Shield, Scarlet
                     // and Violet, FireRed and LeafGreen are each their own id -- so nothing here
@@ -292,9 +304,11 @@ namespace Test
                     discoveredTarget.group = Enums::getGameGroup(gameVersion);
                     discoveredTarget.label = Enums::getGameVersionName(gameVersion);
                     discoveredTarget.titleId = titleId;
-                    discoveredTarget.accountUid = info[infoIndex].uid;
+                    discoveredTarget.accountUid = saveDataInfos[infoIndex].uid;
                     if (titleOrder(discoveredTarget.version) >= 0)
-                        out.push_back(std::move(discoveredTarget));
+                    {
+                        discoveredTargets.push_back(std::move(discoveredTarget));
+                    }
                 }
             }
             fsSaveDataInfoReaderClose(&reader);
@@ -304,42 +318,41 @@ namespace Test
         /// probe chain the manual file browser uses, so what the self test accepts and what the
         /// picker accepts cannot drift apart.
         ///
-        /// Each scan directory is read at its top level AND one level down, because a subdirectory
-        /// named after a title is how the user says which game a save came from. That matters for
-        /// the four pairs whose saves carry no version byte at all: a Diamond save and a Pearl save
-        /// are the same bytes, so without a folder the run has to pick one and mark the other as
-        /// covered by it. `<saves>/Pearl/` settles it. One level only -- deeper nesting is a save
-        /// organised by something other than its title, and guessing at what would put the run back
-        /// to inferring the answer.
-        void scanLooseSaves(std::vector<Target> &out)
+        /// Each scan directory is read one level down, because a subdirectory named after a title
+        /// is how the user says which game a save came from. That matters for the four pairs whose
+        /// saves carry no version byte at all: a Diamond save and a Pearl save are the same bytes,
+        /// and only `<saves>/Pearl/` can say which one it is. One level only -- deeper nesting is a
+        /// save organised by something other than its title, and guessing at what would put the run
+        /// back to inferring the answer.
+        void scanLooseSaves(std::vector<Target> &discoveredTargets)
         {
             /// One candidate file: read it, construct it, and add it if it is a save PKSE handles.
             /// `folderTitle` is the title its directory claims, or Invalid at the top level.
-            auto considerFile = [&out](const std::string &directory, const std::string &name, Enums::GameVersion folderTitle)
+            auto considerFile = [&discoveredTargets](const std::string &directory, const std::string &fileName, Enums::GameVersion folderTitle)
             {
                 // The SAME rule the file browser offers files by -- a 3DS `main` has no extension
                 // at all and is matched by name. Shared rather than restated: these two had already
                 // drifted once, and the picker was the copy missing `main`.
-                if (!Save::isSaveFileName(name))
-                    return;
+                if (!Save::isSaveFileName(fileName)) return;
 
-                const std::string path = directory + "/" + name;
-                size_t length = 0;
-                uint8_t *raw = Utils::readAllBytes(path.c_str(), &length);
-                if (!raw)
-                    return;
-                std::vector<uint8_t> bytes(raw, raw + length);
-                delete[] raw;
+                const std::string filePath = directory + "/" + fileName;
+                size_t fileSize = 0;
+                uint8_t *rawFileBytes = Utils::readAllBytes(filePath.c_str(), &fileSize);
+                if (!rawFileBytes) return;
+                std::vector<uint8_t> saveBytes(rawFileBytes, rawFileBytes + fileSize);
+                delete[] rawFileBytes;
 
                 // Construct it, not merely detect it: a file that passes detect() but produces
                 // an empty editor is exactly the case the picker warns about, and a test run
                 // should not begin by failing to open its own subject.
-                std::string label;
-                auto probe = Save::openExternalSave(std::move(bytes), path, &label);
-                if (!probe)
+                std::string saveLabel;
+                auto probedTrainer = Save::openExternalSave(std::move(saveBytes), filePath, &saveLabel);
+                if (!probedTrainer)
                 {
                     if (folderTitle != Enums::GameVersion::Invalid)
-                        gRejectedSaves.emplace_back(folderTitle, name + " is not a save PKSE can read" + (length == 0 ? " (empty file)" : ""));
+                    {
+                        g_rejectedSaves.emplace_back(folderTitle, fileName + " is not a save PKSE can read" + (fileSize == 0 ? " (empty file)" : ""));
+                    }
                     return;
                 }
 
@@ -347,89 +360,111 @@ namespace Test
                 // the save, so Black and White land on separate rows. The four pairs that carry no
                 // such byte report the FIRST of the pair, which the folder below then overrides --
                 // that folder is the only thing that can ever say a save is Blue rather than Red.
-                Target target;
-                target.group = probe->getGameGroup();
-                target.version = probe->getGameVersion();
+                Target candidateTarget;
+                candidateTarget.group = probedTrainer->getGameGroup();
+                candidateTarget.version = probedTrainer->getGameVersion();
                 // The FILE, not the game. The plan row already prints the title in its own column,
                 // so repeating it here read as "Red: Pokemon Red/Blue" -- the group name, which is
                 // the one thing the row is trying not to say. What the user cannot see from the row
                 // is WHICH file this is, and that is what has to distinguish two candidates.
-                target.label = name;
-                target.sourcePath = path;
+                candidateTarget.label = fileName;
+                candidateTarget.sourcePath = filePath;
 
                 // THE FOLDER IS AUTHORITATIVE. A file under <Title>/ is that title's save or it is nothing --
                 // it can never end up as a candidate for some other title. Keeping the DETECTED version where the
                 // folder's game and the file's format disagree sounds more careful and is worse: the user put the
                 // file in that folder, and the result is a save filed under Silver turning up as a second
                 // candidate on the Red row, which is unexplainable from the outside. Refuse it and say why.
-                if (folderTitle == Enums::GameVersion::Invalid)
-                    return; // only files inside a title folder are candidates at all
-                if (Enums::getGameGroup(folderTitle) != target.group)
+                // Only files inside a title folder are candidates at all.
+                if (folderTitle == Enums::GameVersion::Invalid) return;
+                if (Enums::getGameGroup(folderTitle) != candidateTarget.group)
                 {
-                    Utils::logInfoToFile("SelfTest: ignoring a save filed under the wrong title", (path + " is not a " + Enums::getGameVersionName(folderTitle) + " save").c_str());
-                    gRejectedSaves.emplace_back(folderTitle, name + " is a " + Enums::getGameVersionName(target.group) + " save, not " + Enums::getGameVersionName(folderTitle));
+                    Utils::logInfoToFile("SelfTest: ignoring a save filed under the wrong title", (filePath + " is not a " + Enums::getGameVersionName(folderTitle) + " save").c_str());
+                    g_rejectedSaves.emplace_back(folderTitle, fileName + " is a " + Enums::getGameVersionName(candidateTarget.group) + " save, not " + Enums::getGameVersionName(folderTitle));
                     return;
                 }
-                target.version = folderTitle;
+                candidateTarget.version = folderTitle;
 
-                if (titleOrder(target.version) >= 0)
-                    out.push_back(std::move(target));
+                if (titleOrder(candidateTarget.version) >= 0)
+                {
+                    discoveredTargets.push_back(std::move(candidateTarget));
+                }
             };
 
-            for (int looseScanDirIndex = 0; looseScanDirIndex < Runner::looseScanDirCount(); ++looseScanDirIndex)
+            for (int scanDirectoryIndex = 0; scanDirectoryIndex < Runner::looseScanDirectoryCount(); ++scanDirectoryIndex)
             {
-                const std::string scanDir = LOOSE_SAVE_DIRECTORIES[looseScanDirIndex];
-                DIR *dir = opendir(scanDir.c_str());
-                if (!dir)
-                    continue;
-
-                struct dirent *entry;
-                while ((entry = readdir(dir)) != nullptr)
+                const std::string scanDirectory = LOOSE_SAVE_DIRECTORIES[scanDirectoryIndex];
+                DIR *scanDirectoryHandle = opendir(scanDirectory.c_str());
+                if (!scanDirectoryHandle)
                 {
-                    const std::string name(entry->d_name);
-                    if (name == "." || name == "..")
+                    continue;
+                }
+
+                struct dirent *scanEntry;
+                while ((scanEntry = readdir(scanDirectoryHandle)) != nullptr)
+                {
+                    const std::string scanEntryName(scanEntry->d_name);
+                    if (scanEntryName == "." || scanEntryName == "..")
+                    {
                         continue;
+                    }
 
                     // d_type is NOT filled in by every devoptab -- the SD card's is one that leaves
                     // it DT_UNKNOWN -- so a title folder tested with `d_type == DT_DIR` reads as a
-                    // file, fails the extension check inside considerFile(), and is silently never
-                    // descended into. Every per-title folder on the card was invisible.
-                    // FileBrowserDialog already carries this fallback with the same comment; this
-                    // did not, which is why the folder feature worked on the host harness (its own
-                    // SaveTree walks with stat) and not on hardware.
-                    const std::string fullPath = scanDir + "/" + name;
-                    const bool entryIsDirectory = (entry->d_type == DT_DIR) || (entry->d_type == DT_UNKNOWN && dirExists(fullPath));
+                    // file, fails the extension check inside considerFile(), and is never descended
+                    // into. FileBrowserDialog carries the same fallback; the host harness never
+                    // shows the problem because its own SaveTree walks with stat.
+                    const std::string scanEntryPath = scanDirectory + "/" + scanEntryName;
+                    const bool entryIsDirectory = (scanEntry->d_type == DT_DIR) || (scanEntry->d_type == DT_UNKNOWN && directoryExists(scanEntryPath));
                     if (entryIsDirectory)
                     {
                         // Only a directory NAMED after a title is descended into. Everything else
                         // under the scan roots -- work/, the report files, whatever else the card
                         // holds -- is left alone, so this stays a scan of saves the user filed
                         // rather than a walk of the SD card.
-                        const Enums::GameVersion folderTitle = titleFromFolderName(name);
-                        // not a title PKSE tests -- someone else's folder, left alone
-                        if (folderTitle == Enums::GameVersion::Invalid) continue;
-                        DIR *inner = opendir(fullPath.c_str());
-                        if (!inner)
-                            continue;
-                        struct dirent *innerEntry;
-                        while ((innerEntry = readdir(inner)) != nullptr)
+                        const Enums::GameVersion folderTitle = titleFromFolderName(scanEntryName);
+                        if (folderTitle == Enums::GameVersion::Invalid)
                         {
-                            const std::string innerName(innerEntry->d_name);
-                            if (innerName == "." || innerName == "..")
-                                continue;
-                            // one level deep only
-                            if (innerEntry->d_type == DT_DIR || (innerEntry->d_type == DT_UNKNOWN && dirExists(fullPath + "/" + innerName))) continue;
-                            considerFile(fullPath, innerName, folderTitle);
+                            continue;
                         }
-                        closedir(inner);
+                        DIR *titleDirectoryHandle = opendir(scanEntryPath.c_str());
+                        if (!titleDirectoryHandle)
+                        {
+                            continue;
+                        }
+                        struct dirent *titleEntry;
+                        while ((titleEntry = readdir(titleDirectoryHandle)) != nullptr)
+                        {
+                            const std::string titleEntryName(titleEntry->d_name);
+                            if (titleEntryName == "." || titleEntryName == "..")
+                            {
+                                continue;
+                            }
+                            // one level deep only
+                            if (titleEntry->d_type == DT_DIR || (titleEntry->d_type == DT_UNKNOWN && directoryExists(scanEntryPath + "/" + titleEntryName)))
+                            {
+                                continue;
+                            }
+                            considerFile(scanEntryPath, titleEntryName, folderTitle);
+                        }
+                        closedir(titleDirectoryHandle);
                     }
                     // A bare file at the top of the scan root is deliberately NOT a candidate. It
                     // cannot say which title it is -- that is the whole reason the folders exist --
                     // and accepting it put saves in the plan that the user had not filed anywhere.
                 }
-                closedir(dir);
+                closedir(scanDirectoryHandle);
             }
         }
+    }
+
+    std::string Runner::rejectedSaveReason(Enums::GameVersion title)
+    {
+        for (const auto &rejectedSave : g_rejectedSaves)
+        {
+            if (rejectedSave.first == title) return rejectedSave.second;
+        }
+        return {};
     }
 
     /// Create one folder per title whose save is a LOOSE FILE, under the documented scan root.
@@ -443,66 +478,62 @@ namespace Test
     /// Only loose-file titles get one. A Switch title's save comes from installed save data by title
     /// id, so a `Sword/` folder would invite a file that is never read.
     ///
-    /// mkdir on an existing directory is EEXIST, which ensureDir ignores, so this is safe to run on
-    /// every open and never disturbs a folder the user has already filled.
-    std::string Runner::rejectedSaveReason(Enums::GameVersion title)
-    {
-        for (const auto &entry : gRejectedSaves)
-            if (entry.first == title)
-                return entry.second;
-        return {};
-    }
-
+    /// mkdir on an existing directory is EEXIST, which ensureDirectory ignores, so this is safe to
+    /// run on every open and never disturbs a folder the user has already filled.
     static void ensureTitleSaveFolders()
     {
-        ensureDir(BASE_SAVE_DIRECTORY);
-        ensureDir(TEST_ROOT);
-        ensureDir(LOOSE_SAVE_DIRECTORIES[0]);
+        ensureDirectory(BASE_SAVE_DIRECTORY);
+        ensureDirectory(TEST_ROOT);
+        ensureDirectory(LOOSE_SAVE_DIRECTORIES[0]);
         for (Enums::GameVersion title : TESTED_TITLES)
+        {
             if (comesFromLooseFile(title))
-                ensureDir(std::string(LOOSE_SAVE_DIRECTORIES[0]) + "/" + Enums::getGameVersionName(title));
+            {
+                ensureDirectory(std::string(LOOSE_SAVE_DIRECTORIES[0]) + "/" + Enums::getGameVersionName(title));
+            }
+        }
     }
 
     std::vector<Target> Runner::discover()
     {
-        std::vector<Target> out;
+        std::vector<Target> discoveredTargets;
         // Before scanning, not after: the folders are what the user fills in, so they have to exist
         // the first time the self test is opened rather than the second.
         ensureTitleSaveFolders();
-        gRejectedSaves.clear();
-        scanLooseSaves(out);
+        g_rejectedSaves.clear();
+        scanLooseSaves(discoveredTargets);
 
         // FsSaveDataSpaceId_All is the pseudo-space that normally answers for everything; the two
         // concrete spaces are the fallback, exactly as the picker does it.
-        const size_t before = out.size();
-        scanSaveSpace(FsSaveDataSpaceId_All, out);
-        if (out.size() == before)
+        const size_t looseTargetCount = discoveredTargets.size();
+        scanSaveSpace(FsSaveDataSpaceId_All, discoveredTargets);
+        if (discoveredTargets.size() == looseTargetCount)
         {
-            scanSaveSpace(FsSaveDataSpaceId_User, out);
-            scanSaveSpace(FsSaveDataSpaceId_SdUser, out);
+            scanSaveSpace(FsSaveDataSpaceId_User, discoveredTargets);
+            scanSaveSpace(FsSaveDataSpaceId_SdUser, discoveredTargets);
         }
 
         // Release order, so the candidates for a title sit together and index 0 of a title's run
         // is the default pick. A stable insertion sort on purpose: where a title somehow has two
         // saves (an installed copy and a loose file of the same game), the one discovered first
         // stays first rather than being reordered arbitrarily between runs.
-        for (size_t outIndex = 1; outIndex < out.size(); ++outIndex)
+        for (size_t sortIndex = 1; sortIndex < discoveredTargets.size(); ++sortIndex)
         {
-            Target key = std::move(out[outIndex]);
-            const int keyOrder = titleOrder(key.version);
-            size_t insertIndex = outIndex;
-            while (insertIndex > 0 && titleOrder(out[insertIndex - 1].version) > keyOrder)
+            Target movingTarget = std::move(discoveredTargets[sortIndex]);
+            const int movingTitleOrder = titleOrder(movingTarget.version);
+            size_t insertIndex = sortIndex;
+            while (insertIndex > 0 && titleOrder(discoveredTargets[insertIndex - 1].version) > movingTitleOrder)
             {
-                out[insertIndex] = std::move(out[insertIndex - 1]);
+                discoveredTargets[insertIndex] = std::move(discoveredTargets[insertIndex - 1]);
                 --insertIndex;
             }
-            out[insertIndex] = std::move(key);
+            discoveredTargets[insertIndex] = std::move(movingTarget);
         }
 
-        char message[96];
-        snprintf(message, sizeof(message), "SelfTest: discovered %d candidate save(s)", (int)out.size());
-        Utils::logInfoToFile(message);
-        return out;
+        char logMessage[96];
+        snprintf(logMessage, sizeof(logMessage), "SelfTest: discovered %d candidate save(s)", (int)discoveredTargets.size());
+        Utils::logInfoToFile(logMessage);
+        return discoveredTargets;
     }
 
     struct Runner::Loaded
@@ -512,7 +543,7 @@ namespace Test
         // is constructed through the probe chain instead. Owned by base pointer because the
         // concrete class is not known until that chain runs.
         std::optional<Save::TrainerVariant> variant;
-        std::unique_ptr<Trainer::Trainer> loose;
+        std::unique_ptr<Trainer::Trainer> looseTrainer;
     };
 
     // Both defined here rather than in the header: `Loaded` is only complete in this file, and
@@ -539,47 +570,53 @@ namespace Test
         setDrivenScreen(nullptr);
         loaded.reset();
         trainer = nullptr;
-        targetIdx = 0;
-        suiteIdx = 0;
-        chunkIdx = 0;
+        currentTargetIndex = 0;
+        currentSuiteIndex = 0;
+        currentChunkIndex = 0;
         chunkCount = -1;
-        runStamp = nowStamp();
-        outPath = TEST_ROOT + "/report_" + runStamp + ".log";
-        uiTarget = "Starting";
-        uiDetail.clear();
+        runStamp = fileTimestamp();
+        reportFilePath = TEST_ROOT + "/report_" + runStamp + ".log";
+        phaseTargetText = "Starting";
+        phaseDetailText.clear();
 
-        ensureDir(BASE_SAVE_DIRECTORY);
-        ensureDir(TEST_ROOT);
-        ensureDir(WORK_ROOT);
+        ensureDirectory(BASE_SAVE_DIRECTORY);
+        ensureDirectory(TEST_ROOT);
+        ensureDirectory(WORK_ROOT);
 
         // Record the coverage gaps FIRST, so they sit at the top of the warnings rather than being
         // discovered at the bottom of a clean-looking report.
         runReport.setScope("-", "plan");
-        std::string searched;
-        for (int looseScanDirIndex = 0; looseScanDirIndex < looseScanDirCount(); ++looseScanDirIndex)
+        std::string searchedDirectories;
+        for (int scanDirectoryIndex = 0; scanDirectoryIndex < looseScanDirectoryCount(); ++scanDirectoryIndex)
         {
-            if (looseScanDirIndex)
-                searched += ", ";
-            searched += LOOSE_SAVE_DIRECTORIES[looseScanDirIndex];
+            if (scanDirectoryIndex)
+            {
+                searchedDirectories += ", ";
+            }
+            searchedDirectories += LOOSE_SAVE_DIRECTORIES[scanDirectoryIndex];
         }
-        for (Enums::GameVersion missing : missingTitleList)
+        for (Enums::GameVersion missingTitle : missingTitleList)
         {
             Context context;
-            context.rep = &runReport;
-            const std::string title = Enums::getGameVersionName(missing);
+            context.report = &runReport;
+            const std::string titleName = Enums::getGameVersionName(missingTitle);
             // The two gaps are not interchangeable, so they do not get one message. A loose-file
             // title is fixed by copying a save onto the card, and saying where is the whole point;
             // an installed title needs the game itself, and there is nothing the user can copy.
-            if (comesFromLooseFile(missing))
-                context.skip("title not tested: no save found", "title=\"" + title + "\" searched=\"" + searched + "\"");
+            if (comesFromLooseFile(missingTitle))
+            {
+                context.skip("title not tested: no save found", "title=\"" + titleName + "\" searched=\"" + searchedDirectories + "\"");
+            }
             else
-                context.skip("title not tested: no save found", "title=\"" + title + "\" reason=\"the game is not installed on this console\"");
+            {
+                context.skip("title not tested: no save found", "title=\"" + titleName + "\" reason=\"the game is not installed on this console\"");
+            }
         }
-        for (const auto &t : plan)
+        for (const auto &plannedTarget : plan)
         {
             Context context;
-            context.rep = &runReport;
-            context.note("title tested", t.display());
+            context.report = &runReport;
+            context.note("title tested", plannedTarget.display());
         }
 
         runState = State::Running;
@@ -598,40 +635,40 @@ namespace Test
 
     namespace
     {
-        UI::PKSEFramebuffer *gFramebuffer = nullptr;
-        UI::UIScreen *gDrivenScreen = nullptr;
-        Runner::DriveCaption gDriveCaption;
-        bool gYieldRequested = false;
+        UI::PKSEFramebuffer *g_framebuffer = nullptr;
+        UI::UIScreen *g_drivenScreen = nullptr;
+        Runner::DriveCaption g_driveCaption;
+        bool g_yieldRequested = false;
     }
 
-    void Runner::setFramebuffer(UI::PKSEFramebuffer *framebuffer) noexcept { gFramebuffer = framebuffer; }
+    void Runner::setFramebuffer(UI::PKSEFramebuffer *framebuffer) noexcept { g_framebuffer = framebuffer; }
 
-    void Runner::setDrivenScreen(UI::UIScreen *screen) noexcept { gDrivenScreen = screen; }
-    UI::UIScreen *Runner::drivenScreen() noexcept { return gDrivenScreen; }
-    void Runner::setDriveCaption(const DriveCaption &caption) { gDriveCaption = caption; }
-    const Runner::DriveCaption &Runner::driveCaption() noexcept { return gDriveCaption; }
-    void Runner::yieldFrame() noexcept { gYieldRequested = true; }
+    void Runner::setDrivenScreen(UI::UIScreen *screen) noexcept { g_drivenScreen = screen; }
+    UI::UIScreen *Runner::drivenScreen() noexcept { return g_drivenScreen; }
+    void Runner::setDriveCaption(const DriveCaption &caption) { g_driveCaption = caption; }
+    const Runner::DriveCaption &Runner::driveCaption() noexcept { return g_driveCaption; }
+    void Runner::yieldFrame() noexcept { g_yieldRequested = true; }
 
     Context Runner::makeContext(const char *suiteName)
     {
         Context context;
-        context.rep = &runReport;
-        context.framebuffer = gFramebuffer;
+        context.report = &runReport;
+        context.framebuffer = g_framebuffer;
         context.suite = suiteName;
         context.trainer = trainer;
         // A GLOBAL suite has no target and so no per-save scratch copy, but it may still need
         // somewhere writable -- the browser suite builds a fixture directory. Hand it the run's
         // own work root, which start() has already created, rather than leaving it empty and
         // having the suite invent a path of its own outside the tree the runner cleans up.
-        context.workDir = workDir.empty() ? WORK_ROOT : workDir;
+        context.workDirectory = workDirectory.empty() ? WORK_ROOT : workDirectory;
         context.savePath = workSavePath;
-        if (targetIdx < plan.size() && (phase == Phase::TargetSuites || phase == Phase::TargetLoad))
+        if (currentTargetIndex < plan.size() && (phase == Phase::TargetSuites || phase == Phase::TargetLoad))
         {
-            context.target = plan[targetIdx].display();
-            context.version = plan[targetIdx].version;
-            context.group = plan[targetIdx].group;
-            context.titleId = plan[targetIdx].titleId;
-            context.accountUid = plan[targetIdx].accountUid;
+            context.target = plan[currentTargetIndex].display();
+            context.version = plan[currentTargetIndex].version;
+            context.group = plan[currentTargetIndex].group;
+            context.titleId = plan[currentTargetIndex].titleId;
+            context.accountUid = plan[currentTargetIndex].accountUid;
         }
         else if (phase == Phase::CrossSuites)
         {
@@ -647,22 +684,22 @@ namespace Test
 
     bool Runner::advanceSuites(Scope scope)
     {
-        while (suiteIdx < suiteCount())
+        while (currentSuiteIndex < suiteCount())
         {
-            const Suite &s = suites()[suiteIdx];
-            if (s.scope != scope)
+            const Suite &suite = suites()[currentSuiteIndex];
+            if (suite.scope != scope)
             {
-                ++suiteIdx;
-                chunkIdx = 0;
+                ++currentSuiteIndex;
+                currentChunkIndex = 0;
                 chunkCount = -1;
                 continue;
             }
 
-            Context context = makeContext(s.name);
+            Context context = makeContext(suite.suiteName);
             if (chunkCount < 0)
             {
-                chunkCount = s.plan(context);
-                chunkIdx = 0;
+                chunkCount = suite.plan(context);
+                currentChunkIndex = 0;
                 checksAtSuiteStart = runReport.checks();
                 skipsAtSuiteStart = runReport.skips();
                 if (chunkCount <= 0)
@@ -670,21 +707,23 @@ namespace Test
                     // Every suite the runner reaches has what it needs (a per-target suite only runs
                     // once its save loaded), so a suite that plans nothing is a gap, not a pass.
                     context.skip("suite planned nothing to run");
-                    ++suiteIdx;
+                    ++currentSuiteIndex;
                     chunkCount = -1;
                     continue;
                 }
             }
 
-            uiDetail = std::string(s.name) + "  " + std::to_string(chunkIdx + 1) + "/" + std::to_string(chunkCount);
-            s.run(context, chunkIdx);
-            ++chunkIdx;
-            if (chunkIdx >= chunkCount)
+            phaseDetailText = std::string(suite.suiteName) + "  " + std::to_string(currentChunkIndex + 1) + "/" + std::to_string(chunkCount);
+            suite.run(context, currentChunkIndex);
+            ++currentChunkIndex;
+            if (currentChunkIndex >= chunkCount)
             {
                 if (runReport.checks() == checksAtSuiteStart && runReport.skips() == skipsAtSuiteStart)
+                {
                     context.skip("suite ran but recorded no checks and no skips", "chunks=" + std::to_string(chunkCount));
-                ++suiteIdx;
-                chunkIdx = 0;
+                }
+                ++currentSuiteIndex;
+                currentChunkIndex = 0;
                 chunkCount = -1;
             }
             return true; // one chunk of work done
@@ -694,25 +733,27 @@ namespace Test
 
     void Runner::beginTarget()
     {
-        const Target &t = plan[targetIdx];
-        uiTarget = t.display();
-        uiDetail = "loading";
+        const Target &target = plan[currentTargetIndex];
+        phaseTargetText = target.display();
+        phaseDetailText = "loading";
 
-        workDir = WORK_ROOT + "/" + groupTag(t.group);
+        workDirectory = WORK_ROOT + "/" + groupTag(target.group);
         workSavePath.clear(); // set below for a loose target; an installed title has none
         // A stale copy left by an interrupted run would be tested instead of the real save. Only
         // attempted when it is actually there -- deleteDirectoryRecursive logs an error for a
         // missing directory, and "no leftovers" is the normal case, not a problem.
-        if (dirExists(workDir))
-            Utils::deleteDirectoryRecursive(workDir.c_str());
-        ensureDir(WORK_ROOT);
-        ensureDir(workDir);
+        if (directoryExists(workDirectory))
+        {
+            Utils::deleteDirectoryRecursive(workDirectory.c_str());
+        }
+        ensureDirectory(WORK_ROOT);
+        ensureDirectory(workDirectory);
 
-        runReport.setScope(t.display(), "load");
+        runReport.setScope(target.display(), "load");
         Context context;
-        context.rep = &runReport;
+        context.report = &runReport;
         context.suite = "load";
-        context.target = t.display();
+        context.target = target.display();
 
         // Nothing may still be published as the driven screen once the trainer behind it is gone.
         // A suite that builds a screen owns tearing it down, but the runner is what frees the
@@ -722,23 +763,22 @@ namespace Test
         loaded = std::make_unique<Loaded>();
         trainer = nullptr;
 
-        if (t.titleId != 0)
+        if (target.titleId != 0)
         {
-            if (!context.check(Utils::copySaveDataTo(t.accountUid, t.titleId, workDir.c_str()), "could not copy the live save into the test directory", "titleId=" + std::to_string(t.titleId) + " dest=\"" + workDir + "\""))
+            if (!context.check(Utils::copySaveDataTo(target.accountUid, target.titleId, workDirectory.c_str()), "could not copy the live save into the test directory", "titleId=" + std::to_string(target.titleId) + " dest=\"" + workDirectory + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
             }
-            loaded->variant.emplace(Save::readTrainerInfo(workDir.c_str(), t.titleId));
-            trainer = std::visit([](auto &tr) -> Trainer::Trainer *
-                                 { return &tr; }, *loaded->variant);
+            loaded->variant.emplace(Save::readTrainerInfo(workDirectory.c_str(), target.titleId));
+            trainer = std::visit([](auto &concreteTrainer) -> Trainer::Trainer * { return &concreteTrainer; }, *loaded->variant);
         }
         else
         {
             // A loose file: copy it into the scratch tree by name so every write test targets the
             // copy, never the file the user pointed us at.
-            const size_t slashPos = t.sourcePath.find_last_of('/');
-            const std::string fileName = (slashPos == std::string::npos) ? t.sourcePath : t.sourcePath.substr(slashPos + 1);
+            const size_t slashIndex = target.sourcePath.find_last_of('/');
+            const std::string fileName = (slashIndex == std::string::npos) ? target.sourcePath : target.sourcePath.substr(slashIndex + 1);
             // Prefixed with the title, because the source names are NOT unique once saves are filed
             // by game: every 3DS save is called `main`, and a Diamond and a Pearl dump usually carry
             // the same name too. Copying both to work/main would have the second silently land on
@@ -746,44 +786,44 @@ namespace Test
             // of collision that only shows up as one game's save producing another game's findings.
             // flattened, because a title name is not a filename: "Black 2" has a space and
             // "Legends: Z-A" a colon, which FAT does not accept.
-            const std::string destination = workDir + "/" + flattenTitleName(Enums::getGameVersionName(t.version)) + "_" + fileName;
+            const std::string destination = workDirectory + "/" + flattenTitleName(Enums::getGameVersionName(target.version)) + "_" + fileName;
             workSavePath = destination; // the write tests target exactly this file, never a guess
-            if (!context.check(Utils::copyFile(t.sourcePath.c_str(), destination.c_str()), "could not copy the loose save into the test directory", "src=\"" + t.sourcePath + "\" dest=\"" + destination + "\""))
+            if (!context.check(Utils::copyFile(target.sourcePath.c_str(), destination.c_str()), "could not copy the loose save into the test directory", "src=\"" + target.sourcePath + "\" dest=\"" + destination + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
             }
-            size_t length = 0;
-            uint8_t *raw = Utils::readAllBytes(destination.c_str(), &length);
-            if (!context.check(raw != nullptr, "copied save is unreadable", "path=\"" + destination + "\""))
+            size_t fileSize = 0;
+            uint8_t *rawFileBytes = Utils::readAllBytes(destination.c_str(), &fileSize);
+            if (!context.check(rawFileBytes != nullptr, "copied save is unreadable", "path=\"" + destination + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
             }
-            std::vector<uint8_t> bytes(raw, raw + length);
-            delete[] raw;
-            loaded->loose = Save::openExternalSave(std::move(bytes), destination, nullptr);
-            if (!context.check(loaded->loose != nullptr, "copied save no longer opens", "path=\"" + destination + "\""))
+            std::vector<uint8_t> saveBytes(rawFileBytes, rawFileBytes + fileSize);
+            delete[] rawFileBytes;
+            loaded->looseTrainer = Save::openExternalSave(std::move(saveBytes), destination, nullptr);
+            if (!context.check(loaded->looseTrainer != nullptr, "copied save no longer opens", "path=\"" + destination + "\""))
             {
                 phase = Phase::TargetDone;
                 return;
             }
-            trainer = loaded->loose.get();
+            trainer = loaded->looseTrainer.get();
         }
 
-        const bool passed = context.check(trainer != nullptr, "save did not produce a trainer");
-        if (passed)
+        const bool trainerLoaded = context.check(trainer != nullptr, "save did not produce a trainer");
+        if (trainerLoaded)
         {
-            context.check(trainer->getGameGroup() == t.group, "loaded trainer reports a different save-format group than the title says", "expected=" + Enums::getGameVersionName(t.group) + " actual=" + Enums::getGameVersionName(trainer->getGameGroup()));
+            context.check(trainer->getGameGroup() == target.group, "loaded trainer reports a different save-format group than the title says", "expected=" + Enums::getGameVersionName(target.group) + " actual=" + Enums::getGameVersionName(trainer->getGameGroup()));
         }
-        if (!passed)
+        if (!trainerLoaded)
         {
             phase = Phase::TargetDone;
             return;
         }
 
-        suiteIdx = 0;
-        chunkIdx = 0;
+        currentSuiteIndex = 0;
+        currentChunkIndex = 0;
         chunkCount = -1;
         phase = Phase::TargetSuites;
     }
@@ -799,63 +839,74 @@ namespace Test
         trainer = nullptr;
         // The scratch copy of a Switch save is up to ~2 MB and there is no reason to leave five of
         // them on the card. The report is the artefact worth keeping, not the working copies.
-        if (!workDir.empty() && dirExists(workDir))
-            Utils::deleteDirectoryRecursive(workDir.c_str());
-        workDir.clear();
+        if (!workDirectory.empty() && directoryExists(workDirectory))
+        {
+            Utils::deleteDirectoryRecursive(workDirectory.c_str());
+        }
+        workDirectory.clear();
         workSavePath.clear();
     }
 
     void Runner::endTarget()
     {
         releaseTarget();
-        ++targetIdx;
+        ++currentTargetIndex;
         // A checkpoint, so a crash in a later target still leaves everything up to here on the
         // card. The final write replaces it.
         writeReport(true);
-        suiteIdx = 0;
-        chunkIdx = 0;
+        currentSuiteIndex = 0;
+        currentChunkIndex = 0;
         chunkCount = -1;
-        phase = (targetIdx < plan.size()) ? Phase::TargetLoad : Phase::CrossSuites;
+        phase = (currentTargetIndex < plan.size()) ? Phase::TargetLoad : Phase::CrossSuites;
     }
 
     void Runner::writeReport(bool inProgress)
     {
-        std::string header = "PKSE SELF TEST   " + nowHuman() + "   v" + VERSION_STRING + "\n";
-        header += "targets:\n";
+        std::string reportHeader = "PKSE SELF TEST   " + readableTimestamp() + "   v" + VERSION_STRING + "\n";
+        reportHeader += "targets:\n";
         if (plan.empty())
-            header += "    (none)\n";
-        for (const auto &t : plan)
         {
-            header += "    " + t.display();
-            if (t.titleId != 0)
+            reportHeader += "    (none)\n";
+        }
+        for (const auto &plannedTarget : plan)
+        {
+            reportHeader += "    " + plannedTarget.display();
+            if (plannedTarget.titleId != 0)
             {
-                char idbuf[32];
-                snprintf(idbuf, sizeof(idbuf), "  titleId=0x%016llX", (unsigned long long)t.titleId);
-                header += idbuf;
+                char titleIdText[32];
+                snprintf(titleIdText, sizeof(titleIdText), "  titleId=0x%016llX", (unsigned long long)plannedTarget.titleId);
+                reportHeader += titleIdText;
             }
             else
             {
-                header += "  file=\"" + t.sourcePath + "\"";
-
+                reportHeader += "  file=\"" + plannedTarget.sourcePath + "\"";
             }
-            header += "\n";
+            reportHeader += "\n";
         }
         if (!missingTitleList.empty())
         {
-            header += "not tested (no save on this console):";
-            for (Enums::GameVersion missing : missingTitleList)
-                header += " " + Enums::getGameVersionName(missing);
-            header += "\n";
+            reportHeader += "not tested (no save on this console):";
+            for (Enums::GameVersion missingTitle : missingTitleList)
+            {
+                reportHeader += " " + Enums::getGameVersionName(missingTitle);
+            }
+            reportHeader += "\n";
         }
-        header += "duration: " + std::to_string(elapsedSeconds()) + "s\n";
+        reportHeader += "duration: " + std::to_string(elapsedSeconds()) + "s\n";
         if (cancelled)
-            header += "*** PARTIAL: the run was cancelled before it finished ***\n";
+        {
+            reportHeader += "*** PARTIAL: the run was cancelled before it finished ***\n";
+        }
         if (inProgress)
-            header += "*** IN PROGRESS: written after " + std::to_string(targetIdx) + "/" + std::to_string(plan.size()) + " targets. If the run stopped here, the console crashed or was closed during the next one ***\n";
+        {
+            reportHeader += "*** IN PROGRESS: written after " + std::to_string(currentTargetIndex) + "/" + std::to_string(plan.size()) + " targets. If the run stopped here, the console crashed or was closed during the next one ***\n";
+        }
 
-        runReport.write(outPath, header);
+        runReport.write(reportFilePath, reportHeader);
         if (!inProgress)
-            Utils::logInfoToFile("SelfTest: report written", outPath.c_str());
+        {
+            Utils::logInfoToFile("SelfTest: report written", reportFilePath.c_str());
+        }
     }
 
     bool Runner::stepOnce()
@@ -864,11 +915,10 @@ namespace Test
         {
         case Phase::GlobalSuites:
         {
-            uiTarget = "data tables and ROMFS";
-            if (advanceSuites(Scope::Global))
-                return true;
-            suiteIdx = 0;
-            chunkIdx = 0;
+            phaseTargetText = "data tables and ROMFS";
+            if (advanceSuites(Scope::Global)) return true;
+            currentSuiteIndex = 0;
+            currentChunkIndex = 0;
             chunkCount = -1;
             phase = plan.empty() ? Phase::CrossSuites : Phase::TargetLoad;
             return true;
@@ -879,8 +929,7 @@ namespace Test
 
         case Phase::TargetSuites:
         {
-            if (advanceSuites(Scope::PerTarget))
-                return true;
+            if (advanceSuites(Scope::PerTarget)) return true;
             phase = Phase::TargetDone;
             return true;
         }
@@ -890,15 +939,14 @@ namespace Test
 
         case Phase::CrossSuites:
         {
-            uiTarget = "cross-title";
-            if (advanceSuites(Scope::Cross))
-                return true;
+            phaseTargetText = "cross-title";
+            if (advanceSuites(Scope::Cross)) return true;
             phase = Phase::WriteReport;
             return true;
         }
         case Phase::WriteReport:
-            uiTarget = "writing report";
-            uiDetail.clear();
+            phaseTargetText = "writing report";
+            phaseDetailText.clear();
             finishedAt = (long)time(nullptr);
             writeReport();
             clearSamples(); // the pool holds a Pokemon per sample; nothing needs it now
@@ -914,26 +962,26 @@ namespace Test
         }
     }
 
-    bool Runner::step(int budgetMs)
+    bool Runner::step(int budgetMilliseconds)
     {
-        if (runState != State::Running)
-            return false;
+        if (runState != State::Running) return false;
 
         // A chunk runs to completion once started -- the budget decides whether to start ANOTHER
         // one, not whether to interrupt one. Chunks are sized so that is a fair trade; the whole
         // point of the chunking is that no single one is long enough to notice.
         const u64 startTick = armGetSystemTick();
-        const u64 budgetTicks = armNsToTicks((u64)budgetMs * 1000000ull);
+        const u64 budgetTicks = armNsToTicks((u64)budgetMilliseconds * 1000000ull);
         do
         {
-            gYieldRequested = false;
-            if (!stepOnce())
-                return false;
+            g_yieldRequested = false;
+            if (!stepOnce()) return false;
             // A paced suite (the UI drive) gets exactly one chunk per frame, whatever the budget
             // says: its chunks are cheap, and running them back to back is precisely what made an
             // entire walkthrough finish invisibly inside a single frame.
-            if (gYieldRequested)
+            if (g_yieldRequested)
+            {
                 break;
+            }
         } while (armGetSystemTick() - startTick < budgetTicks);
 
         return true;
@@ -941,13 +989,12 @@ namespace Test
 
     void Runner::cancel()
     {
-        if (runState != State::Running)
-            return;
+        if (runState != State::Running) return;
         cancelled = true;
         runReport.setScope("-", "plan");
         Context context;
-        context.rep = &runReport;
-        context.skip("the run was cancelled before it finished, so this report is PARTIAL", "completedTargets=" + std::to_string(targetIdx) + "/" + std::to_string(plan.size()));
+        context.report = &runReport;
+        context.skip("the run was cancelled before it finished, so this report is PARTIAL", "completedTargets=" + std::to_string(currentTargetIndex) + "/" + std::to_string(plan.size()));
         releaseTarget();
         clearSamples();
         phase = Phase::WriteReport;
@@ -955,20 +1002,23 @@ namespace Test
 
     int Runner::elapsedSeconds() const noexcept
     {
-        const long end = (runState == State::Finished) ? finishedAt : (long)time(nullptr);
-        const long seconds = end - startedAt;
-        return seconds > 0 ? (int)seconds : 0;
+        const long endSeconds = (runState == State::Finished) ? finishedAt : (long)time(nullptr);
+        const long runSeconds = endSeconds - startedAt;
+        return runSeconds > 0 ? (int)runSeconds : 0;
     }
 
     float Runner::phaseProgress() const noexcept
     {
-        if (chunkCount <= 0)
-            return 0.0f;
-        float floatValue = (float)chunkIdx / (float)chunkCount;
-        if (floatValue < 0.0f)
-            floatValue = 0.0f;
-        if (floatValue > 1.0f)
-            floatValue = 1.0f;
-        return floatValue;
+        if (chunkCount <= 0) return 0.0f;
+        float chunkFraction = (float)currentChunkIndex / (float)chunkCount;
+        if (chunkFraction < 0.0f)
+        {
+            chunkFraction = 0.0f;
+        }
+        if (chunkFraction > 1.0f)
+        {
+            chunkFraction = 1.0f;
+        }
+        return chunkFraction;
     }
 }

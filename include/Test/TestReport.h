@@ -75,7 +75,7 @@ namespace Test
         Severity severity = Severity::Info;
         std::string suite;
         std::string what;
-        int count = 0;                    // every occurrence, including ones past the sample cap
+        int occurrenceCount = 0; // every occurrence, including ones past the sample cap
         std::vector<std::string> samples; // "<target>  <detail>", capped at MAX_SAMPLE_COUNT
     };
 
@@ -85,7 +85,10 @@ namespace Test
     {
         std::string target;
         std::string suite;
-        int checks = 0, fails = 0, warns = 0, skips = 0;
+        int checks = 0;
+        int fails = 0;
+        int warns = 0;
+        int skips = 0;
     };
 
     class Report
@@ -136,8 +139,13 @@ namespace Test
     private:
         Tally &currentTally();
 
-        std::string scopeTarget, scopeSuite;
-        int checkCount = 0, failCount = 0, warnCount = 0, skipCount = 0, infoCount = 0;
+        std::string scopeTarget;
+        std::string scopeSuite;
+        int checkCount = 0;
+        int failCount = 0;
+        int warnCount = 0;
+        int skipCount = 0;
+        int infoCount = 0;
         std::vector<FindingGroup> findingGroups;
         std::vector<Tally> tallyList;
         std::vector<std::string> recentLines;
@@ -153,7 +161,7 @@ namespace Test
      */
     struct Context
     {
-        Report *rep = nullptr;
+        Report *report = nullptr;
         std::string suite;
         std::string target;                                       // "Sword"
         Enums::GameVersion version = Enums::GameVersion::Invalid; // the concrete title (SW, VL, YW)
@@ -162,11 +170,11 @@ namespace Test
         /// The run's writable scratch directory. For a per-target suite it holds the scratch
         /// COPY of the save; for a Global one, which has no save, it is the run's work root --
         /// somewhere a suite may create its own fixtures and clean them up again.
-        std::string workDir;
+        std::string workDirectory;
         /// For a LOOSE target, the exact scratch file to read and write; empty for an installed
-        /// title, whose save is addressed by `workDir` + title id instead.
+        /// title, whose save is addressed by `workDirectory` + title id instead.
         ///
-        /// Carried rather than searched for: the largest regular file in `workDir` is not
+        /// Carried rather than searched for: the largest regular file in `workDirectory` is not
         /// unambiguous, because Silver and Crystal share `work/gsc/`, Ruby and Emerald share
         /// `work/rse/`, and the bank suite drops a `bank.dat` in there too. The runner already
         /// knows the path it copied to, so it says.
@@ -184,8 +192,8 @@ namespace Test
         /// draw() on a console cannot be caught any other way.
         UI::PKSEFramebuffer *framebuffer = nullptr;
 
-        /// Records a Fail when `ok` is false. RETURNS `ok`, so a check that guards later work reads
-        /// as `if (!context.check(p != nullptr, "...")) return;` instead of testing the same thing twice.
+        /// Records a Fail when `passed` is false. RETURNS `passed`, so a check that guards later work reads
+        /// as `if (!context.check(pokemon != nullptr, "...")) return;` instead of testing the same thing twice.
         bool check(bool passed, const std::string &what, const std::string &detail = std::string());
         /// As check(), but a miss is a Warn -- for things that are suspicious rather than wrong.
         bool warn(bool passed, const std::string &what, const std::string &detail = std::string());
@@ -203,14 +211,14 @@ namespace Test
     /// `key=<n>`
     std::string numberField(const char *key, long long value);
     /// `key=0xHH..` -- for offsets and ids, where decimal is the wrong base to read them in.
-    std::string hex(const char *key, unsigned long long value, int digits = 0);
-    /// `box=<b+1> slot=<s+1>` -- 1-based, matching what the UI shows. A report that counts from 0
+    std::string hexField(const char *key, unsigned long long value, int digits = 0);
+    /// `box=<box+1> slot=<slotIndex+1>` -- 1-based, matching what the UI shows. A report that counts from 0
     /// while the screen counts from 1 sends the reader to the wrong slot.
     std::string slot(int box, int slotIndex);
-    /// `party=<i+1>`
-    std::string partySlot(int index);
+    /// `party=<partyIndex+1>`
+    std::string partySlot(int partyIndex);
     /// Species / form / level / nickname for one pokemon, for the detail line of an entity finding.
-    std::string monLabel(const Pokemon::Pokemon &pokemon);
+    std::string pokemonLabel(const Pokemon::Pokemon &pokemon);
 }
 
 #endif

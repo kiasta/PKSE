@@ -380,7 +380,18 @@ created or withdrawn. There are several ways a Pokémon can enter a save (the cr
 withdrawal, a bulk move, a party swap) and hooking each one is how a path gets missed. Walking
 storage once catches all of them, and it is self-healing: a Pokémon an older build added without
 registering gets picked up next save. It only ever **sets** flags, so a player's dex cannot be
-walked backwards.
+walked backwards, and it must be **idempotent**: saving an unedited file twice writes the same dex.
+Legends: Arceus is the exception that proves the rule. Its research log keeps per-species
+counters ("Number caught", alphas, large/small/heavy/light specimens), and adding 1 to "Number
+caught" for everything in storage on every save once inflated it by one per Pokémon per save.
+`Trainer8LA` remembers how many of each Pokémon (encryption constant + species) storage held when
+the save was read or last written, and only the surplus counts. Each new arrival gets exactly what
+PKHeX's `OnPokeGet` gives a Pokémon placed in a slot: one catch, one alpha for an alpha, one for
+each size task its species has and its size meets (thresholds from `DexTable8LA`), and the
+species' update counter. A size of 0 means "never recorded", not "tiny", so it meets no size task.
+That needs real sizes: a PA8 converted from the bank or made in the creator gets its absolute height
+and weight from `Pokemon8LA::resetSizeAbsolutes()`, PKHeX's `ResetHeight`/`ResetWeight`. The self test
+fails an unedited Legends: Arceus write that changes any research field.
 
 **`createBlankPokemon()` must not hand raw zeros to an entity constructor.** It synthesises a zeroed
 *decrypted* buffer of the generation's slot size, encrypts it with seed/EC 0, then constructs the

@@ -50,7 +50,9 @@ namespace Test
         {
             std::vector<uint8_t> fillerBytes(byteCount);
             for (size_t byteIndex = 0; byteIndex < byteCount; ++byteIndex)
+            {
                 fillerBytes[byteIndex] = static_cast<uint8_t>(0xA5 ^ byteIndex);
+            }
             return fillerBytes;
         }
 
@@ -61,8 +63,10 @@ namespace Test
 
         inline void appendUInt32LittleEndian(std::vector<uint8_t> &envelopeBytes, uint32_t fieldValue)
         {
-            for (int shift = 0; shift < 32; shift += 8)
-                envelopeBytes.push_back(static_cast<uint8_t>(fieldValue >> shift));
+            for (int bitShift = 0; bitShift < 32; bitShift += 8)
+            {
+                envelopeBytes.push_back(static_cast<uint8_t>(fieldValue >> bitShift));
+            }
         }
 
         inline void appendBytes(std::vector<uint8_t> &envelopeBytes, const std::vector<uint8_t> &appendedBytes)
@@ -76,8 +80,10 @@ namespace Test
             std::vector<uint8_t> footerBytes;
             appendText(footerBytes, "|<--Snip above here to create a raw sav by excluding this DeSmuME savedata footer:");
             const uint32_t saveSize = static_cast<uint32_t>(heldSize);
-            for (const uint32_t field : {saveSize, saveSize, 0u, 3u, saveSize, 0u})
-                appendUInt32LittleEndian(footerBytes, field);
+            for (const uint32_t footerField : {saveSize, saveSize, 0u, 3u, saveSize, 0u})
+            {
+                appendUInt32LittleEndian(footerBytes, footerField);
+            }
             appendText(footerBytes, "|-DESMUME SAVE-|");
             return footerBytes;
         }
@@ -89,12 +95,14 @@ namespace Test
             appendText(headerBytes, "SRAM");
             appendUInt32LittleEndian(headerBytes, 3);
             appendText(headerBytes, "00112233445566778899aabbccddeeff00112233"); // the ROM's SHA-1
-            constexpr std::string_view build = "1.2.0+nso-test";
-            appendUInt32LittleEndian(headerBytes, static_cast<uint32_t>(build.size()));
-            appendText(headerBytes, build);
+            constexpr std::string_view buildVersionText = "1.2.0+nso-test";
+            appendUInt32LittleEndian(headerBytes, static_cast<uint32_t>(buildVersionText.size()));
+            appendText(headerBytes, buildVersionText);
             headerBytes.push_back(withClock ? 1 : 0);
             if (withClock)
+            {
                 appendBytes(headerBytes, filler(SWITCH_ONLINE_RTC_SIZE));
+            }
             headerBytes.insert(headerBytes.end(), SWITCH_ONLINE_HASH_TEXT_SIZE, 0);
             return headerBytes;
         }
@@ -119,7 +127,9 @@ namespace Test
             {
                 size_t repeatCount = 1;
                 while (readOffset + repeatCount < savedBytes.size() && repeatCount < 0xFFFF && savedBytes[readOffset + repeatCount] == savedBytes[readOffset])
+                {
                     ++repeatCount;
+                }
                 if (repeatCount >= 8)
                 {
                     codeBytes.push_back(0x80);
@@ -142,35 +152,33 @@ namespace Test
         /// when the file is not a run-length coded no$gba file or the code does not decode to its length.
         inline std::vector<uint8_t> nocashRunLengthDecode(const std::vector<uint8_t> &fileBytes)
         {
-            constexpr size_t codeStart = NOCASH_GBA_HEADER_SIZE + 16; // "SRAM", method, length, unpacked length
+            constexpr size_t codeStartOffset = NOCASH_GBA_HEADER_SIZE + 16; // "SRAM", method, length, unpacked length
             const auto fieldAt = [&](size_t fieldOffset)
             {
                 return static_cast<size_t>(fileBytes[fieldOffset]) | static_cast<size_t>(fileBytes[fieldOffset + 1]) << 8 | static_cast<size_t>(fileBytes[fieldOffset + 2]) << 16 | static_cast<size_t>(fileBytes[fieldOffset + 3]) << 24;
             };
-            if (fileBytes.size() < codeStart || fieldAt(NOCASH_GBA_HEADER_SIZE + 4) != 1)
-                return {};
+            if (fileBytes.size() < codeStartOffset || fieldAt(NOCASH_GBA_HEADER_SIZE + 4) != 1) return {};
             const size_t unpackedLength = fieldAt(NOCASH_GBA_HEADER_SIZE + 12);
             std::vector<uint8_t> decodedBytes;
-            for (size_t readOffset = codeStart; readOffset < fileBytes.size();)
+            for (size_t readOffset = codeStartOffset; readOffset < fileBytes.size();)
             {
-                const uint8_t control = fileBytes[readOffset];
-                if (control == 0x00)
-                    return decodedBytes.size() == unpackedLength ? decodedBytes : std::vector<uint8_t>{};
-                if (control < 0x80 && readOffset + 1 + control <= fileBytes.size())
+                const uint8_t controlByte = fileBytes[readOffset];
+                if (controlByte == 0x00) return decodedBytes.size() == unpackedLength ? decodedBytes : std::vector<uint8_t>{};
+                if (controlByte < 0x80 && readOffset + 1 + controlByte <= fileBytes.size())
                 {
                     const auto copyStart = fileBytes.begin() + static_cast<std::ptrdiff_t>(readOffset + 1);
-                    decodedBytes.insert(decodedBytes.end(), copyStart, copyStart + control);
-                    readOffset += 1 + control;
+                    decodedBytes.insert(decodedBytes.end(), copyStart, copyStart + controlByte);
+                    readOffset += 1 + controlByte;
                 }
-                else if (control == 0x80 && readOffset + 4 <= fileBytes.size())
+                else if (controlByte == 0x80 && readOffset + 4 <= fileBytes.size())
                 {
                     const size_t repeatCount = fileBytes[readOffset + 2] | fileBytes[readOffset + 3] << 8;
                     decodedBytes.insert(decodedBytes.end(), repeatCount, fileBytes[readOffset + 1]);
                     readOffset += 4;
                 }
-                else if (control > 0x80 && readOffset + 2 <= fileBytes.size())
+                else if (controlByte > 0x80 && readOffset + 2 <= fileBytes.size())
                 {
-                    const size_t repeatCount = static_cast<size_t>(control - 0x80);
+                    const size_t repeatCount = static_cast<size_t>(controlByte - 0x80);
                     decodedBytes.insert(decodedBytes.end(), repeatCount, fileBytes[readOffset + 1]);
                     readOffset += 2;
                 }
@@ -178,8 +186,7 @@ namespace Test
                 {
                     return {};
                 }
-                if (decodedBytes.size() > unpackedLength)
-                    return {};
+                if (decodedBytes.size() > unpackedLength) return {};
             }
             return {};
         }
@@ -246,8 +253,7 @@ namespace Test
     /// with and without a clock, a no$gba file run-length coded and stored as it is. Every other kind has one.
     inline std::vector<bool> envelopeLayouts(Save::SaveEnvelopeKind kind)
     {
-        if (kind == Save::SaveEnvelopeKind::SwitchOnlineHeader || kind == Save::SaveEnvelopeKind::NocashGbaContainer)
-            return {false, true};
+        if (kind == Save::SaveEnvelopeKind::SwitchOnlineHeader || kind == Save::SaveEnvelopeKind::NocashGbaContainer) return {false, true};
         return {false};
     }
 

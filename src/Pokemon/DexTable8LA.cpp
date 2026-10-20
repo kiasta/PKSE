@@ -128,6 +128,84 @@ namespace Pokemon {
         };
         constexpr int INFO_COUNT = static_cast<int>(sizeof(INFO_KEYS) / sizeof(INFO_KEYS[0]));
 
+        // Species with a size research task, sorted; a bit per SizeResearchTask8LA it has, and the
+        // threshold of each (0 where the bit is clear).
+        constexpr uint16_t SIZE_RESEARCH_SPECIES[] = {
+          25,   46,   54,   63,   66,   72,   74,   75,   77,   81,   95,  100,
+         111,  129,  137,  172,  173,  175,  214,  215,  216,  220,  221,  226,
+         265,  280,  281,  299,  340,  358,  361,  362,  363,  364,  399,  408,
+         410,  416,  418,  422,  423,  431,  432,  433,  436,  437,  443,  451,
+         455,  458,  459,  468,  548,  550,  627,  712,  713,  949,
+        };
+        constexpr uint8_t SIZE_RESEARCH_TASK_MASKS[] = {
+        0x08, 0x01, 0x04, 0x08, 0x04, 0x08, 0x04, 0x04, 0x04, 0x08, 0x01, 0x04,
+        0x04, 0x01, 0x01, 0x02, 0x02, 0x02, 0x01, 0x08, 0x04, 0x04, 0x04, 0x01,
+        0x08, 0x02, 0x02, 0x04, 0x04, 0x08, 0x08, 0x04, 0x04, 0x04, 0x04, 0x01,
+        0x04, 0x04, 0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x01, 0x04, 0x04, 0x02,
+        0x01, 0x02, 0x01, 0x08, 0x02, 0x01, 0x08, 0x08, 0x04, 0x04,
+        };
+        constexpr uint8_t SIZE_RESEARCH_THRESHOLDS[][4] = {
+        {   0,   0,   0,  88 },
+        {  32,   0,   0,   0 },
+        {   0,   0,  52,   0 },
+        {   0,   0,   0,  58 },
+        {   0,   0, 102,   0 },
+        {   0,   0,   0,   4 },
+        {   0,   0, 152,   0 },
+        {   0,   0, 236,   0 },
+        {   0,   0, 228,   0 },
+        {   0,   0,   0,  88 },
+        { 182,   0,   0,   0 },
+        {   0,   0, 120,   0 },
+        {   0,   0, 212,   0 },
+        { 100,   0,   0,   0 },
+        {  80,   0,   0,   0 },
+        {   0,  30,   0,   0 },
+        {   0,  30,   0,   0 },
+        {   0,  30,   0,   0 },
+        { 165,   0,   0,   0 },
+        {   0,   0,   0, 196 },
+        {   0,   0, 182,   0 },
+        {   0,   0, 188,   0 },
+        {   0,   0, 212,   0 },
+        { 230,   0,   0,   0 },
+        {   0,   0,   0,  64 },
+        {   0,  36,   0,   0 },
+        {   0,  72,   0,   0 },
+        {   0,   0,  16,   0 },
+        {   0,   0,  40,   0 },
+        {   0,   0,   0,  95 },
+        {   0,   0,   0, 220 },
+        {   0,   0,  96,   0 },
+        {   0,   0, 204,   0 },
+        {   0,   0,  28,   0 },
+        {   0,   0, 152,   0 },
+        {  85,   0,   0,   0 },
+        {   0,   0, 168,   0 },
+        {   0,   0, 104,   0 },
+        {  75,   0,   0,   0 },
+        {   0,  28,   0,   0 },
+        {   0,   0, 128,   0 },
+        {   0,   0,   0,  94 },
+        {   0,   0, 192,   0 },
+        {   0,   0,   0,  55 },
+        {  55,   0,   0,   0 },
+        {   0,   0,  32,   0 },
+        {   0,   0, 202,   0 },
+        {   0,  72,   0,   0 },
+        { 150,   0,   0,   0 },
+        {   0,  90,   0,   0 },
+        { 110,   0,   0,   0 },
+        {   0,   0,   0, 172 },
+        {   0,  45,   0,   0 },
+        { 110,   0,   0,   0 },
+        {   0,   0,   0, 182 },
+        {   0,   0,   0,  40 },
+        {   0,   0, 128,   0 },
+        {   0,   0, 120,   0 },
+        };
+        constexpr int SIZE_RESEARCH_COUNT = static_cast<int>(sizeof(SIZE_RESEARCH_SPECIES) / sizeof(SIZE_RESEARCH_SPECIES[0]));
+
         // Same binary search PKHeX uses; -1 when absent.
         int findKey(const uint16_t* keys, int count, uint16_t key) noexcept {
             int lo = 0, hi = count - 1;
@@ -155,5 +233,14 @@ namespace Pokemon {
         if (species == 0 || species > DEX8LA_MAX_SPECIES || form >= DEX8LA_MAX_FORM) return false;
         const int i = findKey(INFO_KEYS, INFO_COUNT, packKey(species, form));
         return (i >= 0) && (INFO_GENDERS[i] & 0x08) != 0;
+    }
+
+    bool getSizeResearchThreshold8LA(uint16_t speciesId, SizeResearchTask8LA task, uint8_t &taskThreshold) noexcept
+    {
+        const int speciesIndex = findKey(SIZE_RESEARCH_SPECIES, SIZE_RESEARCH_COUNT, speciesId);
+        const unsigned taskSlot = static_cast<unsigned>(task);
+        if (speciesIndex < 0 || taskSlot >= 4 || (SIZE_RESEARCH_TASK_MASKS[speciesIndex] & (1u << taskSlot)) == 0) return false;
+        taskThreshold = SIZE_RESEARCH_THRESHOLDS[speciesIndex][taskSlot];
+        return true;
     }
 }

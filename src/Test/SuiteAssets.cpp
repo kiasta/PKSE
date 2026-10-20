@@ -40,12 +40,12 @@ namespace Test
     {
         constexpr int SPECIES_PER_CHUNK = 128;
         // Chunk 0 is fonts + type icons; the species sweep follows.
-        constexpr int FixedChunkCount = 1;
+        constexpr int FIXED_CHUNK_COUNT = 1;
 
-        bool romfsHas(const std::string &rel)
+        bool romfsHas(const std::string &relativePath)
         {
             struct stat entryStatus{};
-            return stat(("romfs:/" + rel).c_str(), &entryStatus) == 0 && S_ISREG(entryStatus.st_mode);
+            return stat(("romfs:/" + relativePath).c_str(), &entryStatus) == 0 && S_ISREG(entryStatus.st_mode);
         }
 
         /// A sprite stem is present if EITHER resolution is on the card: SpriteManager prefers the
@@ -55,9 +55,9 @@ namespace Test
             return romfsHas("sprites/pokemon_hd/" + stem + ".png") || romfsHas("sprites/pokemon/" + stem + ".png");
         }
 
-        std::string sp(uint16_t species)
+        std::string speciesLabel(uint16_t speciesId)
         {
-            return "species=" + std::to_string(species) + " (" + Trainer::getSpeciesName(species) + ")";
+            return "species=" + std::to_string(speciesId) + " (" + Trainer::getSpeciesName(speciesId) + ")";
         }
 
         void checkFixedAssets(Context &context)
@@ -82,51 +82,58 @@ namespace Test
             {
                 const char *stem = Trainer::originMarkFileStem(static_cast<Trainer::OriginMark>(markIndex));
                 if (stem == nullptr)
+                {
                     continue;
+                }
                 context.check(romfsHas(std::string("sprites/marks/") + stem + ".png"), "origin marking missing from ROMFS", std::string("mark=") + stem + " fix=\"python tools/gen_marks.py\"");
             }
         }
 
-        void checkSpeciesSprites(Context &context, uint16_t first, uint16_t last)
+        void checkSpeciesSprites(Context &context, uint16_t firstSpeciesId, uint16_t lastSpeciesId)
         {
-            int fallbacks = 0;
-            for (uint16_t sIndex = first; sIndex <= last && sIndex <= Pokemon::PERSONAL_MAX_SPECIES; ++sIndex)
+            int unmappedFormCount = 0;
+            for (uint16_t speciesId = firstSpeciesId; speciesId <= lastSpeciesId && speciesId <= Pokemon::PERSONAL_MAX_SPECIES; ++speciesId)
             {
-                const std::string base = std::to_string(sIndex);
-                context.check(spriteStemExists(base), "species has no base sprite", sp(sIndex) + " fix=\"python tools/gen_hdsprites.py\"");
+                const std::string baseStem = std::to_string(speciesId);
+                context.check(spriteStemExists(baseStem), "species has no base sprite", speciesLabel(speciesId) + " fix=\"python tools/gen_hdsprites.py\"");
                 // A missing shiny is not always wrong -- the cap Pikachu correctly have none, since
                 // they cannot be shiny -- but for a base species it is nearly always a fetch that
                 // did not finish, so it is worth seeing without being called a failure.
-                context.warn(spriteStemExists(base + "s"), "species has no shiny sprite", sp(sIndex));
+                context.warn(spriteStemExists(baseStem + "s"), "species has no shiny sprite", speciesLabel(speciesId));
 
-                const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(sIndex, 0);
-                for (uint8_t formIndex = 0; formIndex < pi.formCount; ++formIndex)
+                const Pokemon::PersonalInfo &personalInfo = Pokemon::getPersonalInfo(speciesId, 0);
+                for (uint8_t formId = 0; formId < personalInfo.formCount; ++formId)
                 {
-                    const char *named = Pokemon::getFormSpriteName(sIndex, formIndex);
-                    if (named && named[0] != '\0')
+                    const char *namedStem = Pokemon::getFormSpriteName(speciesId, formId);
+                    if (namedStem && namedStem[0] != '\0')
                     {
-                        context.check(spriteStemExists(named), "named form sprite stem has no file", sp(sIndex) + " form=" + std::to_string(formIndex) + " stem=\"" + named + "\"");
+                        context.check(spriteStemExists(namedStem), "named form sprite stem has no file", speciesLabel(speciesId) + " form=" + std::to_string(formId) + " stem=\"" + namedStem + "\"");
                         continue;
                     }
-                    const uint32_t itemId = Pokemon::getFormSpriteId(sIndex, formIndex);
-                    if (itemId == sIndex)
+                    const uint32_t spriteId = Pokemon::getFormSpriteId(speciesId, formId);
+                    if (spriteId == speciesId)
                     {
-                        if (formIndex > 0)
-                            ++fallbacks;
+                        // No mapping: the sprite falls back to the base species, by design.
+                        if (formId > 0)
+                        {
+                            ++unmappedFormCount;
+                        }
                         continue;
-                    } // no mapping: falls back, by design
-                    context.check(spriteStemExists(std::to_string(itemId)), "mapped form sprite id has no file", sp(sIndex) + " form=" + std::to_string(formIndex) + " spriteId=" + std::to_string(itemId));
+                    }
+                    context.check(spriteStemExists(std::to_string(spriteId)), "mapped form sprite id has no file", speciesLabel(speciesId) + " form=" + std::to_string(formId) + " spriteId=" + std::to_string(spriteId));
                 }
             }
-            if (fallbacks > 0)
-                context.note("forms with no sprite mapping (drawn as the base species)", "count=" + std::to_string(fallbacks) + " range=" + std::to_string(first) + ".." + std::to_string(last));
+            if (unmappedFormCount > 0)
+            {
+                context.note("forms with no sprite mapping (drawn as the base species)", "count=" + std::to_string(unmappedFormCount) + " range=" + std::to_string(firstSpeciesId) + ".." + std::to_string(lastSpeciesId));
+            }
         }
     }
 
     int assetsPlan(Context &)
     {
-        const int speciesChunks = (Pokemon::PERSONAL_MAX_SPECIES + SPECIES_PER_CHUNK - 1) / SPECIES_PER_CHUNK;
-        return FixedChunkCount + speciesChunks;
+        const int speciesChunkCount = (Pokemon::PERSONAL_MAX_SPECIES + SPECIES_PER_CHUNK - 1) / SPECIES_PER_CHUNK;
+        return FIXED_CHUNK_COUNT + speciesChunkCount;
     }
 
     void assetsRun(Context &context, int chunk)
@@ -136,8 +143,8 @@ namespace Test
             checkFixedAssets(context);
             return;
         }
-        const uint16_t first = (uint16_t)((chunk - FixedChunkCount) * SPECIES_PER_CHUNK + 1);
-        const uint16_t last = (uint16_t)(first + SPECIES_PER_CHUNK - 1);
-        checkSpeciesSprites(context, first, last);
+        const uint16_t firstSpeciesId = (uint16_t)((chunk - FIXED_CHUNK_COUNT) * SPECIES_PER_CHUNK + 1);
+        const uint16_t lastSpeciesId = (uint16_t)(firstSpeciesId + SPECIES_PER_CHUNK - 1);
+        checkSpeciesSprites(context, firstSpeciesId, lastSpeciesId);
     }
 }

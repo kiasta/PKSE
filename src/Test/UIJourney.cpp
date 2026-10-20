@@ -23,26 +23,27 @@ namespace Test
         constexpr uint64_t FNV_OFFSET = 1469598103934665603ULL;
         constexpr uint64_t FNV_PRIME = 1099511628211ULL;
 
-        inline void fold(uint64_t &h, const void *p, size_t byteCount)
+        inline void fold(uint64_t &hash, const void *foldedBytes, size_t byteCount)
         {
-            const auto *b = static_cast<const unsigned char *>(p);
-            for (size_t index = 0; index < byteCount; ++index)
+            const auto *byteValues = static_cast<const unsigned char *>(foldedBytes);
+            for (size_t byteIndex = 0; byteIndex < byteCount; ++byteIndex)
             {
-                h ^= b[index];
-                h *= FNV_PRIME;
+                hash ^= byteValues[byteIndex];
+                hash *= FNV_PRIME;
             }
         }
-        inline void foldU64(uint64_t &h, uint64_t value) { fold(h, &value, sizeof value); }
+        inline void foldU64(uint64_t &hash, uint64_t foldedValue) { fold(hash, &foldedValue, sizeof foldedValue); }
 
-        uint64_t fingerprintMon(const ::Pokemon::Pokemon *pk)
+        uint64_t fingerprintPokemon(const ::Pokemon::Pokemon *pokemon)
         {
             uint64_t hash = FNV_OFFSET;
-            if (!pk)
+            // absent differs from blank
+            if (!pokemon)
             {
                 foldU64(hash, 0xEEEEEEEEULL);
                 return hash;
-            } // absent differs from blank
-            const auto recordBytes = pk->getData();
+            }
+            const auto recordBytes = pokemon->getData();
             fold(hash, recordBytes.data(), recordBytes.size());
             return hash;
         }
@@ -67,9 +68,9 @@ namespace Test
         snapshot.storageMenu = screen.storageMenuActive;
         snapshot.cursorMode = static_cast<int>(screen.cursorMode);
         snapshot.focusPane = screen.storageFocusPane;
-        snapshot.stSaveSlot = screen.stSaveSlot;
-        snapshot.stBankBox = screen.stBankBox;
-        snapshot.stBankSlot = screen.stBankSlot;
+        snapshot.storageSaveSlot = screen.stSaveSlot;
+        snapshot.storageBankBox = screen.stBankBox;
+        snapshot.storageBankSlot = screen.stBankSlot;
         snapshot.goBack = screen.goBack;
         snapshot.exitRequested = screen.exitRequested;
         snapshot.unsaved = screen.hasUnsavedChanges;
@@ -77,84 +78,99 @@ namespace Test
         uint64_t hash = FNV_OFFSET;
         fold(hash, trainer.trainerName.data(), trainer.trainerName.size());
         foldU64(hash, trainer.money);
-        snapshot.trainerFp = hash;
+        snapshot.trainerFingerprint = hash;
 
         hash = FNV_OFFSET;
         for (const auto &pokemon : trainer.party)
-            foldU64(hash, fingerprintMon(pokemon.get()));
-        snapshot.partyFp = hash;
+        {
+            foldU64(hash, fingerprintPokemon(pokemon.get()));
+        }
+        snapshot.partyFingerprint = hash;
 
         // Every slot of every box, not just the open one. The cost is the point: a navigation
         // keypress that wrote to a box the user was not even looking at is exactly the bug that
         // would otherwise be found months later by a player.
         hash = FNV_OFFSET;
         for (const auto &box : trainer.boxes)
+        {
             for (const auto &pokemon : box)
-                foldU64(hash, fingerprintMon(pokemon.get()));
-        snapshot.boxFp = hash;
+            {
+                foldU64(hash, fingerprintPokemon(pokemon.get()));
+            }
+        }
+        snapshot.boxFingerprint = hash;
 
         hash = FNV_OFFSET;
         for (const auto &pouch : trainer.items)
-            for (const auto &it : pouch)
+        {
+            for (const auto &item : pouch)
             {
-                foldU64(hash, it.itemId);
-                foldU64(hash, it.count);
+                foldU64(hash, item.itemId);
+                foldU64(hash, item.count);
             }
-        snapshot.itemFp = hash;
+        }
+        snapshot.itemFingerprint = hash;
 
         hash = FNV_OFFSET;
-        for (const auto &bn : trainer.boxNames)
-            fold(hash, bn.data(), bn.size());
-        snapshot.boxNameFp = hash;
+        for (const auto &boxName : trainer.boxNames)
+        {
+            fold(hash, boxName.data(), boxName.size());
+        }
+        snapshot.boxNameFingerprint = hash;
 
         return snapshot;
     }
 
-    std::vector<const char *> UISnapshot::diff(const UISnapshot &offset) const
+    std::vector<const char *> UISnapshot::diff(const UISnapshot &other) const
     {
-        std::vector<const char *> out;
+        std::vector<const char *> changedFields;
         auto compareField = [&](bool same, const char *label)
-        { if (!same) out.push_back(label); };
-        compareField(mode == offset.mode, "mode");
-        compareField(homeIndex == offset.homeIndex, "homeIndex");
-        compareField(page == offset.page, "page");
-        compareField(category == offset.category, "category");
-        compareField(box == offset.box, "box");
-        compareField(slot == offset.slot, "slot");
-        compareField(party == offset.party, "party");
-        compareField(settingsRow == offset.settingsRow, "settingsRow");
-        compareField(trainerRow == offset.trainerRow, "trainerRow");
-        compareField(detailView == offset.detailView, "detailView");
-        compareField(detailsModal == offset.detailsModal, "detailsModal");
-        compareField(saveConfirm == offset.saveConfirm, "saveConfirm");
-        compareField(swap == offset.swap, "swap");
-        compareField(storageMenu == offset.storageMenu, "storageMenu");
-        compareField(cursorMode == offset.cursorMode, "cursorMode");
-        compareField(focusPane == offset.focusPane, "focusPane");
-        compareField(stSaveSlot == offset.stSaveSlot, "stSaveSlot");
-        compareField(stBankBox == offset.stBankBox, "stBankBox");
-        compareField(stBankSlot == offset.stBankSlot, "stBankSlot");
-        compareField(goBack == offset.goBack, "goBack");
-        compareField(exitRequested == offset.exitRequested, "exitRequested");
-        compareField(unsaved == offset.unsaved, "unsaved");
-        compareField(trainerFp == offset.trainerFp, "TRAINER-DATA");
-        compareField(partyFp == offset.partyFp, "PARTY-DATA");
-        compareField(boxFp == offset.boxFp, "BOX-DATA");
-        compareField(itemFp == offset.itemFp, "ITEM-DATA");
-        compareField(boxNameFp == offset.boxNameFp, "BOXNAME-DATA");
-        return out;
+        {
+            if (!same)
+            {
+                changedFields.push_back(label);
+            }
+        };
+        compareField(mode == other.mode, "mode");
+        compareField(homeIndex == other.homeIndex, "homeIndex");
+        compareField(page == other.page, "page");
+        compareField(category == other.category, "category");
+        compareField(box == other.box, "box");
+        compareField(slot == other.slot, "slot");
+        compareField(party == other.party, "party");
+        compareField(settingsRow == other.settingsRow, "settingsRow");
+        compareField(trainerRow == other.trainerRow, "trainerRow");
+        compareField(detailView == other.detailView, "detailView");
+        compareField(detailsModal == other.detailsModal, "detailsModal");
+        compareField(saveConfirm == other.saveConfirm, "saveConfirm");
+        compareField(swap == other.swap, "swap");
+        compareField(storageMenu == other.storageMenu, "storageMenu");
+        compareField(cursorMode == other.cursorMode, "cursorMode");
+        compareField(focusPane == other.focusPane, "focusPane");
+        compareField(storageSaveSlot == other.storageSaveSlot, "stSaveSlot");
+        compareField(storageBankBox == other.storageBankBox, "stBankBox");
+        compareField(storageBankSlot == other.storageBankSlot, "stBankSlot");
+        compareField(goBack == other.goBack, "goBack");
+        compareField(exitRequested == other.exitRequested, "exitRequested");
+        compareField(unsaved == other.unsaved, "unsaved");
+        compareField(trainerFingerprint == other.trainerFingerprint, "TRAINER-DATA");
+        compareField(partyFingerprint == other.partyFingerprint, "PARTY-DATA");
+        compareField(boxFingerprint == other.boxFingerprint, "BOX-DATA");
+        compareField(itemFingerprint == other.itemFingerprint, "ITEM-DATA");
+        compareField(boxNameFingerprint == other.boxNameFingerprint, "BOXNAME-DATA");
+        return changedFields;
     }
 
     namespace
     {
         /// Which permission each field needs. A field absent from this table can never be allowed,
         /// which is the safe direction: a new snapshot field starts out as "always report it".
-        struct FieldPerm
+        struct FieldPermission
         {
-            const char *name;
+            const char *fieldName;
             uint32_t group;
         };
-        const FieldPerm fieldPermissions[] = {
+        const FieldPermission FIELD_PERMISSIONS[] = {
             {"mode", Allow::AllowView | Allow::AllowHome},
             {"homeIndex", Allow::AllowHome},
             {"page", Allow::AllowCursor},
@@ -186,31 +202,37 @@ namespace Test
 
         bool permitted(const char *field, uint32_t allow)
         {
-            for (const auto &p : fieldPermissions)
-                if (std::string(p.name) == field)
-                    return (p.group & allow) != 0;
+            for (const auto &permission : FIELD_PERMISSIONS)
+            {
+                if (std::string(permission.fieldName) == field)
+                {
+                    return (permission.group & allow) != 0;
+                }
+            }
             return false;
         }
 
-        std::string join(const std::vector<const char *> &value)
+        std::string join(const std::vector<const char *> &fieldNames)
         {
-            std::string text;
-            for (size_t valueIndex = 0; valueIndex < value.size(); ++valueIndex)
+            std::string joinedText;
+            for (size_t fieldIndex = 0; fieldIndex < fieldNames.size(); ++fieldIndex)
             {
-                if (valueIndex)
-                    text += ",";
-                text += value[valueIndex];
+                if (fieldIndex)
+                {
+                    joinedText += ",";
+                }
+                joinedText += fieldNames[fieldIndex];
             }
-            return text.empty() ? std::string("nothing") : text;
+            return joinedText.empty() ? std::string("nothing") : joinedText;
         }
     }
 
-    Journey::Journey(Context &c, UI::UIScreen &s, const UI::TrainerViewScreen *t, const Trainer::Trainer *trainerForSnapshot, std::string journeyName) : context(c), screen(s), tvs(t), trainer(trainerForSnapshot), name(std::move(journeyName))
+    Journey::Journey(Context &context, UI::UIScreen &screen, const UI::TrainerViewScreen *trainerViewScreen, const Trainer::Trainer *trainer, std::string name) : context(context), screen(screen), trainerViewScreen(trainerViewScreen), trainer(trainer), name(std::move(name))
     {
-        if (tvs && trainer)
+        if (this->trainerViewScreen && this->trainer)
         {
-            before = UISnapshot::take(*tvs, *trainer);
-            haveBefore = true;
+            snapshotBefore = UISnapshot::take(*this->trainerViewScreen, *this->trainer);
+            hasSnapshotBefore = true;
         }
     }
 
@@ -227,8 +249,12 @@ namespace Test
     bool Journey::lastChangedField(const char *field) const noexcept
     {
         for (const char *changedField : lastChangedFields)
+        {
             if (std::strcmp(changedField, field) == 0)
+            {
                 return true;
+            }
+        }
         return false;
     }
 
@@ -237,50 +263,60 @@ namespace Test
         ++stepCount;
         // A screen with no save behind it (the save picker) still gets a trace line. There is no
         // data to diff there, and saying so is better than a silent gap in the log.
-        if (!tvs || !trainer)
+        if (!trainerViewScreen || !trainer)
         {
-            const std::string line = "  [" + name + "] " + std::string(what) + " -> (no save state to diff)";
-            if (context.rep)
-                context.rep->addTrace(line);
-            Utils::logTest(line);
+            const std::string traceLine = "  [" + name + "] " + std::string(what) + " -> (no save state to diff)";
+            if (context.report)
+            {
+                context.report->addTrace(traceLine);
+            }
+            Utils::logTest(traceLine);
             lastChangedText = "-";
             lastChangedFields.clear();
-            lastBad = false;
+            lastChangeUndeclared = false;
             return;
         }
-        const UISnapshot after = UISnapshot::take(*tvs, *trainer);
-        const std::vector<const char *> changed = haveBefore ? before.diff(after) : std::vector<const char *>{};
+        const UISnapshot snapshotAfter = UISnapshot::take(*trainerViewScreen, *trainer);
+        const std::vector<const char *> changedFields = hasSnapshotBefore ? snapshotBefore.diff(snapshotAfter) : std::vector<const char *>{};
 
-        std::vector<const char *> illegal;
-        for (const char *f : changed)
-            if (!permitted(f, allow))
-                illegal.push_back(f);
+        std::vector<const char *> undeclaredFields;
+        for (const char *changedField : changedFields)
+        {
+            if (!permitted(changedField, allow))
+            {
+                undeclaredFields.push_back(changedField);
+            }
+        }
 
         // The change log the whole design is for: one line per action, whatever the outcome.
-        const std::string line = "  [" + name + "] " + what + " -> changed: " + join(changed) + (illegal.empty() ? "" : "   !! UNDECLARED: " + join(illegal));
-        if (context.rep)
-            context.rep->addTrace(line);
-        Utils::logTest(line);
+        const std::string traceLine = "  [" + name + "] " + what + " -> changed: " + join(changedFields) + (undeclaredFields.empty() ? "" : "   !! UNDECLARED: " + join(undeclaredFields));
+        if (context.report)
+        {
+            context.report->addTrace(traceLine);
+        }
+        Utils::logTest(traceLine);
 
-        lastChangedText = join(changed);
-        lastChangedFields = changed;
-        lastBad = !illegal.empty();
+        lastChangedText = join(changedFields);
+        lastChangedFields = changedFields;
+        lastChangeUndeclared = !undeclaredFields.empty();
 
-        for (const char *f : illegal)
+        for (const char *undeclaredField : undeclaredFields)
         {
             ++findingCount;
-            context.fail("a UI action changed something it should not have", where() + " action=\"" + what + "\" field=" + f + " allChanged=" + join(changed));
+            context.fail("a UI action changed something it should not have", where() + " action=\"" + what + "\" field=" + undeclaredField + " allChanged=" + join(changedFields));
         }
-        if (illegal.empty())
-            context.rep ? context.rep->pass() : void();
+        if (undeclaredFields.empty())
+        {
+            context.report ? context.report->pass() : void();
+        }
 
-        before = after;
-        haveBefore = true;
+        snapshotBefore = snapshotAfter;
+        hasSnapshotBefore = true;
     }
 
     Journey &Journey::act(const char *what, u64 button, uint32_t allow, int presses)
     {
-        for (int index = 0; index < presses; ++index)
+        for (int pressIndex = 0; pressIndex < presses; ++pressIndex)
         {
             pump(button);
             pump(0);
@@ -291,23 +327,29 @@ namespace Test
 
     Journey &Journey::settle(const char *what, uint32_t allow, int frames)
     {
-        for (int index = 0; index < frames; ++index)
+        for (int frameIndex = 0; frameIndex < frames; ++frameIndex)
+        {
             pump(0);
+        }
         verify(what, allow);
         return *this;
     }
 
     Journey &Journey::idle(int frames)
     {
-        for (int index = 0; index < frames; ++index)
+        for (int frameIndex = 0; frameIndex < frames; ++frameIndex)
+        {
             pump(0);
+        }
         return *this;
     }
 
     bool Journey::expect(bool passed, const std::string &what, const std::string &detail)
     {
         if (!passed)
+        {
             ++findingCount;
+        }
         return context.check(passed, what, where() + (detail.empty() ? "" : " " + detail));
     }
 }

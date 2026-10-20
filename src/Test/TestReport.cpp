@@ -30,7 +30,11 @@ namespace Test
     {
         scopeTarget.clear();
         scopeSuite.clear();
-        checkCount = failCount = warnCount = skipCount = infoCount = 0;
+        checkCount = 0;
+        failCount = 0;
+        warnCount = 0;
+        skipCount = 0;
+        infoCount = 0;
         findingGroups.clear();
         tallyList.clear();
         recentLines.clear();
@@ -59,8 +63,12 @@ namespace Test
     Tally &Report::currentTally()
     {
         for (auto &tally : tallyList)
+        {
             if (tally.target == scopeTarget && tally.suite == scopeSuite)
+            {
                 return tally;
+            }
+        }
         tallyList.push_back(Tally{scopeTarget, scopeSuite, 0, 0, 0, 0});
         return tallyList.back();
     }
@@ -76,26 +84,26 @@ namespace Test
         // A Fail or Warn is also a check that RAN, so it counts. A Skip or an Info note is not a
         // check -- counting either would inflate the "N checks" figure with things that could never
         // fail.
-        Tally &t = currentTally();
+        Tally &tally = currentTally();
         if (severity == Severity::Fail || severity == Severity::Warn)
         {
             ++checkCount;
-            ++t.checks;
+            ++tally.checks;
         }
         if (severity == Severity::Fail)
         {
             ++failCount;
-            ++t.fails;
+            ++tally.fails;
         }
         if (severity == Severity::Warn)
         {
             ++warnCount;
-            ++t.warns;
+            ++tally.warns;
         }
         if (severity == Severity::Skip)
         {
             ++skipCount;
-            ++t.skips;
+            ++tally.skips;
         }
         if (severity == Severity::Info)
         {
@@ -103,11 +111,11 @@ namespace Test
         }
 
         FindingGroup *group = nullptr;
-        for (auto &g : findingGroups)
+        for (auto &candidateGroup : findingGroups)
         {
-            if (g.suite == scopeSuite && g.what == what && g.severity == severity)
+            if (candidateGroup.suite == scopeSuite && candidateGroup.what == what && candidateGroup.severity == severity)
             {
-                group = &g;
+                group = &candidateGroup;
                 break;
             }
         }
@@ -116,136 +124,171 @@ namespace Test
             findingGroups.push_back(FindingGroup{severity, scopeSuite, what, 0, {}});
             group = &findingGroups.back();
         }
-        ++group->count;
+        ++group->occurrenceCount;
 
-        std::string line = scopeTarget.empty() ? std::string("-") : scopeTarget;
+        std::string sampleLine = scopeTarget.empty() ? std::string("-") : scopeTarget;
         if (!detail.empty())
-            line += "  " + detail;
+        {
+            sampleLine += "  " + detail;
+        }
         if ((int)group->samples.size() < MAX_SAMPLE_COUNT)
-            group->samples.push_back(line);
+        {
+            group->samples.push_back(sampleLine);
+        }
 
         // On-screen ticker. Only problems go here -- the point of the live view is to see something
         // going wrong as it happens, and Info notes and skips would bury it.
         if (severity == Severity::Fail || severity == Severity::Warn)
         {
-            recentLines.push_back(std::string(severityName(severity)) + "  " + scopeSuite + ": " + what + "  [" + line + "]");
+            recentLines.push_back(std::string(severityName(severity)) + "  " + scopeSuite + ": " + what + "  [" + sampleLine + "]");
             if ((int)recentLines.size() > RECENT_LINE_COUNT)
+            {
                 recentLines.erase(recentLines.begin());
+            }
         }
     }
 
     bool Report::write(const std::string &path, const std::string &header) const
     {
-        FILE *f = fopen(path.c_str(), "w");
-        if (!f)
+        FILE *reportFile = fopen(path.c_str(), "w");
+        if (!reportFile)
         {
             Utils::logErrorToFile("SelfTest: could not open report for writing", path.c_str());
             return false;
         }
 
-        fprintf(f, "========================================================================\n");
-        fprintf(f, "%s", header.c_str());
-        fprintf(f, "========================================================================\n\n");
+        fprintf(reportFile, "========================================================================\n");
+        fprintf(reportFile, "%s", header.c_str());
+        fprintf(reportFile, "========================================================================\n\n");
 
-        fprintf(f, "SUMMARY  checks=%d failures=%d warnings=%d skipped=%d notes=%d\n\n", checkCount, failCount, warnCount, skipCount, infoCount);
+        fprintf(reportFile, "SUMMARY  checks=%d failures=%d warnings=%d skipped=%d notes=%d\n\n", checkCount, failCount, warnCount, skipCount, infoCount);
 
-        // anyone has to read a detail line.
-        fprintf(f, "------------------------------------------------------------------------\n");
-        fprintf(f, "COVERAGE\n");
-        fprintf(f, "------------------------------------------------------------------------\n");
-        fprintf(f, "%-40s %-12s %8s %6s %6s %6s\n", "TARGET", "SUITE", "CHECKS", "FAIL", "WARN", "SKIP");
-        for (const auto &t : tallyList)
+        // The coverage table comes first, so the reader knows which target and suite the failures
+        // are in before anyone has to read a detail line.
+        fprintf(reportFile, "------------------------------------------------------------------------\n");
+        fprintf(reportFile, "COVERAGE\n");
+        fprintf(reportFile, "------------------------------------------------------------------------\n");
+        fprintf(reportFile, "%-40s %-12s %8s %6s %6s %6s\n", "TARGET", "SUITE", "CHECKS", "FAIL", "WARN", "SKIP");
+        for (const auto &tally : tallyList)
         {
-            fprintf(f, "%-40s %-12s %8d %6d %6d %6d\n", (t.target.empty() ? "-" : t.target.c_str()), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
+            fprintf(reportFile, "%-40s %-12s %8d %6d %6d %6d\n", (tally.target.empty() ? "-" : tally.target.c_str()), tally.suite.c_str(), tally.checks, tally.fails, tally.warns, tally.skips);
         }
-        fprintf(f, "\n");
+        fprintf(reportFile, "\n");
 
-        // failure and the note that explains it stay next to each other.
-        const Severity order[4] = {Severity::Fail, Severity::Warn, Severity::Skip, Severity::Info};
-        for (Severity severity : order)
+        // Most serious first, so the report opens on what needs fixing.
+        const Severity severityOrder[4] = {Severity::Fail, Severity::Warn, Severity::Skip, Severity::Info};
+        for (Severity severity : severityOrder)
         {
             bool wroteHeading = false;
-            for (const auto &g : findingGroups)
+            for (const auto &group : findingGroups)
             {
-                if (g.severity != severity)
+                if (group.severity != severity)
+                {
                     continue;
+                }
                 if (!wroteHeading)
                 {
-                    fprintf(f, "------------------------------------------------------------------------\n");
-                    fprintf(f, "%s\n", severity == Severity::Fail ? "FAILURES" : severity == Severity::Warn ? "WARNINGS" : severity == Severity::Skip ? "SKIPPED (not checked)" : "NOTES");
-                    fprintf(f, "------------------------------------------------------------------------\n");
+                    fprintf(reportFile, "------------------------------------------------------------------------\n");
+                    fprintf(reportFile, "%s\n", severity == Severity::Fail ? "FAILURES" : severity == Severity::Warn ? "WARNINGS" : severity == Severity::Skip ? "SKIPPED (not checked)" : "NOTES");
+                    fprintf(reportFile, "------------------------------------------------------------------------\n");
                     wroteHeading = true;
                 }
-                if (g.count > (int)g.samples.size())
-                    fprintf(f, "\n[%s] %s: %s   (x%d, first %d shown)\n", severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count, (int)g.samples.size());
+                if (group.occurrenceCount > (int)group.samples.size())
+                {
+                    fprintf(reportFile, "\n[%s] %s: %s   (x%d, first %d shown)\n", severityName(group.severity), group.suite.c_str(), group.what.c_str(), group.occurrenceCount, (int)group.samples.size());
+                }
                 else
-                    fprintf(f, "\n[%s] %s: %s   (x%d)\n", severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.count);
-                for (const auto &s : g.samples)
-                    fprintf(f, "    %s\n", s.c_str());
+                {
+                    fprintf(reportFile, "\n[%s] %s: %s   (x%d)\n", severityName(group.severity), group.suite.c_str(), group.what.c_str(), group.occurrenceCount);
+                }
+                for (const auto &sample : group.samples)
+                {
+                    fprintf(reportFile, "    %s\n", sample.c_str());
+                }
             }
             if (wroteHeading)
-                fprintf(f, "\n");
+            {
+                fprintf(reportFile, "\n");
+            }
         }
 
         if (failCount == 0 && warnCount == 0 && skipCount == 0)
-            fprintf(f, "Nothing to report: every check passed and nothing was skipped.\n\n");
+        {
+            fprintf(reportFile, "Nothing to report: every check passed and nothing was skipped.\n\n");
+        }
 
         if (!traceLines.empty())
         {
-            fprintf(f, "------------------------------------------------------------------------\n");
-            fprintf(f, "TRACE  (what the run DID, in order)\n");
-            fprintf(f, "------------------------------------------------------------------------\n");
-            for (const auto &t : traceLines)
-                fprintf(f, "%s\n", t.c_str());
+            fprintf(reportFile, "------------------------------------------------------------------------\n");
+            fprintf(reportFile, "TRACE  (what the run DID, in order)\n");
+            fprintf(reportFile, "------------------------------------------------------------------------\n");
+            for (const auto &traceLine : traceLines)
+            {
+                fprintf(reportFile, "%s\n", traceLine.c_str());
+            }
             if (traceTruncated)
-                fprintf(f, "... trace truncated at %d lines; the full one is in sdmc:/PKSE/trace.log when debug logging is on\n", MAX_TRACE_LINES);
-            fprintf(f, "\n");
+            {
+                fprintf(reportFile, "... trace truncated at %d lines; the full one is in sdmc:/PKSE/trace.log when debug logging is on\n", MAX_TRACE_LINES);
+            }
+            fprintf(reportFile, "\n");
         }
 
-        fprintf(f, "========================================================================\n");
-        fprintf(f, "END OF REPORT\n");
-        fclose(f);
+        fprintf(reportFile, "========================================================================\n");
+        fprintf(reportFile, "END OF REPORT\n");
+        fclose(reportFile);
         return true;
     }
 
     bool Context::check(bool passed, const std::string &what, const std::string &detail)
     {
-        if (!rep)
-            return passed;
+        if (!report) return passed;
         if (passed)
-            rep->pass();
+        {
+            report->pass();
+        }
         else
-            rep->record(Severity::Fail, what, detail);
+        {
+            report->record(Severity::Fail, what, detail);
+        }
         return passed;
     }
 
     bool Context::warn(bool passed, const std::string &what, const std::string &detail)
     {
-        if (!rep)
-            return passed;
+        if (!report) return passed;
         if (passed)
-            rep->pass();
+        {
+            report->pass();
+        }
         else
-            rep->record(Severity::Warn, what, detail);
+        {
+            report->record(Severity::Warn, what, detail);
+        }
         return passed;
     }
 
     void Context::fail(const std::string &what, const std::string &detail)
     {
-        if (rep)
-            rep->record(Severity::Fail, what, detail);
+        if (report)
+        {
+            report->record(Severity::Fail, what, detail);
+        }
     }
 
     void Context::note(const std::string &what, const std::string &detail)
     {
-        if (rep)
-            rep->record(Severity::Info, what, detail);
+        if (report)
+        {
+            report->record(Severity::Info, what, detail);
+        }
     }
 
     void Context::skip(const std::string &what, const std::string &detail)
     {
-        if (rep)
-            rep->record(Severity::Skip, what, detail);
+        if (report)
+        {
+            report->record(Severity::Skip, what, detail);
+        }
     }
 
     std::string numberField(const char *key, long long value)
@@ -253,14 +296,18 @@ namespace Test
         return std::string(key) + "=" + std::to_string(value);
     }
 
-    std::string hex(const char *key, unsigned long long value, int digits)
+    std::string hexField(const char *key, unsigned long long value, int digits)
     {
-        char buffer[32];
+        char hexText[32];
         if (digits > 0)
-            snprintf(buffer, sizeof(buffer), "0x%0*llX", digits, value);
+        {
+            snprintf(hexText, sizeof(hexText), "0x%0*llX", digits, value);
+        }
         else
-            snprintf(buffer, sizeof(buffer), "0x%llX", value);
-        return std::string(key) + "=" + buffer;
+        {
+            snprintf(hexText, sizeof(hexText), "0x%llX", value);
+        }
+        return std::string(key) + "=" + hexText;
     }
 
     std::string slot(int box, int slotIndex)
@@ -268,12 +315,12 @@ namespace Test
         return "box=" + std::to_string(box + 1) + " slot=" + std::to_string(slotIndex + 1);
     }
 
-    std::string partySlot(int index)
+    std::string partySlot(int partyIndex)
     {
-        return "party=" + std::to_string(index + 1);
+        return "party=" + std::to_string(partyIndex + 1);
     }
 
-    std::string monLabel(const Pokemon::Pokemon &pokemon)
+    std::string pokemonLabel(const Pokemon::Pokemon &pokemon)
     {
         // Utils::briefPokemon is the same spelling the [EVENT] action log uses for a pokemon in passing --
         // species / form / level / nickname. Sharing it means a self-test finding and the action log

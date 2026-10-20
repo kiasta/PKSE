@@ -62,20 +62,35 @@ namespace Test
     /// on a machine with 4 MB of heap to spare.
     struct UISnapshot
     {
-        int mode = 0, homeIndex = 0, page = 0, category = 0;
-        int box = 0, slot = 0, party = 0, settingsRow = 0, trainerRow = 0;
-        bool detailView = false, detailsModal = false, saveConfirm = false;
-        bool swap = false, storageMenu = false;
-        int cursorMode = 0, focusPane = 0;
+        int mode = 0;
+        int homeIndex = 0;
+        int page = 0;
+        int category = 0;
+        int box = 0;
+        int slot = 0;
+        int party = 0;
+        int settingsRow = 0;
+        int trainerRow = 0;
+        bool detailView = false;
+        bool detailsModal = false;
+        bool saveConfirm = false;
+        bool swap = false;
+        bool storageMenu = false;
+        int cursorMode = 0;
+        int focusPane = 0;
         // No stSaveBox: the Storage view's save pane and the Boxes view share one box cursor, which
         // `box` above already carries. Snapshotting it twice would report one move as two findings.
-        int stSaveSlot = 0, stBankBox = 0, stBankSlot = 0;
-        bool goBack = false, exitRequested = false, unsaved = false;
-        uint64_t trainerFp = 0; // OT name + money
-        uint64_t partyFp = 0;   // every party slot's bytes
-        uint64_t boxFp = 0;     // every box slot's bytes
-        uint64_t itemFp = 0;    // every pouch, every id + count
-        uint64_t boxNameFp = 0; // all box names
+        int storageSaveSlot = 0;
+        int storageBankBox = 0;
+        int storageBankSlot = 0;
+        bool goBack = false;
+        bool exitRequested = false;
+        bool unsaved = false;
+        uint64_t trainerFingerprint = 0; // OT name + money
+        uint64_t partyFingerprint = 0;   // every party slot's bytes
+        uint64_t boxFingerprint = 0;     // every box slot's bytes
+        uint64_t itemFingerprint = 0;    // every pouch, every id + count
+        uint64_t boxNameFingerprint = 0; // all box names
 
         static UISnapshot take(const UI::TrainerViewScreen &screen, const Trainer::Trainer &trainer);
         /// Names of the fields that differ, in a fixed order so a diff reads the same every run.
@@ -104,14 +119,14 @@ namespace Test
         AllowUnsaved = 1u << 12, // the dirty flag (any real edit sets it)
         /// Any data change at all -- for the deliberately destructive steps at the end of a journey.
         AllowData = AllowTrainer | AllowParty | AllowBoxes | AllowItems | AllowBoxNames | AllowUnsaved,
-        AllowNav = AllowHome | AllowView | AllowCursor | AllowStorage | AllowModal,
+        AllowNavigation = AllowHome | AllowView | AllowCursor | AllowStorage | AllowModal,
     };
 
     /// Drives one screen and holds it to its declared changes.
     class Journey
     {
     public:
-        Journey(Context &context, UI::UIScreen &screen, const UI::TrainerViewScreen *tvs, const Trainer::Trainer *trainer, std::string name);
+        Journey(Context &context, UI::UIScreen &screen, const UI::TrainerViewScreen *trainerViewScreen, const Trainer::Trainer *trainer, std::string name);
 
         /// One user action: press `button`, run a frame, then verify nothing outside `allow` moved.
         /// `what` is the human description that lands in the trace and in any finding.
@@ -141,11 +156,11 @@ namespace Test
         /// against has to. The suite keeps the snapshot between chunks and hands it back. The pad
         /// deliberately does NOT need carrying: every action is a press frame followed by a release
         /// frame, so its edges are self-contained.
-        const UISnapshot &snapshot() const noexcept { return before; }
-        void restore(const UISnapshot &s)
+        const UISnapshot &snapshot() const noexcept { return snapshotBefore; }
+        void restore(const UISnapshot &snapshot)
         {
-            before = s;
-            haveBefore = true;
+            snapshotBefore = snapshot;
+            hasSnapshotBefore = true;
         }
 
         /// What the last verified action changed, and whether any of it was undeclared -- for the
@@ -155,7 +170,7 @@ namespace Test
         /// mask says what an action MAY change; this is how a step says what it MUST, so a button
         /// that does nothing at all cannot pass.
         bool lastChangedField(const char *field) const noexcept;
-        bool lastWasBad() const noexcept { return lastBad; }
+        bool lastWasBad() const noexcept { return lastChangeUndeclared; }
 
     private:
         void pump(u64 held);
@@ -164,17 +179,18 @@ namespace Test
 
         Context &context;
         UI::UIScreen &screen;
-        const UI::TrainerViewScreen *tvs; // null when driving a screen with no snapshot support
+        const UI::TrainerViewScreen *trainerViewScreen; // null when driving a screen with no snapshot support
         const Trainer::Trainer *trainer;
         std::string name;
         PadState pad{};
         UI::TouchInput touch;
-        UISnapshot before;
-        bool haveBefore = false;
-        int stepCount = 0, findingCount = 0;
+        UISnapshot snapshotBefore;
+        bool hasSnapshotBefore = false;
+        int stepCount = 0;
+        int findingCount = 0;
         std::string lastChangedText;
         std::vector<const char *> lastChangedFields;
-        bool lastBad = false;
+        bool lastChangeUndeclared = false;
     };
 }
 

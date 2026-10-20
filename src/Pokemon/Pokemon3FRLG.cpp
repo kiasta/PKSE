@@ -166,6 +166,7 @@ namespace Pokemon
     // retrying full-width, which is how the cartridge itself stores such a name.
     bool Pokemon3FRLG::canStoreNickname(const std::u16string &value) const noexcept
     {
+        if (isEgg()) return true; // setNickname stores the egg placeholder, whatever it is given
         const uint8_t languageId = language();
         for (const char16_t character : value)
         {
@@ -175,9 +176,14 @@ namespace Pokemon
         return true;
     }
 
+    // An egg has no name of its own: the games write the Japanese word for egg in every region, and
+    // PKHeX's PK3 Nickname setter writes that placeholder whatever it is given while IsEgg is set.
+    // Storing a real name here would leave an egg no cartridge holds, in the Japanese charset its
+    // language selects. Clear the egg bit before naming a hatched Pokemon.
     void Pokemon3FRLG::setNickname(const std::u16string &value) noexcept
     {
-        g3EncodeName(data.data(), 0x08, value, 10, language()); // nickname: 10 chars @ 0x08 (no isNicknamed flag)
+        const std::u16string storedNickname = isEgg() ? std::u16string(EGG_NICKNAME_JAPANESE) : value;
+        g3EncodeName(data.data(), 0x08, storedNickname, 10, language()); // nickname: 10 chars @ 0x08 (no isNicknamed flag)
         refreshChecksum();
     }
 

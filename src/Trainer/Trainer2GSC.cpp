@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 
 #include "Trainer/Trainer2GSC.h"
 #include "Names/ItemPouches.h"
@@ -32,6 +33,23 @@ namespace Trainer
         // GSC rows in gen_itempouches.py -- the two must agree, so the indices are named.
         constexpr size_t GEN2_POUCH_TMHM = 0, GEN2_POUCH_ITEM = 1, GEN2_POUCH_KEY = 2, GEN2_POUCH_BALL = 3, GEN2_POUCH_PC = 4;
         constexpr size_t CAP_TMHM = 57, CAP_ITEM = 20, CAP_KEY = 26, CAP_BALL = 12, CAP_PC = 50;
+
+        struct PouchInfo2GSC
+        {
+            const char *name;
+            size_t capacity;
+            int maxCount;
+        };
+        // Indexed by the GEN2_POUCH_* constants. Stacks stop at 99 (PKHeX PlayerBag2). Key Items
+        // are 1: the pouch stores ids only, so a count has nowhere to go.
+        constexpr PouchInfo2GSC POUCHES2_GSC[] = {
+            {"TMs/HMs", CAP_TMHM, 99},
+            {"Items", CAP_ITEM, 99},
+            {"Key Items", CAP_KEY, 1},
+            {"Balls", CAP_BALL, 99},
+            {"PC Items", CAP_PC, 99},
+        };
+        constexpr int POUCH_COUNT2_GSC = static_cast<int>(std::size(POUCHES2_GSC));
 
         /// The TM/HM pouch is POSITIONALLY indexed: `data[i]` is the count of the item at
         /// MACHINE[i], which is the generated GSC TM/HM pouch list.
@@ -341,10 +359,25 @@ namespace Trainer
         }
     }
 
+    size_t Trainer2GSC::getItemPouchCapacity(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].capacity : 0;
+    }
+
+    int Trainer2GSC::getItemMaxCount(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].maxCount : 0;
+    }
+
+    const char *Trainer2GSC::getItemPouchName(int pouch) const
+    {
+        return (pouch >= 0 && pouch < POUCH_COUNT2_GSC) ? POUCHES2_GSC[pouch].name : nullptr;
+    }
+
     void Trainer2GSC::parseItems()
     {
         const Gen2Offsets &offset = *offsets;
-        items.assign(5, {});
+        items.assign(POUCH_COUNT2_GSC, {});
 
         // (a) TM/HM: positionally indexed, one count byte per legal machine.
         for (size_t index = 0; index < CAP_TMHM; ++index)

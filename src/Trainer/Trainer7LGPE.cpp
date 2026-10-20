@@ -364,7 +364,7 @@ namespace Trainer
          * compacted before writing:
          *   1. Walk boxes in order, collect occupied Pokemon into a packed list, and record each
          *      old storage index -> new packed index (this removes any gaps left by moves).
-         *   2. Write the packed list to storage; zero the tail.
+         *   2. Write the packed list to storage; fill the tail with the file's own empty slots.
          *   3. Overlay the party copies at their remapped indices (party edits win over the box
          *      copy of the same slot).
          *   4. Write the header: remapped party pointers + starter + the packed count.
@@ -406,13 +406,38 @@ namespace Trainer
             if (block.data.size() < required)
                 block.data.resize(required, 0);
 
+            // The tail keeps the file's own empty slots, in order, as PKHeX's CompressStorage does.
+            // The game writes an empty slot as the ENCRYPTED blank, 246 non-zero bytes behind a zero
+            // encryption constant, so zeroing the tail rewrote a quarter of the file on an unedited
+            // save. A slot the user emptied still holds its Pokemon, so it is not reused.
+            std::vector<uint8_t> emptySlotBytes;
+            for (size_t nIndex = 0; nIndex < TOTAL; ++nIndex)
+            {
+                const size_t slotOffset = nIndex * SIZE_PARTY7_LGPE;
+                if (readUInt32LittleEndian(&block.data[slotOffset]) == 0)
+                {
+                    emptySlotBytes.insert(emptySlotBytes.end(), block.data.begin() + static_cast<std::ptrdiff_t>(slotOffset), block.data.begin() + static_cast<std::ptrdiff_t>(slotOffset + SIZE_PARTY7_LGPE));
+                }
+            }
+            const size_t emptySlotCount = emptySlotBytes.size() / SIZE_PARTY7_LGPE;
+
             for (size_t nIndex = 0; nIndex < TOTAL; ++nIndex)
             {
                 const size_t offset = nIndex * SIZE_PARTY7_LGPE;
                 if (nIndex < packed.size())
+                {
                     writeEncryptedPokemon(block.data, offset, *packed[nIndex]);
+                    continue;
+                }
+                const size_t tailIndex = nIndex - packed.size();
+                if (tailIndex < emptySlotCount)
+                {
+                    std::memcpy(&block.data[offset], &emptySlotBytes[tailIndex * SIZE_PARTY7_LGPE], SIZE_PARTY7_LGPE);
+                }
                 else
+                {
                     std::memset(&block.data[offset], 0, SIZE_PARTY7_LGPE);
+                }
             }
 
             for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
@@ -616,8 +641,13 @@ namespace Trainer
         // Let's Go remembers the smallest and largest of each species you have seen. Four groups of
         // 186 six-byte entries at 0xF78; the table ends exactly on the block's last byte (0x20E8),
         // which is a useful check that the geometry is right.
-        //   entry[0] height scalar, [1] flag, [2] weight scalar, [3] 0, [4..5] untouched
+        //   entry[0..1] u16 height = 2 x height scalar, [2] weight scalar, [3] 0, [4..5] untouched
         // An untouched entry reads as UNSET (height 0xFE / weight 0x7F) and the dex shows no record.
+        //
+        // The height is a u16 holding twice the scalar, not PKHeX's Zukan7b reading (byte 0 the
+        // scalar, byte 1 a "flagged" marker). Every record in a real save is even, a third of them
+        // have byte 1 set, and each one that matches a stored Pokemon holds exactly twice its
+        // scalar. Read PKHeX's way, a save halved every height record it rewrote.
         constexpr size_t ZUKAN_SIZE_START = 0xF78;
         constexpr size_t ZUKAN_SIZE_ENTRY = 6;
         constexpr size_t ZUKAN_SIZE_COUNT = 186;
@@ -638,12 +668,15 @@ namespace Trainer
             // UNSET == 0x007F00FE little-endian: FE 00 7F 00.
             return offset + 4 <= d.size() && d[offset] == 0xFE && d[offset + 1] == 0x00 && d[offset + 2] == 0x7F && d[offset + 3] == 0x00;
         }
+        uint8_t ggSizeHeightScalar(const std::vector<uint8_t> &dexBytes, size_t entryOffset)
+        {
+            return static_cast<uint8_t>(readUInt16LittleEndian(&dexBytes[entryOffset]) / 2);
+        }
         void ggSizeWrite(std::vector<uint8_t> &d, size_t offset, uint8_t height, uint8_t weight)
         {
             if (offset + 4 > d.size())
                 return;
-            d[offset] = height;
-            d[offset + 1] = 0; // "flagged" marker; the games leave it clear for an ordinary record
+            writeUInt16LittleEndian(&d[offset], static_cast<uint16_t>(height * 2));
             d[offset + 2] = weight;
             d[offset + 3] = 0;
         }
@@ -659,12 +692,6 @@ namespace Trainer
         float ggWeightAbsoluteFrom(const ::Pokemon::PersonalInfo &pi, uint8_t heightScalar, uint8_t weightScalar)
         {
             return ggHeightRatio(heightScalar) * (ggWeightRatio(weightScalar) * static_cast<float>(pi.weight));
-        }
-
-        // The partner Pikachu / Eevee are cosmetic overlays on form 0, not dex forms of their own.
-        bool isBuddyForm(uint16_t species, uint8_t form)
-        {
-            return (species == 25 && form == 8) || (species == 133 && form == 1);
         }
 
         // Language id -> dex language slot. Slot 6 (langID 6) is unused, so 7+ shift down by two.
@@ -710,13 +737,17 @@ namespace Trainer
             if (species == 0 || species > LGPE_MAX_SPECIES)
                 return;
 
-            uint8_t form = pokemon->form();
-            if (isBuddyForm(species, form))
-                form = 0;
+            const uint8_t form = pokemon->form();
             // Gate on the dex's own entry table, not on the personal table's per-game presence bit.
             // Presence answers "can this game hold it", which is a different question: it is true for
             // forms the DEX has no entry for, and writing a form bit for one of those would set a flag
             // the game never reads.
+            //
+            // The partner Pikachu (form 8) and partner Eevee (form 1) have no entry, so they are not
+            // registered at all, as PKHeX's Zukan7b.SetDex does. Folding them onto form 0 first wrote
+            // the partner's size into records the game keeps differently: a real save holds the
+            // partner Eevee as Eevee's maximum height and weight, and an unedited write added it as
+            // the minimum weight too.
             const int entryIndex = getDexEntryIndex7LGPE(species, form);
             if (entryIndex < 0)
                 return;
@@ -797,13 +828,13 @@ namespace Trainer
             if (hAbs < static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_HEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue < (*dex)[offset]))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue < ggSizeHeightScalar(*dex, offset)))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
             else if (hAbs > static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_HEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue > (*dex)[offset]))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue > ggSizeHeightScalar(*dex, offset)))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
 
@@ -812,13 +843,13 @@ namespace Trainer
             if (wAbs < static_cast<float>(pi.weight))
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_WEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs < ggWeightAbsoluteFrom(pi, (*dex)[offset], (*dex)[offset + 2])))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs < ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
             else if (wAbs > static_cast<float>(pi.weight))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_WEIGHT, entryIndex);
-                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs > ggWeightAbsoluteFrom(pi, (*dex)[offset], (*dex)[offset + 2])))
+                if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs > ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
                     ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
             }
         };

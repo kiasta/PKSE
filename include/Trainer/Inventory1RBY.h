@@ -30,6 +30,10 @@ namespace Trainer
 
     constexpr size_t POUCH_COUNT1_RBY = static_cast<size_t>(PouchType1RBY::Count);
 
+    // Largest stack in either pouch (PKHeX PlayerBag1). The games keep one count byte per slot
+    // and never fill one past 99.
+    constexpr int ITEM_MAX_COUNT1_RBY = 99;
+
     struct PouchInfo1RBY
     {
         PouchType1RBY type;
