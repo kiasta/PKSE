@@ -92,7 +92,7 @@ Pick a user, a game, then a backup to work on (or create a new one). Backups liv
 
 ### Opening an older game's save
 
-An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat`, `.sgm`, `.dsv`, `.duc`, `.dss`, `.fla` and `.SaveRAM` files, second-player and save-slot files (`.sa2`–`.sa4`, `.srm2`, `.sav1`–`.sav9`), and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and if it can't open a file it says why, under the list. Before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
+An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat`, `.sgm`, `.dsv`, `.duc`, `.dss`, `.fla` and `.SaveRAM` files, second-player and save-slot files (`.sa2`–`.sa4`, `.srm2`, `.sav1`–`.sav9`), and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and if it can't open a file it says why, under the list. The browser opens in the folder you last picked a file from, and **ZR** adds the folder you are in to your favorites; **ZL** lists them, so another emulator's save folder is one press away. Before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
 
 Saves straight from an emulator open as they are, and are written back in the same shape so the emulator keeps reading them:
 

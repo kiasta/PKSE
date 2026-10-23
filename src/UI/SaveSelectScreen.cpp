@@ -12,6 +12,7 @@
 #include "Enums/GameVersion.h"
 #include "Utils/Logger.h"
 #include "Utils/FileUtilities.h"
+#include "Utils/Settings.h"
 #include "Save/GetSaveFileContents.h"
 #include "Save/SaveFileName.h"   // the one rule for what looks like a loose save
 #include "Save/TitleFolder.h"    // the one rule for what a title is called, on screen and on the card
@@ -569,30 +570,33 @@ namespace UI
             drawScrollbar(framebuffer, startX + gridW + 12, GRID_Y, VISIBLE_ROWS * ROW_PITCH, rows * ROW_PITCH, first * ROW_PITCH);
         }
 
+        // Above the grid; only the nav bar goes over it.
+        if (fileBrowser.active)
+            Dialogs::drawFileBrowser(fileBrowser, framebuffer, browserTaps);
+
         // ONE nav bar, naming whatever owns input. A second bar drawn over this, plus a third strip inside
         // the browser card, is two visible rows of controller badges saying different things about the same
         // dialog. The bar is chosen here and drawn once, the same way TrainerViewScreen's instruction chain
-        // does it.
+        // does it -- and drawn LAST, over the browser's scrim, so the keys it names read as the open
+        // dialog's rather than as part of the dimmed screen behind it.
         if (const Dialogs::KeyboardState *keyboard = Dialogs::activeKeyboard())
             drawNavBar(framebuffer, keyboard->navHint());
+        else if (fileBrowser.active && fileBrowser.showFavorites)
+            drawNavBar(framebuffer, "Up/Down: Move  |  A: Go to Folder  |  ZR: Remove Favorite  |  B: Back");
         else if (fileBrowser.active)
-            drawNavBar(framebuffer, "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  B: Up / Close");
+            drawNavBar(framebuffer, fileBrowser.isCurrentFolderFavorite() ? "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  ZL: Favorites  |  ZR: Unfavorite  |  B: Up / Close" : "Up/Down: Move  |  L/R: Page  |  A: Open  |  Y: Search  |  X: All Files  |  ZL: Favorites  |  ZR: Add Favorite  |  B: Up / Close");
         else if (users.size() > 1)
             drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  L/R: Switch User  |  Y: Open Save File  |  +: Exit");
         else
             drawNavBar(framebuffer, SELF_TEST_AVAILABLE ? "A: Select  |  Y: Open Save File  |  -: Self Test  |  +: Exit" : "A: Select  |  Y: Open Save File  |  +: Exit");
-
-        // Drawn last so it sits above the grid.
-        if (fileBrowser.active)
-            Dialogs::drawFileBrowser(fileBrowser, framebuffer, browserTaps);
     }
 
     void SaveSelectScreen::openFileBrowser()
     {
-        // Start where a Game Boy save plausibly is. Emulators on the Switch keep saves beside
-        // their ROMs, and PKSE's own backup tree is the other likely home; the browser falls
-        // through to the first of these that exists.
-        fileBrowser.open("Open a Save File", "Save files", {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
+        // Start where the last save was picked, else where a Game Boy save plausibly is. Emulators
+        // on the Switch keep saves beside their ROMs, and PKSE's own backup tree is the other
+        // likely home; the browser falls through to the first of these that exists.
+        fileBrowser.open("Open a Save File", "Save files", {Utils::lastFolder(Utils::LastFolderKind::SaveFiles), "sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/", "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
         logEventToFile("OPENSAVE action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
 
@@ -613,7 +617,17 @@ namespace UI
             fileBrowser.move(-Dialogs::FileBrowserState::VISIBLE_ROWS);
         if (buttonsDown & HidNpadButton_R)
             fileBrowser.move(Dialogs::FileBrowserState::VISIBLE_ROWS);
-        if (buttonsDown & HidNpadButton_Y)
+        if (buttonsDown & HidNpadButton_ZL)
+        {
+            fileBrowser.toggleFavoritesView();
+            return;
+        }
+        if (buttonsDown & HidNpadButton_ZR)
+        {
+            fileBrowser.toggleFavorite();
+            return;
+        }
+        if ((buttonsDown & HidNpadButton_Y) && !fileBrowser.showFavorites)
         {
             // Search. refresh() re-lists the folder through the query, so an empty
             // query -- the shared "clear" gesture -- simply lists it all again. Not while typing:
@@ -625,7 +639,7 @@ namespace UI
             }
             return;
         }
-        if (buttonsDown & HidNpadButton_X)
+        if ((buttonsDown & HidNpadButton_X) && !fileBrowser.showFavorites)
         {
             fileBrowser.showAllFiles = !fileBrowser.showAllFiles;
             fileBrowser.refresh();
@@ -656,6 +670,8 @@ namespace UI
 
         const std::string picked = fileBrowser.chosenPath;
         fileBrowser.chosenPath.clear();
+        // Remembered on the pick, refused or not: it is where the user went looking for a save.
+        Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, fileBrowser.directory);
         const size_t slashPosition = picked.find_last_of('/');
         const std::string pickedName = (slashPosition == std::string::npos) ? picked : picked.substr(slashPosition + 1);
 

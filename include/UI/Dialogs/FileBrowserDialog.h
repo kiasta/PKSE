@@ -48,6 +48,9 @@ namespace UI
             int selectedIndex = 0;
             int scroll = 0;            // index of the first visible row
             bool showAllFiles = false; // X toggles: ignore `extensions` and list every file
+            /// ZL toggles: `entries` lists the favorite folders, each row's `name` a whole path,
+            /// instead of `directory`. `directory` is left alone, so leaving the list returns there.
+            bool showFavorites = false;
             bool truncated = false;    // the directory held more entries than MAX_DIRECTORY_ENTRIES
             /// A note the owner or the browser leaves ("Couldn't open that folder.", why a pick was
             /// refused). Drawn whether or not the folder lists anything: a refusal is about a file
@@ -95,9 +98,17 @@ namespace UI
             void move(int delta); // move the selection, keeping it and `scroll` in range
             /// A: descend into a folder, or set chosenPath from a file. Returns true if a file was picked.
             bool activate();
-            /// B: go up one level. Returns false at the SD root, where the caller should close instead.
+            /// B: go up one level, or leave the favorites list. Returns false at the SD root, where
+            /// the caller should close instead.
             bool goUp();
             bool atRoot() const;
+
+            /// ZL: show the favorite folders, or go back to the folder that was showing.
+            void toggleFavoritesView();
+            /// ZR: favorite or unfavorite the current folder -- or, in the favorites list, the
+            /// selected one. Saved straight away. Returns true when it is a favorite afterwards.
+            bool toggleFavorite();
+            bool isCurrentFolderFavorite() const;
         };
 
         /// Draws the browser over whatever is behind it and registers its rows as touch buttons.

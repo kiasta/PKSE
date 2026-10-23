@@ -58,6 +58,7 @@
 #include "UI/ScreenChrome.h" // NAV_BAR_HEIGHT -- the one-nav-bar rule is checked against its geometry
 #include "UI/Dialogs/FileBrowserDialog.h"
 #include "UI/Dialogs/KeyboardDialog.h"
+#include "Utils/Settings.h"
 #include "Save/RtcFooter.h"
 #include "Save/SaveFileName.h"
 #include "Save/SaveEnvelope.h"
@@ -115,10 +116,25 @@ namespace {
     }
 
     /// Assert the one-bar rule at a moment when some overlay owns input. `where` names that moment.
+    ///
+    /// The bar must also be drawn AFTER every full-screen scrim. Each dialog dims the whole screen
+    /// behind it, and a bar drawn before that was dimmed with everything else -- so the keys the
+    /// dialog owns read as the screen's behind it. The save picker's file browser shipped that way.
     void expectOneNavBar(Driver& d, const char* where) {
         const UIHost::Frame& frame = d.frameData();
         const int bars = navBarCount(frame, 1280, 720);
         d.expect(bars == 1, "the frame drew more than one nav bar; controls are listed twice", std::string(where) + " bars=" + std::to_string(bars));
+        int lastBarDraw = -1;
+        int lastScrimDraw = -1;
+        for (int drawIndex = 0; drawIndex < static_cast<int>(frame.draws.size()); ++drawIndex) {
+            const UIHost::Draw& draw = frame.draws[drawIndex];
+            if (draw.kind != UIHost::Kind::Shape || !draw.visible) continue;
+            if (std::strcmp(draw.op, "filledRoundedRect") == 0 && draw.drawX == 0 && draw.drawWidth == 1280 && draw.drawY == 720 - UI::NAV_BAR_HEIGHT)
+                lastBarDraw = drawIndex;
+            if (std::strcmp(draw.op, "filledRect") == 0 && draw.drawX == 0 && draw.drawY == 0 && draw.drawWidth == 1280 && draw.drawHeight == 720 && draw.color.alpha < 255)
+                lastScrimDraw = drawIndex;
+        }
+        d.expect(lastBarDraw > lastScrimDraw, "the nav bar is under a dialog's scrim, so the dialog's keys are dimmed with the screen behind it", std::string(where) + " barDraw=" + std::to_string(lastBarDraw) + " scrimDraw=" + std::to_string(lastScrimDraw));
     }
 
     void gotoHome(Driver& d, TrainerViewScreen& s, int index) {
@@ -1329,6 +1345,111 @@ namespace {
         UIHost::clearPrompts();
     }
 
+    /// FAVORITE FOLDERS AND THE LAST FOLDER, through the screen's own keys. The dialog suite checks
+    /// the state; this checks what only the screen decides: that ZL and ZR reach the browser at all,
+    /// that the bar names them, and that each browser reopens in ITS OWN last folder -- the trade
+    /// partner picker where the last save was picked, the import browser where the last bank was.
+    /// Settings go to a scratch file, so nothing here lands in a real settings.cfg.
+    void testBrowserFolders(Test::Context& context, TrainerViewScreen& s) {
+        const std::string root = "/tmp/pkse-uitest-folders";
+        const std::string saveFolder = root + "/saves";
+        const std::string importFolder = root + "/banks";
+        const std::string settingsFile = root + "-settings.cfg";
+        mkdir(root.c_str(), 0777);
+        mkdir(saveFolder.c_str(), 0777);
+        mkdir(importFolder.c_str(), 0777);
+        const auto writeOneByte = [](const std::string& path) {
+            if (FILE* handle = std::fopen(path.c_str(), "wb")) { std::fputc(0, handle); std::fclose(handle); }
+        };
+        writeOneByte(saveFolder + "/Pokemon Ruby.sav");
+        writeOneByte(importFolder + "/notabank.bnk");
+        std::remove(settingsFile.c_str());
+        Utils::setSettingsFileOverride(settingsFile);
+        Utils::loadSettings();
+
+        Driver d(context, s, "browser-folders");
+        const auto rowOf = [&](const std::string& name) {
+            for (size_t row = 0; row < s.fileBrowser.entries.size(); ++row)
+                if (s.fileBrowser.entries[row].name == name) return static_cast<int>(row);
+            return -1;
+        };
+
+        // The trade partner picker opens in the save browser's last folder.
+        Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, saveFolder);
+        Utils::setLastFolder(Utils::LastFolderKind::ImportFiles, importFolder);
+        d.step("open the trade partner picker");
+        s.openTradePartnerBrowser();
+        d.frame();
+        d.expect(s.fileBrowser.active && s.fileBrowser.directory == saveFolder, "the trade partner picker did not reopen in the last save folder", "got=\"" + s.fileBrowser.directory + "\"");
+        d.see("ZL");
+        d.see("Favorites");
+        d.see("Add Favorite");
+        expectOneNavBar(d, "trade partner file browser open");
+
+        d.step("ZR favorites the folder");
+        d.press(Btn::ZR).frame();
+        d.expect(Utils::isFavoriteFolder(saveFolder), "ZR in the file browser did not favorite the folder", "favorites=" + std::to_string(Utils::favoriteFolders().size()));
+        d.see("Unfavorite");
+        d.expect(d.frameData().has("\xE2\x98\x85"), "a favorite folder has no star beside its path");
+
+        // Somewhere else, then back through the list.
+        d.step("B up to the fixture root, then ZL");
+        d.press(Btn::B).frame();
+        d.expect(s.fileBrowser.directory == root, "B did not go up out of the save folder", "got=\"" + s.fileBrowser.directory + "\"");
+        d.see("Add Favorite");
+        d.press(Btn::ZL).frame();
+        d.expect(s.fileBrowser.showFavorites, "ZL did not open the favorites list");
+        d.see("Favorite folders");
+        d.see("Remove Favorite");
+        expectOneNavBar(d, "favorite folders list open");
+        d.see(saveFolder);
+        d.step("A on the favorite");
+        d.press(Btn::A).frame();
+        d.expect(!s.fileBrowser.showFavorites && s.fileBrowser.directory == saveFolder, "A on a favorite did not open that folder", "got=\"" + s.fileBrowser.directory + "\"");
+
+        // Picking a file remembers the folder, even though no Pokemon is open to trade.
+        d.step("pick the save");
+        Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, root);
+        const int saveRow = rowOf("Pokemon Ruby.sav");
+        if (d.expect(saveRow >= 0, "the fixture save is not listed")) {
+            s.fileBrowser.selectedIndex = saveRow;
+            d.press(Btn::A).frame();
+            d.expect(Utils::lastFolder(Utils::LastFolderKind::SaveFiles) == saveFolder, "picking a trade partner save did not remember its folder", "got=\"" + Utils::lastFolder(Utils::LastFolderKind::SaveFiles) + "\"");
+            d.expect(Utils::lastFolder(Utils::LastFolderKind::ImportFiles) == importFolder, "picking a trade partner save moved the import browser's last folder");
+        }
+        s.fileBrowser.close();
+
+        // The import browser keeps its own.
+        d.step("open the import browser");
+        s.openPKSMImportBrowser();
+        d.frame();
+        d.expect(s.fileBrowser.active && s.fileBrowser.directory == importFolder, "the import browser did not reopen in its own last folder", "got=\"" + s.fileBrowser.directory + "\"");
+        d.press(Btn::ZL).frame();
+        d.expect(s.fileBrowser.showFavorites && rowOf(saveFolder) == 0, "the import browser does not list the favorites the save browser added");
+        d.press(Btn::B).frame();
+        d.expect(!s.fileBrowser.showFavorites && s.fileBrowser.directory == importFolder, "B in the favorites list did not return to the import folder", "got=\"" + s.fileBrowser.directory + "\"");
+        Utils::setLastFolder(Utils::LastFolderKind::ImportFiles, root);
+        const int bankRow = rowOf("notabank.bnk");
+        if (d.expect(bankRow >= 0, "the fixture bank is not listed")) {
+            s.fileBrowser.selectedIndex = bankRow;
+            d.step("pick the bank");
+            d.press(Btn::A).frame();
+            d.expect(Utils::lastFolder(Utils::LastFolderKind::ImportFiles) == importFolder, "picking a bank did not remember its folder", "got=\"" + Utils::lastFolder(Utils::LastFolderKind::ImportFiles) + "\"");
+            d.expect(Utils::lastFolder(Utils::LastFolderKind::SaveFiles) == saveFolder, "picking a bank moved the save browser's last folder");
+        }
+        s.pksmImport.reset();
+        s.fileBrowser.close();
+
+        std::remove((saveFolder + "/Pokemon Ruby.sav").c_str());
+        std::remove((importFolder + "/notabank.bnk").c_str());
+        rmdir(saveFolder.c_str());
+        rmdir(importFolder.c_str());
+        rmdir(root.c_str());
+        std::remove(settingsFile.c_str());
+        Utils::setSettingsFileOverride("");
+        Utils::loadSettings();
+    }
+
     void runUI(Test::Report& report, const std::string& target, Enums::GameVersion group, Trainer::Trainer& tr, u64 titleId) {
         Test::Context context;
         context.report = &report; context.suite = "ui"; context.target = target;
@@ -1358,6 +1479,11 @@ namespace {
         { auto s = fresh(); testItemsKeys(context, *s, tr); }
         { auto s = fresh(); testBoxMenus(context, *s, tr); }
         { auto s = fresh(); testTapIsSeenBeforeItActs(context, *s, tr); }
+        // The save dialog, raised the way X raises it from the HOME menu: its keys go over its scrim.
+        { auto s = fresh(); Driver d(context, *s, "save-dialog-bar"); d.step("raise the save dialog"); s->saveConfirmActive = true; d.frame(); expectOneNavBar(d, "save dialog open"); s->saveConfirmActive = false; }
+        // Once, not per save: the browsers do not depend on which save is open.
+        static bool browserFoldersTested = false;
+        if (!browserFoldersTested) { browserFoldersTested = true; auto s = fresh(); testBrowserFolders(context, *s); }
         { auto s = fresh(); testInputFuzz(context, *s, 240); }
 
         // The ON-CONSOLE suite, run here too. It drives the same screens through the same journeys

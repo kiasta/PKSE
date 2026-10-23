@@ -229,7 +229,9 @@ it at the top of the next `update()`.
 
 `include/Globals.h` holds the handful of process-wide flags. `g_` on a mutable global is the only
 prefix in this codebase. The settings are `inline bool`, persisted to `settings.cfg` by
-`Utils::saveSettings()` and loaded by `Utils::loadSettings()`.
+`Utils::saveSettings()` and loaded by `Utils::loadSettings()`. The file browser's favorite and
+last-used folders are saved in the same file but are not globals: they sit behind accessors in
+`Utils/Settings.h` (chapter 05).
 
 | Global | Default | Settings row | Meaning |
 |---|---|---|---|

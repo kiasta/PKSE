@@ -680,7 +680,7 @@ load-bearing**.
 | 1 | `tables` | Global | generation-independent data tables |
 | 2 | `assets` | Global | ROMFS: fonts, type icons, every sprite |
 | 3 | `picker` | Global | drives the save picker (console only) |
-| 4 | `browser` | Global | drives the file browser over a fixture directory it builds |
+| 4 | `browser` | Global | drives the file browser over a fixture directory it builds, including favorite folders and the last folder, read back through a scratch `settings.cfg` |
 | 5 | `gentables` | PerTarget | per-generation tables (items, learnsets, dex) |
 | 6 | `entity` | PerTarget | every Pokemon in the save |
 | 7 | `setters` | PerTarget | set → get on a blank entity, field by field |
