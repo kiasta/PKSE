@@ -604,6 +604,22 @@ save picker — strings written for the PKSM import — so the owner now names t
 (`filterLabel`) when it opens the dialog. The state was right the whole time; only the drawn frame
 was wrong, so that is what has to be checked.
 
+**The browser remembers folders, and the owner decides which.** Without this, every open started
+from the same fixed guesses and the user walked down to their emulator's save folder each time.
+`FileBrowserState::open` takes the first start folder that exists, so each owner simply puts
+`Utils::lastFolder(kind)` first (an empty one is skipped) and calls `Utils::setLastFolder` on the
+pick, refused or not, since that is where the user went looking. The kind is per browser, not
+global: the save picker and the trade-partner picker share `SaveFiles`, and the import browser keeps
+`ImportFiles`, so opening a PKSM bank does not start in a GBA folder. Favorites are one shared list
+(`Utils::favoriteFolders`): ZR toggles the current folder (or, in the list, the selected one), ZL
+shows the list, B leaves it. A favorite is stored without its trailing slash and matched either way,
+because a start folder is spelled `sdmc:/PKSE/saves/` and an entered one has no slash. Picking a
+favorite that no longer exists says so and stays in the list rather than opening an empty folder.
+All of it lives in `settings.cfg` (`lastSaveFolder=`, `lastImportFolder=`, one `favoriteFolder=` per
+folder), which is why its line buffer is sized for a path. The self test points
+`Utils::setSettingsFileOverride` at a scratch file before touching any of it, and reloads the real
+file afterwards.
+
 **`Save::openExternalSave` owns its trainer through the BASE POINTER**, because the concrete class is
 not known until the probe chain runs. These classes cannot join `TrainerVariant` — a value type, and
 they are large, polymorphic and non-copyable — so the write path dispatches on `getGameGroup()` and

@@ -811,13 +811,10 @@ namespace UI
             {
                 // An overlay drawn OVER this page owns input, so it names the keys -- this page's own
                 // controls do nothing while a picker or a confirm is up, and printing them anyway is
-                // what made the picker carry a second hint strip inside its card.
+                // what made the picker carry a second hint strip inside its card. The screen draws that
+                // bar itself, after the overlay, so the overlay's scrim does not dim it.
                 std::string navHint = screen.overlayNavHint();
-                if (!navHint.empty())
-                {
-                    drawNavBar(framebuffer, navHint);
-                }
-                else
+                if (navHint.empty())
                 {
                 // Y opens ribbons; R opens the legality list -- but only when there is something to read,
                 // so a pokemon with an empty report simply omits R: Legality (nothing to view).

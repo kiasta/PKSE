@@ -913,8 +913,10 @@ namespace UI
             return "A: OK";
         if (pksmImport.previewActive)
             return "A: Import  |  B: Cancel";
+        if (fileBrowser.active && fileBrowser.showFavorites)
+            return "Up/Down: Move  |  A: Go to Folder  |  ZR: Remove Favorite  |  B: Back";
         if (fileBrowser.active) // the PKSM bank picker -- no search here, unlike the save picker's
-            return "Up/Down: Move  |  L/R: Page  |  A: Open  |  X: All Files  |  B: Up / Close";
+            return fileBrowser.isCurrentFolderFavorite() ? "Up/Down: Move  |  L/R: Page  |  A: Open  |  X: All Files  |  ZL: Favorites  |  ZR: Unfavorite  |  B: Up / Close" : "Up/Down: Move  |  L/R: Page  |  A: Open  |  X: All Files  |  ZL: Favorites  |  ZR: Add Favorite  |  B: Up / Close";
         if (pickerActive)
             return "Up/Down: Move  |  L/R: Page  |  A: Select  |  Y: Search  |  B: Cancel";
         if (statEdit.dialogActive)
@@ -1592,7 +1594,7 @@ namespace UI
         std::vector<std::string> importExtensions = Trainer::PokemonFile::extensions();
         importExtensions.push_back(".bnk");
         importExtensions.push_back(".bin"); // hand-copied pre-2019 PKSM bank.bin
-        fileBrowser.open("Import Pokemon / PKSM Bank", "Pokemon or bank files", {"sdmc:/3ds/PKSM/banks",
+        fileBrowser.open("Import Pokemon / PKSM Bank", "Pokemon or bank files", {Utils::lastFolder(Utils::LastFolderKind::ImportFiles), "sdmc:/3ds/PKSM/banks",
                           "sdmc:/3ds/PKSM/extDataBackup/banks",
                           "sdmc:/3ds/PKSM",
                           "sdmc:/PKSM/banks",
@@ -1608,7 +1610,7 @@ namespace UI
         fileBrowserPurpose = FileBrowserPurpose::TradePartner;
         // The same filters the save picker uses, so the list is exactly what openExternalSave can
         // open -- including a 3DS `main`, which has no extension and is matched by whole name.
-        fileBrowser.open("Select a Save to Trade With", "Save files", {"sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
+        fileBrowser.open("Select a Save to Trade With", "Save files", {Utils::lastFolder(Utils::LastFolderKind::SaveFiles), "sdmc:/PKSE/saves/", "sdmc:/PKSE/", "sdmc:/roms/", "sdmc:/retroarch/saves/",
                           "sdmc:/emulators/", "sdmc:/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
         Utils::logEventToFile("TRADEPARTNER action=BROWSE dir=\"" + fileBrowser.directory + "\"");
     }
@@ -1901,7 +1903,17 @@ namespace UI
         if (buttonsDown & (HidNpadButton_R | HidNpadButton_Right))
             fileBrowser.move(Dialogs::FileBrowserState::VISIBLE_ROWS);
 
-        if (buttonsDown & HidNpadButton_X)
+        if (buttonsDown & HidNpadButton_ZL)
+        {
+            fileBrowser.toggleFavoritesView();
+            return;
+        }
+        if (buttonsDown & HidNpadButton_ZR)
+        {
+            fileBrowser.toggleFavorite();
+            return;
+        }
+        if ((buttonsDown & HidNpadButton_X) && !fileBrowser.showFavorites)
         {
             // The extension filter is a convenience, not a rule -- a bank copied off with a different
             // name would otherwise be invisible with no way to reach it.
@@ -1930,6 +1942,8 @@ namespace UI
         {
             const std::string picked = fileBrowser.chosenPath;
             fileBrowser.chosenPath.clear();
+            // Remembered on the pick, whatever the file turns out to be: it is where the user went looking.
+            Utils::setLastFolder(fileBrowserPurpose == FileBrowserPurpose::TradePartner ? Utils::LastFolderKind::SaveFiles : Utils::LastFolderKind::ImportFiles, fileBrowser.directory);
             if (fileBrowserPurpose == FileBrowserPurpose::TradePartner)
             {
                 tradeEvolveWithChosenSave(picked);
@@ -6504,9 +6518,10 @@ namespace UI
         // including over the full-screen details page, which paints its own bar -- so that half of
         // the decision lives in overlayNavHint() and both bar-drawers ask it first.
         std::string instructions = overlayNavHint();
-        if (!instructions.empty())
+        const bool overlayOwnsNavBar = !instructions.empty();
+        if (overlayOwnsNavBar)
         {
-            // named by the overlay
+            // named by the overlay, and drawn after it -- see the end of draw()
         }
         else if (swapActive)
         {
@@ -6638,7 +6653,7 @@ namespace UI
         // overlay owns input). Drawing one here as well put two bars in the frame -- invisible,
         // because the second covered the first exactly, but wasted work and indistinguishable from
         // a real double-bar bug -- one nav bar per frame, always.
-        if (!details.active)
+        if (!details.active && !overlayOwnsNavBar)
             drawNavBar(framebuffer, instructions);
         const int footerY = framebuffer.getHeight() - NAV_BAR_HEIGHT;
 
@@ -6740,6 +6755,12 @@ namespace UI
         {
             Dialogs::drawPKSMImportResult(*this, framebuffer);
         }
+
+        // The bar for an overlay that owns input goes OVER that overlay's scrim. Drawn under it, the
+        // keys were dimmed with the screen behind the dialog and read as that screen's, not the
+        // dialog's. One bar either way: the details page leaves this one to the screen.
+        if (overlayOwnsNavBar)
+            drawNavBar(framebuffer, instructions);
 
         // Transient status line (a refused cross-game drop, a rejected name), centered above the footer.
         // Drawn LAST so it is not painted over: a message can be raised from inside the details modal

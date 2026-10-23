@@ -285,8 +285,15 @@ Two consequences worth knowing:
   entire page, bar included, and carry their own `B / tap: close` line inside the card. Naming it on
   a bar the overlay has just dimmed would be the second hint this whole thing exists to remove.
 
+- **An overlay's bar is drawn after the overlay.** Every dialog paints a full-screen scrim, and the
+  bar used to be drawn before it, so the keys the dialog owns were dimmed along with the screen
+  behind it and read as that screen's. When `overlayNavHint()` is non-empty, `TrainerViewScreen::draw`
+  draws the bar after every dialog, and the details page draws no bar of its own;
+  `SaveSelectScreen::draw` draws its bar after the file browser. The legality and ribbon overlays
+  are still exempt, for the reason above.
+
 **The invariant, stated so it can be checked: at most one full-width rounded sheet pinned to the
-bottom edge per frame.** The nav bar is the only primitive of that shape, so counting them in a
+bottom edge per frame**, and while an overlay owns input, no full-screen scrim drawn after it. The nav bar is the only primitive of that shape, so counting them in a
 recorded frame finds a double bar. The case that was reported, and the one to check first, is a picker
 open over the details page.
 

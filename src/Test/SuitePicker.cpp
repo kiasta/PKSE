@@ -23,8 +23,13 @@
 #include <string>
 #include <vector>
 
+#include <cstdio>
+#include <sys/stat.h>
+#include <unistd.h> // rmdir
+
 #include "UI/SaveSelectScreen.h"
 #include "Utils/Logger.h"
+#include "Utils/Settings.h"
 
 namespace Test
 {
@@ -36,6 +41,7 @@ namespace Test
             constexpr u64 BUTTON_A = HidNpadButton_A;
             constexpr u64 BUTTON_B = HidNpadButton_B;
             constexpr u64 BUTTON_Y = HidNpadButton_Y;
+            constexpr u64 DPAD_DOWN = HidNpadButton_Down;
             constexpr u64 DPAD_RIGHT = HidNpadButton_Right;
             constexpr u64 DPAD_LEFT = HidNpadButton_Left;
         }
@@ -118,18 +124,49 @@ namespace Test
             context.note("only one installed save, so save-picker cursor movement was not tested", "installed=1");
         }
 
-        // 4. The file browser -- the Gen 1 entry point -- opens and closes again.
+        // 4. The file browser -- the Gen 1 entry point -- opens in the folder a save was last
+        //    picked from, remembers the folder of a new pick, and closes again.
         //
-        // B goes up one folder and closes the browser only at sdmc:/, and the browser opens a folder
-        // or two below it (sdmc:/PKSE/ or sdmc:/PKSE/saves/), so B is pressed until it closes, up to
-        // a bound deeper than any folder the browser starts in.
+        // The remembered folder is a fixture in the run's scratch directory, and settings go to a
+        // scratch file, so the user's own last folder and favorites are neither used nor changed.
+        // The pick is a one-byte file, which the picker refuses and keeps the browser open for: the
+        // folder is remembered on the pick, refused or not. Clearing the remembered folder between
+        // Y and A is what makes the check prove both halves -- only a browser that OPENED in the
+        // fixture can put it back.
+        //
+        // B goes up one folder and closes the browser only at sdmc:/, so B is pressed until it
+        // closes, up to a bound deeper than the fixture folder.
+        if (context.workDirectory.empty())
         {
-            constexpr int maximumUpPresses = 8;
+            context.skip("no scratch directory, so the save picker's file browser was not driven");
+        }
+        else
+        {
+            constexpr int maximumUpPresses = 16;
+            const std::string settingsFilePath = context.workDirectory + "/picker-settings.cfg";
+            const std::string fixtureDirectory = context.workDirectory + "/picker-browser";
+            const std::string fixtureSavePath = fixtureDirectory + "/Pokemon Ruby.sav";
+            remove(settingsFilePath.c_str());
+            mkdir(fixtureDirectory.c_str(), 0777);
+            if (FILE *fixtureHandle = fopen(fixtureSavePath.c_str(), "wb"))
+            {
+                fputc(0, fixtureHandle);
+                fclose(fixtureHandle);
+            }
+            Utils::setSettingsFileOverride(settingsFilePath);
+            Utils::loadSettings();
+            Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, fixtureDirectory);
+
             UI::SaveSelectScreen savePicker;
             Journey journey(context, savePicker, nullptr, nullptr, "picker-browser");
             journey.settle("picker: open", Allow::AllowNothing, 2);
             journey.act("picker: Y opens the file browser", Button::BUTTON_Y, Allow::AllowNothing);
             journey.expect(savePicker.isFileBrowserOpen(), "Y on the save picker did not open the file browser");
+            Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, "");
+            journey.act("picker: Down to the fixture save, below \"..\"", Button::DPAD_DOWN, Allow::AllowNothing);
+            journey.act("picker: A picks it", Button::BUTTON_A, Allow::AllowNothing);
+            journey.expect(Utils::lastFolder(Utils::LastFolderKind::SaveFiles) == fixtureDirectory, "the save picker's browser did not open in the last save folder, or did not remember the folder of a pick", "got=\"" + Utils::lastFolder(Utils::LastFolderKind::SaveFiles) + "\"");
+            journey.expect(savePicker.isFileBrowserOpen() && !savePicker.hasSelectedFile(), "a one-byte file was accepted as a save, or its refusal closed the browser");
             int upPressCount = 0;
             while (savePicker.isFileBrowserOpen() && upPressCount < maximumUpPresses)
             {
@@ -139,6 +176,12 @@ namespace Test
             journey.expect(!savePicker.isFileBrowserOpen(), "B never closed the file browser", "presses=" + std::to_string(upPressCount));
             journey.expect(!savePicker.shouldExit(), "closing the file browser exited the save picker");
             journey.expect(!savePicker.hasSelectedFile(), "closing the file browser selected a file anyway");
+
+            remove(fixtureSavePath.c_str());
+            rmdir(fixtureDirectory.c_str());
+            remove(settingsFilePath.c_str());
+            Utils::setSettingsFileOverride("");
+            Utils::loadSettings();
         }
     }
 }

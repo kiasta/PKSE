@@ -38,6 +38,7 @@
 #include <cctype>
 
 #include "UI/Dialogs/FileBrowserDialog.h"
+#include "Utils/Settings.h"
 
 namespace Test
 {
@@ -126,6 +127,123 @@ namespace Test
             remove((fixtureDirectory + "/" + FIXTURE_SUBDIRECTORY + "/" + FIXTURE_SUBDIRECTORY_FILE).c_str());
             rmdir((fixtureDirectory + "/" + FIXTURE_SUBDIRECTORY).c_str());
             rmdir(fixtureDirectory.c_str());
+        }
+    }
+
+    namespace
+    {
+        bool containsFolder(const std::vector<std::string> &folders, const std::string &folder)
+        {
+            for (const std::string &listedFolder : folders)
+            {
+                if (listedFolder == folder)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * FAVORITES AND THE LAST FOLDER. Both exist so a user stops walking down from the SD root to
+         * the same emulator folder every time, so both are checked through the dialog and then
+         * through settings.cfg -- a favorite that works until PKSE restarts is the same chore again.
+         *
+         * THE USER'S SETTINGS ARE NOT TOUCHED. Every write goes to a scratch settings file, and the
+         * real one is re-read at the end, which restores the folders it held exactly.
+         */
+        void checkFolderMemory(Context &context, const std::string &fixtureDirectory)
+        {
+            const std::string settingsFilePath = context.workDirectory + "/browsertest-settings.cfg";
+            const std::string subdirectoryPath = fixtureDirectory + "/" + FIXTURE_SUBDIRECTORY;
+            const std::string missingFolderPath = fixtureDirectory + "/removed-folder";
+            remove(settingsFilePath.c_str());
+            Utils::setSettingsFileOverride(settingsFilePath);
+            Utils::loadSettings(); // no file yet: starts with no favorites and no last folders
+
+            context.check(Utils::favoriteFolders().empty() && Utils::lastFolder(Utils::LastFolderKind::SaveFiles).empty(), "a missing settings file still left favorites or a last folder in place", "favorites=" + std::to_string(Utils::favoriteFolders().size()));
+
+            UI::Dialogs::FileBrowserState browser;
+
+            // The owners put the remembered folder first. Nothing remembered yet must not stop the
+            // browser landing in the next folder on the list.
+            browser.open("Open a Save File", "Save files", {Utils::lastFolder(Utils::LastFolderKind::SaveFiles), fixtureDirectory}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(browser.directory == fixtureDirectory, "an empty last folder kept the browser from its usual start folder", "got=\"" + browser.directory + "\"");
+
+            Utils::setLastFolder(Utils::LastFolderKind::SaveFiles, subdirectoryPath);
+            browser.open("Open a Save File", "Save files", {Utils::lastFolder(Utils::LastFolderKind::SaveFiles), fixtureDirectory}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(browser.directory == subdirectoryPath, "the browser did not reopen in the last folder a file was picked from", "wanted=\"" + subdirectoryPath + "\" got=\"" + browser.directory + "\"");
+            context.check(Utils::lastFolder(Utils::LastFolderKind::ImportFiles).empty(), "remembering the save browser's folder also moved the import browser's");
+
+            // ZR in the fixture folder, as a start folder spells it (trailing slash).
+            browser.open("Open a Save File", "Save files", {fixtureDirectory + "/"}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(!browser.isCurrentFolderFavorite(), "a folder showed as a favorite before it was added");
+            context.check(browser.toggleFavorite(), "ZR did not make the current folder a favorite");
+            context.check(browser.isCurrentFolderFavorite(), "the current folder did not show as a favorite after ZR");
+            context.check(Utils::favoriteFolders().size() == 1 && Utils::favoriteFolders().front() == fixtureDirectory, "the favorite was not stored as the folder's path without its trailing slash", "stored=\"" + (Utils::favoriteFolders().empty() ? std::string() : Utils::favoriteFolders().front()) + "\"");
+
+            // The same folder spelled the other way is the same favorite, not a second one.
+            browser.open("Open a Save File", "Save files", {fixtureDirectory}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(browser.isCurrentFolderFavorite(), "a favorite folder did not show as one when spelled without a trailing slash");
+
+            // A folder that will be gone by the time it is picked from the list.
+            mkdir(missingFolderPath.c_str(), 0777);
+            browser.open("Open a Save File", "Save files", {missingFolderPath}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(browser.directory == missingFolderPath && browser.toggleFavorite(), "could not favorite a second folder");
+            rmdir(missingFolderPath.c_str());
+
+            // ZL lists both, in the order they were added, from a folder that is neither.
+            browser.open("Open a Save File", "Save files", {subdirectoryPath}, Save::saveFileExtensions(), Save::saveFileExactNames());
+            context.check(!browser.isCurrentFolderFavorite(), "a subfolder of a favorite showed as a favorite itself");
+            browser.toggleFavoritesView();
+            context.check(browser.showFavorites, "ZL did not open the favorites list");
+            context.check(browser.entries.size() == 2 && browser.entries[0].name == fixtureDirectory && browser.entries[1].name == missingFolderPath, "the favorites list does not hold exactly the favorites, in the order they were added", "rows=" + std::to_string(browser.entries.size()));
+            context.check(!isListed(browser, ".."), "the favorites list has a \"..\" row, which has nowhere to go up to");
+            context.check(browser.directory == subdirectoryPath, "opening the favorites list changed the folder it was opened from", "got=\"" + browser.directory + "\"");
+
+            // B leaves the list for the folder it was opened from.
+            context.check(browser.goUp(), "B in the favorites list reported there was nowhere to go");
+            context.check(!browser.showFavorites && browser.directory == subdirectoryPath && isListed(browser, FIXTURE_SUBDIRECTORY_FILE), "B in the favorites list did not return to the folder it was opened from", "got=\"" + browser.directory + "\"");
+
+            // A on a folder that is gone says so and stays in the list; ZR there removes it.
+            browser.toggleFavoritesView();
+            browser.selectedIndex = 1;
+            context.check(!browser.activate(), "A on a missing favorite reported a file had been chosen");
+            context.check(browser.showFavorites && !browser.status.empty(), "A on a favorite folder that no longer exists left the list without saying why", "showFavorites=" + std::to_string(browser.showFavorites));
+            context.check(!browser.toggleFavorite(), "ZR in the favorites list did not remove the selected favorite");
+            context.check(browser.showFavorites && browser.entries.size() == 1 && browser.entries[0].name == fixtureDirectory, "removing a favorite did not take its row out of the list", "rows=" + std::to_string(browser.entries.size()));
+            context.check(browser.selectedIndex == 0, "removing the last row left the cursor past the end of the list", "index=" + std::to_string(browser.selectedIndex));
+
+            // A on a favorite goes there.
+            context.check(!browser.activate(), "A on a favorite folder reported a file had been chosen");
+            context.check(!browser.showFavorites && browser.directory == fixtureDirectory && isListed(browser, "main"), "A on a favorite did not open that folder", "got=\"" + browser.directory + "\"");
+
+            // Everything above has to survive a restart. A path longer than settings.cfg's lines
+            // used to be is the case that would be cut in two on the way back in.
+            std::string longFolderPath = "sdmc:/";
+            while (longFolderPath.size() < 300)
+            {
+                longFolderPath += "Pokemon Emulator Saves/";
+            }
+            longFolderPath += "GBA";
+            Utils::toggleFavoriteFolder(longFolderPath);
+            Utils::setLastFolder(Utils::LastFolderKind::ImportFiles, fixtureDirectory);
+            const std::vector<std::string> favoritesBeforeReload = Utils::favoriteFolders();
+            Utils::loadSettings();
+            context.check(Utils::favoriteFolders() == favoritesBeforeReload, "the favorite folders read back from settings.cfg differ from the ones written", "before=" + std::to_string(favoritesBeforeReload.size()) + " after=" + std::to_string(Utils::favoriteFolders().size()));
+            context.check(containsFolder(Utils::favoriteFolders(), longFolderPath), "a long favorite folder path did not survive settings.cfg", "length=" + std::to_string(longFolderPath.size()));
+            context.check(Utils::lastFolder(Utils::LastFolderKind::SaveFiles) == subdirectoryPath, "the save browser's last folder did not survive settings.cfg", "got=\"" + Utils::lastFolder(Utils::LastFolderKind::SaveFiles) + "\"");
+            context.check(Utils::lastFolder(Utils::LastFolderKind::ImportFiles) == fixtureDirectory, "the import browser's last folder did not survive settings.cfg", "got=\"" + Utils::lastFolder(Utils::LastFolderKind::ImportFiles) + "\"");
+
+            // And a removal has to survive one too, or a deleted favorite comes back.
+            context.check(!Utils::toggleFavoriteFolder(fixtureDirectory), "toggling a favorite folder did not remove it");
+            Utils::loadSettings();
+            context.check(!Utils::isFavoriteFolder(fixtureDirectory) && Utils::isFavoriteFolder(longFolderPath), "removing a favorite did not survive settings.cfg", "favorites=" + std::to_string(Utils::favoriteFolders().size()));
+
+            browser.close();
+            remove(settingsFilePath.c_str());
+            Utils::setSettingsFileOverride("");
+            Utils::loadSettings();
         }
     }
 
@@ -276,6 +394,8 @@ namespace Test
         browser.close();
         context.check(!browser.active, "closing the browser left it active");
         context.check(browser.chosenPath.empty(), "closing the browser left a chosen path behind");
+
+        checkFolderMemory(context, fixtureDirectory);
 
         removeFixture(fixtureDirectory);
     }
