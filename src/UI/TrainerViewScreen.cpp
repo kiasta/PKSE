@@ -4463,7 +4463,7 @@ namespace UI
                 closeDetailsModal();
                 return;
             }
-            if (touchedButton >= 0 && touchedButton <= 33)
+            if (touchedButton >= 0 && touchedButton <= 34)
             {
                 details.selectedField = touchedButton;   // draws highlighted this frame
                 // ...and opens on the next
@@ -4833,6 +4833,12 @@ namespace UI
                 else if (fieldIndex == 31)
                 { // Fateful Encounter (toggle)
                     pokemon->setFatefulEncounter(!pokemon->isFatefulEncounter());
+                    hasUnsavedChanges = true;
+                    mirrorEditedPartyMember();
+                }
+                else if (fieldIndex == 34 && pokemon->hasAlphaFlag())
+                { // Alpha (toggle)
+                    pokemon->setAlpha(!pokemon->isAlpha());
                     hasUnsavedChanges = true;
                     mirrorEditedPartyMember();
                 }

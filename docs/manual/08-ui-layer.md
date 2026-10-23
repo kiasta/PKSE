@@ -628,7 +628,7 @@ function cannot see.
 │ type badges  │ shiny (6) nature (7)    │ held item   (id 14)              │
 │ scrollable   │ gender (8) level (9)    │                                  │
 │ info rows    │ + hexagon (Y cycles)    │                                  │
-│ (ids 15-33)  │                         │                                  │
+│ (ids 15-34)  │                         │                                  │
 └──────────────┴─────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -640,7 +640,7 @@ function cannot see.
 | 6, 7, 8, 9 | centre | shiny, nature, gender, level |
 | 10–13 | right | move slots 0–3 |
 | 14 | right | held item |
-| 15–33 | left | Ability (15), Friendship (16), Egg (17), Met Lv (18), Ball (19), Language (20), Origin (21), Pokerus (22), Nickname (23), EXP (24), Met (25), Form (26), Stat Nature (27), Met Date (28), Egg Loc (29), Egg Date (30), Fateful (31), Species (32), Evolve / Trade Evolve (33) |
+| 15–34 | left | Ability (15), Friendship (16), Egg (17), Met Lv (18), Ball (19), Language (20), Origin (21), Pokerus (22), Nickname (23), EXP (24), Met (25), Form (26), Stat Nature (27), Met Date (28), Egg Loc (29), Egg Date (30), Fateful (31), Species (32), Evolve / Trade Evolve (33), Alpha (34) |
 | 94, 99 | — | ribbon overlay, close button |
 
 The left column is **built at draw time** into `details.leftOrder`, in draw order, so conditional

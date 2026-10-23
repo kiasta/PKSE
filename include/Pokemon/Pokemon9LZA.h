@@ -564,9 +564,29 @@ namespace Pokemon
         /**
          * Alpha flag -- a whole byte at 0x23 (PA9), not a bit. Z-A keeps Legends: Arceus's Alphas, and
          * its Pokedex entry records "an Alpha of this species was seen" separately from the form flags.
-         * Read-only here: nothing in PKSE creates an Alpha, but a save can already contain one.
          */
         bool isAlpha() const noexcept override { return static_cast<uint8_t>(data[0x23]) != 0; }
+        bool hasAlphaFlag() const noexcept override { return true; }
+
+        /**
+         * A wild Alpha's scale (0x4A) is 255. Height and weight (0x48 / 0x49) must be 0 or equal to
+         * the scale (PKHeX MiscScaleVerifier): the game leaves them 0 and HOME copies the scale into
+         * them, so a nonzero pair follows the scale and a zero pair stays zero.
+         */
+        void setAlpha(bool alpha) noexcept override
+        {
+            data[0x23] = static_cast<std::byte>(alpha ? 1 : 0);
+            if (alpha)
+            {
+                data[0x4A] = static_cast<std::byte>(0xFF);
+                if (static_cast<uint8_t>(data[0x48]) != 0 || static_cast<uint8_t>(data[0x49]) != 0)
+                {
+                    data[0x48] = static_cast<std::byte>(0xFF);
+                    data[0x49] = static_cast<std::byte>(0xFF);
+                }
+            }
+            refreshChecksum();
+        }
 
         /** Fateful-encounter flag -- bit 0 of the gender byte at 0x22 (setGender leaves bit 0 alone). */
         bool isFatefulEncounter() const noexcept override { return (static_cast<uint8_t>(data[0x22]) & 0x01) != 0; }

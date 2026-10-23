@@ -488,6 +488,8 @@ namespace UI
             }
             if (notGen3)
                 editRow("Fateful", p->isFatefulEncounter() ? "Yes" : "No", 31);
+            if (p->hasAlphaFlag())
+                editRow("Alpha", p->isAlpha() ? "Yes" : "No", 34);
             {
                 // Pokerus: editable (None -> Infected -> Cured) where the game has it; read-only otherwise.
                 const char *pkrs = p->isPokerusInfected() ? "Infected" : p->isPokerusCured() ? "Cured" : "None";
