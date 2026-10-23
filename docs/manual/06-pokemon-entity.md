@@ -236,6 +236,7 @@ virtual bool hasAwakeningValues() const noexcept { return false; }   // Let's Go
 virtual bool hasPokerus()       const noexcept { return false; }
 virtual bool hasHyperTraining() const noexcept { return false; }
 virtual bool isAlpha()          const noexcept { return false; }    // PLA / Z-A
+virtual bool hasAlphaFlag()     const noexcept { return false; }    // PLA / Z-A
 ```
 
 These exist because **0 is a real value for every one of those fields**. Nature 0 is Hardy, ability
@@ -494,7 +495,8 @@ For orientation when implementing a new format. Pure virtual (`= 0`) means you m
 `isEgg`\*, `setEgg`, `isFatefulEncounter`
 
 **Misc** — `friendship`\*, `isShiny`\*, `setShiny`\*, `regeneratePID`\*, `isPokerusInfected`\*,
-`isPokerusCured`\*, `setPokerus`, `hasPokerus`, `isAlpha`, `abilityNumber`, `setAbilityNumber`
+`isPokerusCured`\*, `setPokerus`, `hasPokerus`, `isAlpha`, `hasAlphaFlag`, `setAlpha`, `abilityNumber`,
+`setAbilityNumber`
 
 **Integrity** — `checksum`\*, `calculateChecksum`\*, `refreshChecksum`\*, `checksumValid`\*,
 `isStructurallyValid`

@@ -310,12 +310,23 @@ namespace Pokemon
          * Is this an Alpha? Legends: Arceus and Legends: Z-A only; every other format
          * has no such concept and is false.
          *
-         * Read-only across the codebase -- nothing in PKSE creates an Alpha -- but a save
-         * can already contain one, and the legality checker has to know: an Alpha is a
-         * property of the ENCOUNTER (alpha slots and alpha statics are separate templates
-         * with their own guaranteed IVs), not something the player can confer afterwards.
+         * The legality checker reads it because an Alpha is a property of the ENCOUNTER
+         * (alpha slots and alpha statics are separate templates with their own guaranteed
+         * IVs), not something the player can confer afterwards. The editor still lets the
+         * flag be set; legality reports the mismatch rather than refusing it.
          */
         virtual bool isAlpha() const noexcept { return false; }
+
+        /// Whether the format stores an Alpha flag at all (Legends: Arceus, Legends: Z-A).
+        virtual bool hasAlphaFlag() const noexcept { return false; }
+
+        /**
+         * Sets the Alpha flag. Setting it also gives the Pokemon the size the game gives a wild
+         * Alpha, because an Alpha of ordinary size matches no encounter; clearing it leaves the
+         * size alone, since a maximum-size non-Alpha is an ordinary roll. A no-op where
+         * hasAlphaFlag() is false.
+         */
+        virtual void setAlpha(bool alpha) noexcept { (void)alpha; }
 
         virtual uint16_t move(int slot) const noexcept
         {

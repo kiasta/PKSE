@@ -645,10 +645,17 @@ namespace Pokemon
 
         /**
          * Alpha flag -- bit 5 of 0x16, the byte that also holds AbilityNumber in bits 0-2 (PA8).
-         * Read-only: nothing in PKSE creates an Alpha, but a save can already contain one and the
-         * Pokedex records Alpha sightings in their own slot.
+         * The Pokedex records Alpha sightings in their own slot.
          */
         bool isAlpha() const noexcept override { return (static_cast<uint8_t>(data[0x16]) & 0x20) != 0; }
+        bool hasAlphaFlag() const noexcept override { return true; }
+
+        /**
+         * A wild Alpha has height, weight and scale all at 255 (PKHeX LegendsArceusVerifier and
+         * MiscScaleVerifier), and its absolutes follow the scalars. Defined in the .cpp beside
+         * resetSizeAbsolutes().
+         */
+        void setAlpha(bool alpha) noexcept override;
 
         /**
          * Absolute height / weight -- IEEE-754 floats at 0xAC / 0xB0 (PA8), in the game's own units.

@@ -416,4 +416,18 @@ namespace Pokemon
         std::memcpy(&data[0xB0], &weightValue, sizeof weightValue);
         refreshChecksum();
     }
+
+    void Pokemon8LA::setAlpha(bool alpha) noexcept
+    {
+        const uint8_t packedByte = (static_cast<uint8_t>(data[0x16]) & ~0x20) | (alpha ? 0x20 : 0x00);
+        data[0x16] = static_cast<std::byte>(packedByte);
+        if (alpha)
+        {
+            data[0x50] = static_cast<std::byte>(0xFF);
+            data[0x51] = static_cast<std::byte>(0xFF);
+            data[0x52] = static_cast<std::byte>(0xFF);
+            resetSizeAbsolutes();
+        }
+        refreshChecksum();
+    }
 }

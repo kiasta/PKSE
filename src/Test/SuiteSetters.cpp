@@ -32,12 +32,15 @@
  * value above 255 wherever the format's ids reach that far, so a field cut to one byte cannot pass.
  * The field is restored afterwards so each test starts from the same entity.
  */
+#include <cstddef>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "Test/TestSuite.h"
 #include "Trainer/Trainer.h"
 #include "Pokemon/Experience.h"
+#include "Pokemon/Pokemon8LA.h"
 #include "Pokemon/PersonalInfoTable.h"
 #include "Utils/StringHelpers.h"
 
@@ -328,6 +331,68 @@ namespace Test
             context.check(pokemon.effectiveIV(0) == pokemon.maxIV(), "a Hyper Trained stat does not read as a maximal IV", whereLabel + " got=" + std::to_string(pokemon.effectiveIV(0)) + " maxIV=" + std::to_string(pokemon.maxIV()));
             context.check(pokemon.ivHP() == 0, "Hyper Training changed the STORED IV, which it must never do", whereLabel + " ivHP=" + std::to_string(pokemon.ivHP()));
             pokemon.setHyperTrainFlags(savedFlags);
+        }
+
+        // The two Legends formats are the only ones with an Alpha flag (PKHeX IAlpha: PA8, PA9). The
+        // predicate is checked against that list too, so a format that loses it hides the editor row.
+        const bool alphaFlagExpected = context.group == Enums::GameVersion::PLA || context.group == Enums::GameVersion::ZA;
+        context.check(pokemon.hasAlphaFlag() == alphaFlagExpected, "hasAlphaFlag() disagrees with the formats that store an Alpha flag", whereLabel + " hasAlphaFlag=" + std::to_string(pokemon.hasAlphaFlag()));
+        roundTripField("alpha", [&] { return pokemon.isAlpha() ? 1u : 0u; }, [&](uint32_t newValue) { pokemon.setAlpha(newValue != 0); }, {1u, 0u}, expectedIf(alphaFlagExpected));
+
+        // Becoming an Alpha gives the wild Alpha's size; clearing the flag keeps whatever size it has.
+        // Read at PKHeX's offsets (PA8 0x50-0x52, PA9 0x48-0x4A) rather than through PKSE, so a setter
+        // writing the wrong bytes cannot pass. The scalars start small so 255 cannot be left over.
+        if (alphaFlagExpected)
+        {
+            const size_t heightScalarOffset = (context.group == Enums::GameVersion::PLA) ? 0x50 : 0x48;
+            const size_t scaleOffset = heightScalarOffset + 2;
+            std::span<std::byte> pokemonBytes = pokemon.getData();
+            auto sizeByte = [&](size_t byteOffset) { return static_cast<uint32_t>(static_cast<uint8_t>(pokemonBytes[byteOffset])); };
+            auto describeSize = [&]() { return " height=" + std::to_string(sizeByte(heightScalarOffset)) + " weight=" + std::to_string(sizeByte(heightScalarOffset + 1)) + " scale=" + std::to_string(sizeByte(scaleOffset)); };
+            auto setSizeBytes = [&](uint8_t heightWeightValue, uint8_t scaleValue)
+            {
+                pokemonBytes[heightScalarOffset] = static_cast<std::byte>(heightWeightValue);
+                pokemonBytes[heightScalarOffset + 1] = static_cast<std::byte>(heightWeightValue);
+                pokemonBytes[scaleOffset] = static_cast<std::byte>(scaleValue);
+            };
+            const std::string sizeLabel = whereLabel + " field=alphaSize";
+            const uint8_t originalHeightScalar = static_cast<uint8_t>(sizeByte(heightScalarOffset));
+            const uint8_t originalWeightScalar = static_cast<uint8_t>(sizeByte(heightScalarOffset + 1));
+            const uint8_t originalScale = static_cast<uint8_t>(sizeByte(scaleOffset));
+
+            pokemon.setAlpha(false);
+            setSizeBytes(0x10, 0x10);
+            float heightAbsoluteBefore = 0.0f;
+            float weightAbsoluteBefore = 0.0f;
+            if (context.group == Enums::GameVersion::PLA)
+            {
+                auto &arceusPokemon = static_cast<Pokemon::Pokemon8LA &>(pokemon);
+                arceusPokemon.resetSizeAbsolutes();
+                heightAbsoluteBefore = arceusPokemon.heightAbsolute();
+                weightAbsoluteBefore = arceusPokemon.weightAbsolute();
+            }
+            pokemon.setAlpha(true);
+            context.check(sizeByte(scaleOffset) == 255, "becoming an Alpha did not set the scale a wild Alpha has", sizeLabel + describeSize());
+            context.check(sizeByte(heightScalarOffset) == 255 && sizeByte(heightScalarOffset + 1) == 255, "becoming an Alpha left height/weight scalars that disagree with the Alpha scale", sizeLabel + describeSize());
+            if (context.group == Enums::GameVersion::PLA)
+            {
+                const auto &arceusPokemon = static_cast<const Pokemon::Pokemon8LA &>(pokemon);
+                context.check(arceusPokemon.heightAbsolute() > heightAbsoluteBefore && arceusPokemon.weightAbsolute() > weightAbsoluteBefore, "becoming an Alpha did not recompute the absolute height and weight from the new scalars", sizeLabel + " heightBefore=" + std::to_string(heightAbsoluteBefore) + " heightAfter=" + std::to_string(arceusPokemon.heightAbsolute()));
+            }
+            pokemon.setAlpha(false);
+            context.check(sizeByte(scaleOffset) == 255, "clearing the Alpha flag changed the size", sizeLabel + describeSize());
+
+            // Z-A: the game leaves height and weight 0 beside the scale, and 0 is legal there.
+            if (context.group == Enums::GameVersion::ZA)
+            {
+                setSizeBytes(0, 0x10);
+                pokemon.setAlpha(true);
+                context.check(sizeByte(heightScalarOffset) == 0 && sizeByte(heightScalarOffset + 1) == 0 && sizeByte(scaleOffset) == 255, "becoming an Alpha wrote a height/weight the game leaves at 0", sizeLabel + describeSize());
+                pokemon.setAlpha(false);
+            }
+            setSizeBytes(originalHeightScalar, originalScale);
+            pokemonBytes[heightScalarOffset + 1] = static_cast<std::byte>(originalWeightScalar);
+            pokemon.refreshChecksum();
         }
 
         static const char *statNames[6] = {"HP", "Atk", "Def", "Spe", "SpA", "SpD"};

@@ -24,6 +24,7 @@
 #include <cstring>
 #include <functional>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -920,6 +921,74 @@ namespace {
         d.expect(sawHatchNote, "the Language row did not say the language is set when the egg hatches");
     }
 
+    /// The Alpha row on the details page: shown exactly where the format stores the flag, and A or a
+    /// tap on it flips the flag on the Pokemon being edited.
+    ///
+    /// Becoming an Alpha also rewrites the size, so the record's bytes are put back afterwards: the
+    /// trainer is shared with every later test on this save.
+    void testAlphaToggle(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
+        int boxIndex = -1, boxSlot = -1;
+        for (int box = 0; box < static_cast<int>(tr.boxes.size()) && boxSlot < 0; ++box) {
+            for (int slot = 0; slot < static_cast<int>(tr.boxes[box].size()); ++slot) {
+                if (!Test::isEmptySlot(tr.boxes[box][slot].get()) && !tr.boxes[box][slot]->isEgg()) { boxIndex = box; boxSlot = slot; break; }
+            }
+        }
+        if (boxSlot < 0) {
+            context.note("this save's boxes hold no Pokemon, so the Alpha row was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+
+        Driver d(context, s, "alpha-toggle");
+        d.step("open the box view");
+        gotoHome(d, s, 0);
+        d.press(Btn::A).frame();
+        if (!d.expect(s.detailViewActive, "could not open the box view")) return;
+        s.selectedBoxIndex = boxIndex;
+        s.selectedItemIndex = boxSlot;
+        d.step("open the details page").press(Btn::A).frame(2);
+        if (!d.expect(s.details.active, "A on an occupied slot did not open the details page")) return;
+
+        Pokemon::Pokemon* pokemon = s.detailsTargetPokemon();
+        if (!d.expect(pokemon != nullptr, "the details page has no Pokemon to edit")) return;
+        constexpr int alphaField = 34;
+        const auto& leftColumnOrder = s.details.leftOrder;
+        const bool alphaRowListed = std::find(leftColumnOrder.begin(), leftColumnOrder.end(), alphaField) != leftColumnOrder.end();
+        if (!pokemon->hasAlphaFlag()) {
+            d.expect(!alphaRowListed, "the details page offers an Alpha row for a format with no Alpha flag");
+            return;
+        }
+        if (!d.expect(alphaRowListed, "the details page offers no Alpha row although the format stores the flag")) return;
+
+        const std::span<const std::byte> originalSpan = pokemon->getData();
+        const std::vector<std::byte> originalBytes(originalSpan.begin(), originalSpan.end());
+        const bool originalAlpha = pokemon->isAlpha();
+
+        s.details.selectedField = alphaField;
+        d.step("bring the Alpha row into view").frame(2);
+        d.see("Alpha");
+        d.step("toggle Alpha with A").press(Btn::A).frame(2);
+        pokemon = s.detailsTargetPokemon();
+        if (d.expect(pokemon != nullptr, "the details page lost its Pokemon after the toggle")) {
+            d.expect(pokemon->isAlpha() != originalAlpha, "A on the Alpha row did not change the flag", "before=" + std::to_string(originalAlpha));
+            d.expect(s.hasUnsavedChanges, "toggling Alpha did not mark the save as changed");
+        }
+
+        // The tap goes through the row's own published hit rectangle, the path a touch screen takes.
+        const UI::TouchButton* alphaButton = nullptr;
+        for (const auto& button : s.touchButtons)
+            if (button.buttonId == alphaField) { alphaButton = &button; break; }
+        if (d.expect(alphaButton != nullptr, "the Alpha row published no touch target")) {
+            d.step("toggle Alpha back with a tap").tap(alphaButton->hitX + alphaButton->hitWidth / 2, alphaButton->hitY + alphaButton->hitHeight / 2).frame(TrainerViewScreen::TAP_PRESS_FRAMES + 1);
+            pokemon = s.detailsTargetPokemon();
+            d.expect(pokemon && pokemon->isAlpha() == originalAlpha, "a tap on the Alpha row did not change the flag back");
+        }
+
+        pokemon = s.detailsTargetPokemon();
+        if (pokemon) {
+            std::memcpy(pokemon->getData().data(), originalBytes.data(), originalBytes.size());
+        }
+    }
+
     /// The picker's search box.
     ///
     /// The property that matters is not "a filter happened" but that the filtered list still writes
@@ -1476,6 +1545,7 @@ namespace {
         { auto s = fresh(); testBoxRename(context, *s, tr); }
         { auto s = fresh(); testEggTextIsNotForeign(context, *s, tr); }
         { auto s = fresh(); testPickerSearch(context, *s, tr); }
+        { auto s = fresh(); testAlphaToggle(context, *s, tr); }
         { auto s = fresh(); testItemsKeys(context, *s, tr); }
         { auto s = fresh(); testBoxMenus(context, *s, tr); }
         { auto s = fresh(); testTapIsSeenBeforeItActs(context, *s, tr); }

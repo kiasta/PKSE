@@ -49,6 +49,10 @@ namespace UI
 
             bool directoryExists(const std::string &path)
             {
+                // An empty path is "nothing remembered", not a folder. libnx resolves it against the
+                // working directory and opens it, so it has to be refused before opendir sees it.
+                if (path.empty())
+                    return false;
                 DIR *d = opendir(path.c_str());
                 if (!d)
                     return false;
