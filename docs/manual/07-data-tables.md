@@ -322,7 +322,17 @@ Related:
 uint16_t Names::itemG3ToModern(uint16_t g3Id);   // 0 if no modern equivalent
 uint16_t Names::itemModernToG3(uint16_t modernId);
 std::vector<uint16_t> Names::getPouchItems(GameVersion group, int pouch);   // legal ids for a pouch
+bool Names::isKeyItem(GameVersion group, uint16_t itemId);                // a key item, in whichever pouch
 ```
+
+**A key item is not "whatever sits in the Key Items pocket".** Gen 2's and Ruby/Sapphire's PC
+Items accept key items, Let's Go files them in its general pocket ("Other Items"), and Gen 1 has no
+key-items pocket at all. Add All Items leaves key items out by default, so `gen_itempouches.py`
+also emits `isKeyItem` from a per-game `KEY_ITEMS` spec: PKHeX's key spans for every group but
+Gen 1. **Gen 1 is the one table here that does not come from PKHeX**, because PKHeX has no Gen 1
+key-item list (`ItemStorage1` is one span for every pouch). It is the ROM's own `KeyItemFlags`
+table (pret/pokered and pret/pokeyellow, identical in both) plus HM01-HM05, which the game's
+`IsKeyItem_` treats as key items before it reads the table. The `gentables` suite pins it at 36.
 
 ## Met locations depend on origin *and* format
 

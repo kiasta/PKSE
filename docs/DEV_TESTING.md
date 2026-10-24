@@ -470,6 +470,15 @@ fixed-seed sweep of random presses — worth running at all.
   checking each key for the other's effect too. Add Item sat on `Y` until the search claimed it; the
   search branch returned first, so adding an item became unreachable while the nav bar still
   advertised it. Nothing failed.
+- **`testAddAllItems`** runs Add All Items through its dialog on **all nineteen save formats**,
+  including the three `runUI` does not walk (Ruby/Sapphire/Emerald, Brilliant Diamond/Shining Pearl,
+  Scarlet/Violet), twice: key items off with a small amount, then key items on at 999. Every legal id
+  of every pouch is checked against the bag before it (the amount added, clamped to the item's own
+  ceiling, never lowered, key items untouched while off, and left out only when its pouch is full).
+  The ceilings PKHeX sets per item are written out again in the test, so a rule dropped from
+  `itemMaxCount()` fails instead of agreeing with itself. Then the save is **written and read back**,
+  and every stack must come back with its count: a writer that drops part of a full bag is still
+  holding it in the trainer the editor filled.
 - **`testBoxMenus`** opens the Boxes view's `Y` menu and runs Clone and Move from it, then runs
   Search from the `X` box menu in both the Boxes and Storage views. The Pokemon menu is one list
   shared by two views, and the Boxes view's Move is a swap rather than a carry, so a change made

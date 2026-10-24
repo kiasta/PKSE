@@ -26,6 +26,10 @@ namespace Names {
 
     /// Number of pouches the table carries for `group` (0 if unknown).
     size_t getPouchCount(Enums::GameVersion group);
+
+    /// True if `itemId` is one of `group`'s key items, in whichever pouch it sits. False for an
+    /// unknown group as well as for an ordinary item.
+    bool isKeyItem(Enums::GameVersion group, uint16_t itemId);
 }
 
 #endif  // NAMES_ITEM_POUCHES_H

@@ -3,6 +3,8 @@
  * GetItems()/GetLegal(). DO NOT EDIT BY HAND -- rerun the generator.
  */
 
+#include <algorithm>
+
 #include "Names/ItemPouches.h"
 
 namespace Names {
@@ -525,8 +527,9 @@ namespace Names {
         220, 221, 222, 223, 224, 225, 254, 255, 256, 257, 258,
     };
     static const uint16_t POUCH_FRLG_KeyItems[] = {
-        260, 261, 262, 263, 264, 265, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358,
-        359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374,
+        260, 261, 262, 263, 264, 265, 280, 349, 350, 351, 352, 353, 354, 355, 356, 357,
+        358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373,
+        374,
     };
     static const uint16_t POUCH_FRLG_Balls[] = {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
@@ -1142,6 +1145,180 @@ namespace Names {
         POUCH_ZA_KeyItems,
     };
 
+    static const uint16_t KEY_ITEMS_RBY[] = {
+        5, 6, 7, 8, 9, 21, 22, 23, 24, 25, 26, 27, 28, 31, 41, 42,
+        43, 44, 45, 48, 63, 64, 69, 70, 71, 72, 73, 74, 76, 77, 78, 196,
+        197, 198, 199, 200,
+    };
+    static const uint16_t KEY_ITEMS_GSC[] = {
+        7, 54, 55, 58, 59, 61, 66, 67, 68, 69, 70, 71, 115, 116, 127, 128,
+        129, 130, 133, 134, 175, 178,
+    };
+    static const uint16_t KEY_ITEMS_DP[] = {
+        428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443,
+        444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459,
+        460, 461, 462, 463, 464,
+    };
+    static const uint16_t KEY_ITEMS_PT[] = {
+        428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443,
+        444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459,
+        460, 461, 462, 463, 464, 465, 466, 467,
+    };
+    static const uint16_t KEY_ITEMS_HGSS[] = {
+        434, 435, 437, 444, 445, 446, 447, 450, 456, 464, 465, 466, 468, 469, 470, 471,
+        472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 501, 502, 503,
+        504, 532, 533, 534, 535, 536,
+    };
+    static const uint16_t KEY_ITEMS_BW[] = {
+        437, 442, 447, 450, 465, 466, 471, 504, 533, 574, 578, 579, 616, 617, 621, 623,
+        624, 625, 626,
+    };
+    static const uint16_t KEY_ITEMS_B2W2[] = {
+        437, 442, 447, 450, 453, 458, 465, 466, 471, 504, 578, 616, 617, 621, 626, 627,
+        628, 629, 630, 631, 632, 633, 634, 635, 636, 637, 638,
+    };
+    static const uint16_t KEY_ITEMS_XY[] = {
+        216, 431, 442, 445, 446, 447, 450, 465, 466, 471, 628, 629, 631, 632, 638, 641,
+        642, 643, 651, 689, 695, 696, 697, 698, 700, 701, 702, 703, 705, 712, 713, 714,
+    };
+    static const uint16_t KEY_ITEMS_ORAS[] = {
+        216, 445, 446, 447, 457, 465, 466, 471, 474, 503, 628, 629, 631, 632, 638, 697,
+        718, 719, 720, 721, 722, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734,
+        735, 736, 738, 739, 740, 741, 742, 743, 744, 751, 765, 771, 772, 774, 775,
+    };
+    static const uint16_t KEY_ITEMS_SM[] = {
+        216, 465, 466, 628, 629, 631, 632, 638, 705, 706, 765, 773, 797, 841, 842, 843,
+        845, 847, 850, 857, 858, 860,
+    };
+    static const uint16_t KEY_ITEMS_USUM[] = {
+        216, 440, 465, 466, 628, 629, 631, 632, 638, 705, 706, 765, 773, 797, 841, 842,
+        843, 845, 847, 850, 857, 858, 860, 933, 934, 935, 936, 937, 938, 939, 940, 941,
+        942, 943, 944, 945, 946, 947, 948,
+    };
+    static const uint16_t KEY_ITEMS_FRLG[] = {
+        260, 261, 262, 263, 264, 265, 280, 349, 350, 351, 352, 353, 354, 355, 356, 357,
+        358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373,
+        374,
+    };
+    static const uint16_t KEY_ITEMS_RSE[] = {
+        259, 260, 261, 262, 263, 264, 265, 266, 268, 269, 270, 271, 272, 273, 274, 275,
+        278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 370, 371, 372, 375, 376,
+    };
+    static const uint16_t KEY_ITEMS_GG[] = {
+        113, 115, 121, 122, 123, 124, 125, 126, 127, 128, 442, 632, 651, 872, 873, 874,
+        875, 876, 877, 878, 885, 886, 887, 888, 889, 890, 891, 892, 893, 894, 895, 896,
+    };
+    static const uint16_t KEY_ITEMS_SWSH[] = {
+        78, 628, 629, 631, 632, 638, 703, 847, 943, 944, 945, 946, 1074, 1075, 1076, 1077,
+        1080, 1081, 1100, 1255, 1266, 1267, 1269, 1270, 1271, 1278, 1583, 1584, 1585, 1586, 1587, 1589,
+        1590, 1591, 1593, 1594, 1595, 1596, 1597, 1598, 1599, 1600, 1601, 1602, 1603, 1605, 1607,
+    };
+    static const uint16_t KEY_ITEMS_PLA[] = {
+        111, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312,
+        313, 441, 455, 466, 632, 638, 644, 1608, 1609, 1610, 1612, 1622, 1624, 1625, 1626, 1627,
+        1629, 1639, 1678, 1721, 1722, 1723, 1737, 1743, 1744, 1745, 1763, 1765, 1766, 1767, 1768, 1769,
+        1771, 1776, 1777, 1778, 1779, 1780, 1782, 1786, 1787, 1788, 1789, 1790, 1792, 1793, 1794, 1795,
+        1796, 1797, 1798, 1799, 1800, 1801, 1802, 1803, 1804, 1805, 1806, 1807, 1828,
+    };
+    static const uint16_t KEY_ITEMS_BDSP[] = {
+        428, 431, 432, 433, 438, 439, 440, 443, 445, 446, 447, 448, 449, 450, 451, 452,
+        453, 454, 455, 459, 460, 461, 462, 463, 464, 466, 467, 631, 632, 1267, 1278, 1822,
+    };
+    static const uint16_t KEY_ITEMS_SV[] = {
+        78, 466, 628, 629, 631, 632, 638, 703, 765, 943, 944, 945, 946, 1267, 1278, 1587,
+        1589, 1590, 1591, 1829, 1830, 1831, 1832, 1833, 1834, 1835, 1836, 1857, 1858, 2405, 2409, 2410,
+        2480, 2481, 2483, 2522, 2523, 2524, 2525, 2526, 2527, 2528, 2529, 2530, 2531, 2532, 2533, 2534,
+        2535, 2536, 2537, 2538, 2539, 2540, 2541, 2542, 2543, 2544, 2545, 2546, 2547, 2550, 2553, 2554,
+        2555, 2556, 2557,
+    };
+    static const uint16_t KEY_ITEMS_ZA[] = {
+        632, 700, 765, 847, 1278, 2588, 2589, 2590, 2591, 2592, 2595, 2596, 2597, 2598, 2599, 2600,
+        2601, 2602, 2603, 2604, 2605, 2606, 2607, 2608, 2609, 2610, 2611, 2612, 2613, 2620, 2621, 2622,
+        2623, 2624, 2625, 2626, 2627, 2628, 2629, 2630, 2631, 2632, 2633, 2634,
+    };
+
+    static std::span<const uint16_t> keyItemsFor(Enums::GameVersion group) {
+        switch (group) {
+            case Enums::GameVersion::RBY:
+            case Enums::GameVersion::RD:
+            case Enums::GameVersion::GN:
+            case Enums::GameVersion::BU:
+            case Enums::GameVersion::YW:
+                return KEY_ITEMS_RBY;
+            case Enums::GameVersion::GSC:
+            case Enums::GameVersion::GD:
+            case Enums::GameVersion::SI:
+            case Enums::GameVersion::C:
+                return KEY_ITEMS_GSC;
+            case Enums::GameVersion::DP:
+            case Enums::GameVersion::D:
+            case Enums::GameVersion::P:
+                return KEY_ITEMS_DP;
+            case Enums::GameVersion::PT:
+            case Enums::GameVersion::Pt:
+                return KEY_ITEMS_PT;
+            case Enums::GameVersion::HGSS:
+            case Enums::GameVersion::HG:
+            case Enums::GameVersion::SS:
+                return KEY_ITEMS_HGSS;
+            case Enums::GameVersion::BW:
+            case Enums::GameVersion::B:
+            case Enums::GameVersion::W:
+                return KEY_ITEMS_BW;
+            case Enums::GameVersion::B2W2:
+            case Enums::GameVersion::B2:
+            case Enums::GameVersion::W2:
+                return KEY_ITEMS_B2W2;
+            case Enums::GameVersion::XY:
+            case Enums::GameVersion::X:
+            case Enums::GameVersion::Y:
+                return KEY_ITEMS_XY;
+            case Enums::GameVersion::ORAS:
+            case Enums::GameVersion::OR:
+            case Enums::GameVersion::AS:
+                return KEY_ITEMS_ORAS;
+            case Enums::GameVersion::SM:
+            case Enums::GameVersion::SN:
+            case Enums::GameVersion::MN:
+                return KEY_ITEMS_SM;
+            case Enums::GameVersion::USUM:
+            case Enums::GameVersion::US:
+            case Enums::GameVersion::UM:
+                return KEY_ITEMS_USUM;
+            case Enums::GameVersion::FRLG:
+            case Enums::GameVersion::FR:
+            case Enums::GameVersion::LG:
+                return KEY_ITEMS_FRLG;
+            case Enums::GameVersion::RSE:
+            case Enums::GameVersion::RU:
+            case Enums::GameVersion::SA:
+            case Enums::GameVersion::EM:
+                return KEY_ITEMS_RSE;
+            case Enums::GameVersion::GG:
+            case Enums::GameVersion::GP:
+            case Enums::GameVersion::GE:
+                return KEY_ITEMS_GG;
+            case Enums::GameVersion::SWSH:
+            case Enums::GameVersion::SW:
+            case Enums::GameVersion::SH:
+                return KEY_ITEMS_SWSH;
+            case Enums::GameVersion::PLA:
+                return KEY_ITEMS_PLA;
+            case Enums::GameVersion::BDSP:
+            case Enums::GameVersion::BD:
+            case Enums::GameVersion::SP:
+                return KEY_ITEMS_BDSP;
+            case Enums::GameVersion::SV:
+            case Enums::GameVersion::SL:
+            case Enums::GameVersion::VL:
+                return KEY_ITEMS_SV;
+            case Enums::GameVersion::ZA:
+                return KEY_ITEMS_ZA;
+            default:
+                return {};
+        }
+    }
+
     static std::span<const std::span<const uint16_t>> tableFor(Enums::GameVersion g) {
         switch (g) {
             case Enums::GameVersion::RBY:
@@ -1231,5 +1408,10 @@ namespace Names {
 
     size_t getPouchCount(Enums::GameVersion group) {
         return tableFor(group).size();
+    }
+
+    bool isKeyItem(Enums::GameVersion group, uint16_t itemId) {
+        const auto keyItems = keyItemsFor(group);
+        return std::binary_search(keyItems.begin(), keyItems.end(), itemId);
     }
 }

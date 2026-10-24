@@ -150,6 +150,48 @@ namespace Test
             }
             context.note("items offered across all pouches", "count=" + std::to_string(offeredItemCount));
 
+            // KEY ITEMS, for Add All Items. An empty table reads as "nothing here is a key item", which
+            // hands out every key item with key items switched off -- so "unknown" must not be possible.
+            std::set<uint16_t> offeredItemIds;
+            for (size_t pouchIndex = 0; pouchIndex < pouchCount; ++pouchIndex)
+            {
+                for (uint16_t itemId : Names::getPouchItems(context.group, pouchIndex))
+                {
+                    offeredItemIds.insert(itemId);
+                }
+            }
+            size_t keyItemCount = 0;
+            for (uint32_t itemId = 1; itemId <= 0xFFFF; ++itemId)
+            {
+                if (!Names::isKeyItem(context.group, static_cast<uint16_t>(itemId)))
+                {
+                    continue;
+                }
+                ++keyItemCount;
+                const char *itemName = Names::getItemNameFor(context.group, static_cast<uint16_t>(itemId));
+                context.check(isNamed(itemName) && std::string(itemName) != "???", "key item has no name in this generation", "item=" + std::to_string(itemId));
+                // Checked by NAME, so a table emitted for the wrong game is caught: every other check
+                // here asks the same table it is checking. Medicine is never a key item in any game
+                // (Gen 2's SecretPotion is a key item, so the names are matched whole).
+                const std::string keyItemName = itemName ? itemName : "";
+                const bool isMedicine = keyItemName == "Potion" || keyItemName == "Super Potion" || keyItemName == "Hyper Potion" || keyItemName == "Max Potion" || keyItemName == "Revive" || keyItemName == "Rare Candy" || keyItemName == "Antidote" || keyItemName == "Full Heal";
+                context.check(!isMedicine, "a medicine is listed as a key item, so the key-item table is another game's", "item=" + std::to_string(itemId) + " name=\"" + keyItemName + "\"");
+                // Gen 1's list is the ROM's own, which also flags items no pouch can be given (the
+                // Surfboard, the Pokedex, the badges); every other group's comes from PKHeX's pouch lists.
+                if (context.group != Enums::GameVersion::RBY)
+                {
+                    context.check(offeredItemIds.count(static_cast<uint16_t>(itemId)) != 0, "key item is offered by no pouch, so the key-item table and the pouch tables disagree", "item=" + std::to_string(itemId) + " name=\"" + (itemName ? itemName : "") + "\"");
+                }
+            }
+            context.check(keyItemCount > 0, "generation has no key-item table, so Add All Items would hand out every key item");
+            if (context.group == Enums::GameVersion::RBY)
+            {
+                // Hand-written from KeyItemFlags, so pinned: the Bicycle and HM01 are key items, a Potion and TM01 are not.
+                context.check(keyItemCount == 36, "Gen 1 key-item count changed from the ROM's 31 flagged items plus five HMs", "count=" + std::to_string(keyItemCount));
+                context.check(Names::isKeyItem(context.group, 6) && Names::isKeyItem(context.group, 196), "Gen 1 Bicycle or HM01 is not a key item");
+                context.check(!Names::isKeyItem(context.group, 20) && !Names::isKeyItem(context.group, 201), "Gen 1 Potion or TM01 is a key item");
+            }
+
             // Gen 1 has its own id space and its own name table. getItemNameFor is the one place
             // that picks a table, so this pins the two together: if the router ever stops sending
             // RBY to the Gen 1 table, every id here starts naming a modern item instead.

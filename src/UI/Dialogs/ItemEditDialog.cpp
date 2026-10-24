@@ -120,5 +120,56 @@ namespace UI
             drawEditChoiceButton(screen, framebuffer, cancelX, by, boxWidth, bh, "B", "Cancel", 0, Colors::PanelAlt);
             drawEditChoiceButton(screen, framebuffer, remX, by, boxWidth, bh, "A", "Remove", 1, Colors::Red, Colors::White);
         }
+
+        void drawAddAllItemsDialog(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
+        {
+            constexpr int dialogWidth = 600, dialogHeight = 440;
+            const int dialogX = (framebuffer.getWidth() - dialogWidth) / 2;
+            const int dialogY = (framebuffer.getHeight() - dialogHeight) / 2;
+            const int contentTop = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, dialogHeight, "Add All Items", Colors::Text);
+
+            screen.touchButtons.clear();
+
+            framebuffer.drawText(dialogX + 24, contentTop, "AMOUNT TO ADD TO EACH ITEM", Colors::TextDim, TextStyle::Caption);
+            const std::string amountText = std::to_string(screen.addAllItemsAmount);
+            int amountWidth, amountHeight;
+            framebuffer.measureText(amountText, amountWidth, amountHeight, TextStyle::Title);
+            framebuffer.drawText(dialogX + (dialogWidth - amountWidth) / 2, contentTop + 24, amountText, Colors::Accent, TextStyle::Title);
+            const std::string limitText = "Each item stops at the most the game allows.";
+            int limitWidth, limitHeight;
+            framebuffer.measureText(limitText, limitWidth, limitHeight, TextStyle::Caption);
+            framebuffer.drawText(dialogX + (dialogWidth - limitWidth) / 2, contentTop + 24 + amountHeight + 4, limitText, Colors::TextDim, TextStyle::Caption);
+
+            // The Include Key Items switch: a real touch target (id 41) as well as the X face button.
+            const int switchX = dialogX + 24, switchY = contentTop + 110, switchWidth = dialogWidth - 48, switchHeight = 42;
+            framebuffer.drawFilledRoundedRect(switchX, switchY, switchWidth, switchHeight, 8, Colors::PanelAlt);
+            framebuffer.drawRoundedRect(switchX, switchY, switchWidth, switchHeight, 8, Colors::Border, 1);
+            framebuffer.drawText(switchX + 16, switchY + (switchHeight - framebuffer.lineHeight(TextStyle::Body)) / 2, "Include Key Items", Colors::Text);
+            {
+                const char *switchStateText = screen.addAllItemsIncludesKeyItems ? "On" : "Off";
+                int stateWidth, stateHeight;
+                framebuffer.measureText(switchStateText, stateWidth, stateHeight, TextStyle::Body);
+                const int glyphWidth = buttonGlyphWidth(framebuffer, "X");
+                const int stateX = switchX + switchWidth - 16 - stateWidth;
+                framebuffer.drawText(stateX, switchY + (switchHeight - stateHeight) / 2, switchStateText, screen.addAllItemsIncludesKeyItems ? Colors::Accent : Colors::TextDim);
+                buttonGlyph(framebuffer, stateX - 12 - glyphWidth, switchY + switchHeight / 2, "X", false);
+            }
+            screen.touchButtons.push_back({41, switchX, switchY, switchWidth, switchHeight});
+            if (screen.addAllItemsIncludesKeyItems)
+            {
+                framebuffer.drawText(switchX, switchY + switchHeight + 8, "Key items given early can skip or break story events.", Colors::Warning, TextStyle::Caption);
+            }
+            else
+            {
+                framebuffer.drawText(switchX, switchY + switchHeight + 8, "Key items are left out.", Colors::TextDim, TextStyle::Caption);
+            }
+
+            const int choiceButtonHeight = TouchTargetMin, choiceButtonTop = dialogY + dialogHeight - choiceButtonHeight - 14;
+            drawEditStepRow(screen, framebuffer, dialogX, dialogWidth, choiceButtonTop - 58 - 14, 58);
+
+            const int choiceButtonWidth = 180;
+            drawEditChoiceButton(screen, framebuffer, dialogX + 24, choiceButtonTop, choiceButtonWidth, choiceButtonHeight, "B", "Cancel", 0);
+            drawEditChoiceButton(screen, framebuffer, dialogX + dialogWidth - 24 - choiceButtonWidth, choiceButtonTop, choiceButtonWidth, choiceButtonHeight, "A", "Add", 1);
+        }
     }
 }
