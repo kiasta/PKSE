@@ -2,6 +2,7 @@
 #define UI_TRAINER_VIEW_SCREEN_H
 
 #include <cstddef> // std::byte (details.editSnapshot)
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -136,8 +137,23 @@ namespace UI
         void closeDetailsModal(); // reset all details-modal / edit state and close it
         std::vector<int> visibleItemIndices() const; // raw indices in the current pouch worth showing (count > 0)
         int currentPouchCapacity() const;            // slot limit of the current pouch; 0 = appending unsupported
+        int pouchCapacity(int categoryIndex) const;  // the same, for any pouch
         void sortStorageBox(int pane, int box);      // pack + order one box, pinning party-linked slots
         int currentItemMaxCount() const;             // per-stack ceiling for the current pouch (never 0)
+        int pouchItemMaxCount(int categoryIndex) const; // the same, for any pouch
+        /// The stack ceiling for one item: the pouch's, lowered where the game limits that item on its
+        /// own (an HM, a Sword/Shield TM). 0 means the item must not be given at all.
+        int itemMaxCount(int categoryIndex, uint16_t itemId) const;
+        /// What "Add All Items" did: entries it created or raised, and legal items left out because
+        /// their pouch had no free slot.
+        struct AddAllItemsResult
+        {
+            int changedItemCount = 0;
+            int noRoomItemCount = 0;
+        };
+        /// Adds `amountToAdd` of every legal item to every pouch, clamped per item. Never lowers a
+        /// count. Key items are left out unless `includeKeyItems`.
+        AddAllItemsResult addAllItems(int amountToAdd, bool includeKeyItems);
         void stepItemPouch(int pouchStep);           // L/R: move to the next (+1) or previous (-1) pouch, wrapping
 
         // Public state - accessible by UI components (Panels, Dialogs, Modals)
@@ -409,6 +425,10 @@ namespace UI
         // Items list: Y asks before removing the selected item. A in this dialog does the delete,
         // B cancels. Only reachable from the Items view, so it never lets X-to-save fire (home-menu only).
         bool itemRemoveConfirmActive = false;
+        // Items list: ZR opens "Add All Items". The amount is what each item gains, capped per item.
+        bool addAllItemsDialogActive = false;
+        int addAllItemsAmount = 999;
+        bool addAllItemsIncludesKeyItems = false;
 
         bool saveConfirmActive = false;
         // Save destination picker.

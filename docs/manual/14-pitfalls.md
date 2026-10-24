@@ -361,6 +361,13 @@ not a cosmetic issue.
 a save edited elsewhere can already hold an over-cap count, so opening the dialog must only ever move
 it back into range.
 
+Some items have a ceiling of their own, below their pouch's. `itemMaxCount(pouch, itemId)` applies
+PKHeX's per-item rules (`PlayerBag*.GetMaxCount`) on top of the pouch: one of each HM (Gens 2-4),
+one of each Sword/Shield TM (TRs stack), one of each Scarlet/Violet picnic accessory, two Z-Rings in
+Sun/Moon and Ultra Sun/Ultra Moon, one of any key item, and none at all for Legends: Z-A's
+Cherished Ring and Colorful Screw. Add All Items gives every item at most that, and it **never
+lowers** a count that is already higher. The Edit Item dialog still clamps to the pouch's ceiling.
+
 ---
 
 ## 26. DLC revision is not a content gate

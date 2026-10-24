@@ -12,7 +12,7 @@ PKSE is a homebrew application for conveniently editing Pokemon save files on th
 ## **Features**
 - Backup and restore save files, directly on the console.
 - Edit party and box Pokemon: species, level, stats, IVs/EVs (AVs in Let's Go), nature, ability, moves, held item, ball, OT/met/origin, shininess and gender.
-- Edit trainer info and item pouches.
+- Edit trainer info and item pouches. **Add All Items** (ZR in the Items view) gives you every item each pocket can hold, in the amount you choose, capped at what the game allows for each item. Key items are left out unless you switch them on, since getting one early can skip or break story events.
 - **Older generations** — open a save file from an emulator, a cartridge dump or a 3DS save manager and edit it the same way. Boxes, party, items, trainer details, the creator, the legality checker and the bank all work as they do for the Switch games.
 - **Pokemon creator** — build a Pokemon from scratch in any supported game's format, with legal options highlighted.
 - **Legality checker** — flags illegal values as you edit, and checks whether a real encounter in the Pokemon's origin game could have produced it (informational; it never blocks or auto-changes anything).

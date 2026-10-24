@@ -25,6 +25,7 @@
 #include <functional>
 #include <set>
 #include <span>
+#include <type_traits>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,12 @@
 #include "Trainer/Trainer8LA.h"
 #include "Trainer/Trainer9LZA.h"
 #include "Names/LocationNames.h" // the met-list dead-end hint is checked against the egg-source table
+#include "Names/ItemPouches.h"   // Add All Items is checked against the same legal lists
+#include "Trainer/Inventory8SWSH.h"
+#include "Trainer/Inventory9SV.h"
+#include "Trainer/Trainer3RSE.h"
+#include "Trainer/Trainer8BDSP.h"
+#include "Trainer/Trainer9SV.h"
 #include "UI/ListSearch.h"
 #include "UI/Common.h"
 #include "UI/ScreenChrome.h" // NAV_BAR_HEIGHT -- the one-nav-bar rule is checked against its geometry
@@ -608,6 +615,212 @@ namespace {
         d.expect(s.itemSearch.isFiltering(), "tapping the nav bar's Search badge did not start a search");
         d.expect(!s.pickerActive, "tapping the nav bar's Search badge opened the add-item picker");
         d.step("clear the search").type("").press(Btn::Y).frame(2);
+    }
+
+    /// How a save is opened from its file, and how a trainer is written back and opened again, for the
+    /// one format it holds. Add All Items checks what a RELOAD of the written save holds, because an
+    /// item the writer drops on the floor is still in the trainer the editor added it to.
+    struct SaveLoader {
+        std::function<std::unique_ptr<Trainer::Trainer>()> open;
+        std::function<std::unique_ptr<Trainer::Trainer>(Trainer::Trainer&)> writeAndReopen;
+    };
+
+    const Trainer::InventoryItem* findItem(const std::vector<Trainer::InventoryItem>& pouch, uint16_t itemId) {
+        for (const Trainer::InventoryItem& item : pouch)
+            if (item.itemId == itemId) return &item;
+        return nullptr;
+    }
+
+    /// Every stack that has a count must come back from a reload with that count, and nothing the
+    /// trainer does not hold may appear. Compared as a sorted list of {id, count} per pouch: a bag can
+    /// hold two stacks of one item (a Crystal or Ruby bag past 99, a Sword/Shield bag past 999), and
+    /// an id-indexed writer is free to read them back in id order.
+    void expectItemsSurviveReload(Test::Context& context, const Trainer::Trainer& written, const Trainer::Trainer& reopened, const std::string& where) {
+        if (!context.check(written.items.size() == reopened.items.size(), "a reload of the written save has a different number of pouches", where + " written=" + std::to_string(written.items.size()) + " reopened=" + std::to_string(reopened.items.size())))
+            return;
+        const auto stacksOf = [](const std::vector<Trainer::InventoryItem>& pouch) {
+            std::vector<std::pair<uint16_t, uint16_t>> stacks;
+            for (const Trainer::InventoryItem& item : pouch)
+                if (item.count != 0) stacks.emplace_back(item.itemId, item.count);
+            std::sort(stacks.begin(), stacks.end());
+            return stacks;
+        };
+        int differingPouchCount = 0;
+        std::string firstProblem;
+        for (size_t pouchIndex = 0; pouchIndex < written.items.size(); ++pouchIndex) {
+            const auto writtenStacks = stacksOf(written.items[pouchIndex]);
+            const auto reopenedStacks = stacksOf(reopened.items[pouchIndex]);
+            if (writtenStacks == reopenedStacks) continue;
+            if (!differingPouchCount++) {
+                size_t stackIndex = 0;
+                while (stackIndex < writtenStacks.size() && stackIndex < reopenedStacks.size() && writtenStacks[stackIndex] == reopenedStacks[stackIndex]) ++stackIndex;
+                const auto describe = [&](const std::vector<std::pair<uint16_t, uint16_t>>& stacks) {
+                    return stackIndex < stacks.size() ? std::to_string(stacks[stackIndex].first) + "x" + std::to_string(stacks[stackIndex].second) : std::string("none");
+                };
+                firstProblem = "pouch=" + std::to_string(pouchIndex) + " wroteStacks=" + std::to_string(writtenStacks.size()) + " readStacks=" + std::to_string(reopenedStacks.size()) + " firstDifference wrote=" + describe(writtenStacks) + " read=" + describe(reopenedStacks);
+            }
+        }
+        context.check(differingPouchCount == 0, "Add All Items did not survive writing the save and reading it back", where + " pouches=" + std::to_string(differingPouchCount) + " " + firstProblem);
+    }
+
+    /// What one item should hold after Add All Items gave `amount`, checked against the bag before it.
+    /// The per-item ceilings PKHeX documents are spelled out here as well as in the screen, for the
+    /// items that have one, so a rule dropped from itemMaxCount() is caught rather than agreed with.
+    int expectedCeiling(Enums::GameVersion group, int pouchIndex, uint16_t itemId, int screenCeiling) {
+        using Version = Enums::GameVersion;
+        if (group == Version::GSC && itemId >= 243 && itemId <= 249) return 1;                  // HM01-HM07
+        if (Enums::isGen3Group(group) && itemId >= 339 && itemId <= 346) return 1;             // HM01-HM08
+        if ((group == Version::DP || group == Version::PT || group == Version::HGSS) && itemId >= 420 && itemId <= 427) return 1;
+        if (group == Version::SWSH && pouchIndex == static_cast<int>(Trainer::PouchType8SWSH::TMs) && !(itemId >= 1130 && itemId < 1230)) return 1;
+        if (group == Version::SV && pouchIndex == static_cast<int>(Trainer::PouchType9SV::Ingredients)) {
+            const bool isPick = (itemId >= 2334 && itemId <= 2342) || (itemId >= 2385 && itemId <= 2394) || itemId == 2548;
+            if (((itemId >= 2311 && itemId <= 2400) || (itemId >= 2417 && itemId <= 2437)) && !isPick) return 1;   // picnic accessories
+        }
+        if (group == Version::ZA && (itemId == 2612 || itemId == 2619)) return 0;               // Cherished Ring, Colorful Screw
+        if ((group == Version::SM || group == Version::USUM) && itemId == 797) return 2;        // the Z-Ring, given twice
+        if (Names::isKeyItem(group, itemId)) return 1;
+        return screenCeiling;
+    }
+
+    /// Add All Items, driven through its dialog: the nav bar names it, ZR opens it, the amount and the
+    /// key-item switch respond to keys and taps, B leaves the bag alone, and A gives every legal item
+    /// what the issue asks for -- the amount, clamped to the item's limit, never lowering a stack,
+    /// and no key items unless they were asked for. Then the save is written and read back.
+    void testAddAllItems(Test::Report& report, const std::string& target, Enums::GameVersion group, const SaveLoader& loader) {
+        Test::Context context;
+        context.report = &report; context.suite = "ui"; context.target = target; context.group = group;
+        report.setScope(target, "ui");
+        std::printf("  add-all-items  %s\n", target.c_str());
+
+        for (const bool withKeyItems : {false, true}) {
+            std::unique_ptr<Trainer::Trainer> tr = loader.open();
+            if (!context.check(tr != nullptr, "the save could not be opened for the Add All Items test")) return;
+            context.version = tr->getGameVersion(); context.trainer = tr.get();
+            const std::vector<std::vector<Trainer::InventoryItem>> itemsBefore = tr->items;
+            TrainerViewScreen s(*tr, target, std::string("/tmp/pkse-uitest"), 0, AccountUid{}, false);
+            const std::string pass = withKeyItems ? "keyItems=1" : "keyItems=0";
+            Driver d(context, s, withKeyItems ? "add-all-items-with-key-items" : "add-all-items");
+
+            d.step("open the Items view");
+            gotoHome(d, s, 3);
+            d.press(Btn::A).frame();
+            if (!d.expect(s.detailViewActive && s.selectedMode == TrainerViewScreen::ViewMode::Items, "could not open the Items view", pass)) return;
+
+            bool barNamesIt = false;
+            for (const UI::NavHit& hit : UI::g_navHits)
+                if (hit.button == Btn::ZR) barNamesIt = true;
+            d.expect(barNamesIt && d.see("Add All"), "the Items nav bar does not offer Add All on ZR", pass);
+
+            d.step("ZR opens Add All Items").press(Btn::ZR).frame();
+            if (!d.expect(s.addAllItemsDialogActive, "ZR in the Items view did not open Add All Items", pass)) return;
+            d.see("Add All Items");
+            expectOneNavBar(d, "Add All Items open");
+            d.expect(s.addAllItemsAmount == 999, "Add All Items does not start at the most an item can hold", "amount=" + std::to_string(s.addAllItemsAmount));
+
+            if (!withKeyItems) {
+                d.step("step the amount");
+                d.press(Btn::Left).frame();
+                d.expect(s.addAllItemsAmount == 998, "Left did not take 1 off the amount", "amount=" + std::to_string(s.addAllItemsAmount));
+                d.press(Btn::ZR).frame();
+                d.expect(s.addAllItemsAmount == 999, "ZR raised the amount past 999", "amount=" + std::to_string(s.addAllItemsAmount));
+                d.press(Btn::ZL, 12).frame();
+                d.expect(s.addAllItemsAmount == 1, "the amount went below 1", "amount=" + std::to_string(s.addAllItemsAmount));
+                d.press(Btn::R).press(Btn::Right, 2).frame();
+                d.expect(s.addAllItemsAmount == 13, "R and Right did not add 10 and 1", "amount=" + std::to_string(s.addAllItemsAmount));
+                d.press(Btn::L).frame();
+                d.expect(s.addAllItemsAmount == 3, "L did not take 10 off the amount", "amount=" + std::to_string(s.addAllItemsAmount));
+
+                d.step("the key-item switch, by key and by tap");
+                d.press(Btn::X).frame();
+                d.expect(s.addAllItemsIncludesKeyItems && d.see("Key items given early"), "X did not switch key items on, or no warning was shown", "on=" + std::to_string(s.addAllItemsIncludesKeyItems));
+                int switchCenterX = -1, switchCenterY = -1;
+                for (const UI::TouchButton& button : s.touchButtons)
+                    if (button.buttonId == 41) { switchCenterX = button.hitX + button.hitWidth / 2; switchCenterY = button.hitY + button.hitHeight / 2; }
+                if (d.expect(switchCenterX >= 0, "the Include Key Items switch is not a touch target"))
+                    d.tap(switchCenterX, switchCenterY).frame(2);
+                d.expect(!s.addAllItemsIncludesKeyItems && d.see("Key items are left out"), "tapping the Include Key Items switch did not switch key items off", "on=" + std::to_string(s.addAllItemsIncludesKeyItems));
+
+                d.step("B cancels and changes nothing").press(Btn::B).frame();
+                d.expect(!s.addAllItemsDialogActive, "B did not close Add All Items");
+                bool unchanged = tr->items.size() == itemsBefore.size();
+                for (size_t pouchIndex = 0; unchanged && pouchIndex < itemsBefore.size(); ++pouchIndex) {
+                    unchanged = tr->items[pouchIndex].size() == itemsBefore[pouchIndex].size();
+                    for (size_t itemIndex = 0; unchanged && itemIndex < itemsBefore[pouchIndex].size(); ++itemIndex)
+                        unchanged = tr->items[pouchIndex][itemIndex].itemId == itemsBefore[pouchIndex][itemIndex].itemId && tr->items[pouchIndex][itemIndex].count == itemsBefore[pouchIndex][itemIndex].count;
+                }
+                d.expect(unchanged && !s.hasUnsavedChanges, "cancelling Add All Items changed the bag");
+                d.step("reopen with ZR").press(Btn::ZR).frame();
+                d.expect(s.addAllItemsAmount == 3, "Add All Items forgot the amount between openings", "amount=" + std::to_string(s.addAllItemsAmount));
+            } else {
+                d.step("switch key items on").press(Btn::X).frame();
+            }
+
+            const int amount = s.addAllItemsAmount;
+            s.storageStatus.clear();
+            int addCenterX = -1, addCenterY = -1;
+            for (const UI::TouchButton& button : s.touchButtons)
+                if (button.buttonId == 1) { addCenterX = button.hitX + button.hitWidth / 2; addCenterY = button.hitY + button.hitHeight / 2; }
+            if (withKeyItems && d.expect(addCenterX >= 0, "the Add button is not a touch target"))
+                d.step("tap Add").tap(addCenterX, addCenterY).frame(TrainerViewScreen::TAP_PRESS_FRAMES + 1);
+            else
+                d.step("A adds").press(Btn::A).frame();
+            if (!d.expect(!s.addAllItemsDialogActive, "Add All Items stayed open after Add", pass)) return;
+            std::printf("      %s amount=%d: %s\n", pass.c_str(), s.addAllItemsAmount, s.storageStatus.c_str());
+            d.expect(s.storageStatus.rfind("Added or topped up", 0) == 0 || s.storageStatus.rfind("Every item is already", 0) == 0, "Add All Items did not say what it did", pass + " status=\"" + s.storageStatus + "\"");
+
+            int addedCount = 0, wrongCount = 0, loweredCount = 0, keyItemCount = 0, missingCount = 0;
+            std::string firstProblem;
+            const auto problem = [&](int& counter, const std::string& text) { if (!counter++ && firstProblem.empty()) firstProblem = text; };
+            for (size_t pouchIndex = 0; pouchIndex < tr->items.size() && pouchIndex < itemsBefore.size(); ++pouchIndex) {
+                const auto& before = itemsBefore[pouchIndex];
+                const auto& after = tr->items[pouchIndex];
+                // Add All Items only raises counts and appends, so every stack the bag held is still at its
+                // own position -- which also keeps two stacks of one item apart.
+                for (size_t itemIndex = 0; itemIndex < before.size(); ++itemIndex) {
+                    const bool kept = itemIndex < after.size() && after[itemIndex].itemId == before[itemIndex].itemId && after[itemIndex].count >= before[itemIndex].count;
+                    if (!kept)
+                        problem(loweredCount, "pouch=" + std::to_string(pouchIndex) + " index=" + std::to_string(itemIndex) + " item=" + std::to_string(before[itemIndex].itemId) + " before=" + std::to_string(before[itemIndex].count) + " after=" + (itemIndex < after.size() ? std::to_string(after[itemIndex].itemId) + "x" + std::to_string(after[itemIndex].count) : std::string("gone")));
+                }
+                const bool pouchFull = static_cast<int>(after.size()) >= s.pouchCapacity(static_cast<int>(pouchIndex));
+                for (const uint16_t itemId : Names::getPouchItems(group, pouchIndex)) {
+                    const Trainer::InventoryItem* was = findItem(before, itemId);
+                    const Trainer::InventoryItem* now = findItem(after, itemId);
+                    const int previousCount = was ? was->count : 0;
+                    const int currentCount = now ? now->count : 0;
+                    const std::string where = "pouch=" + std::to_string(pouchIndex) + " item=" + std::to_string(itemId) + " before=" + std::to_string(previousCount) + " after=" + std::to_string(currentCount);
+                    if (!withKeyItems && Names::isKeyItem(group, itemId)) {
+                        if (currentCount != previousCount) problem(keyItemCount, where);
+                        continue;
+                    }
+                    const int ceiling = expectedCeiling(group, static_cast<int>(pouchIndex), itemId, s.pouchItemMaxCount(static_cast<int>(pouchIndex)));
+                    if (!now && !was) {
+                        if (!pouchFull && ceiling > 0) problem(missingCount, where + " (the pouch had room)");
+                        continue;
+                    }
+                    const int expectedCount = std::max(previousCount, std::min(previousCount + amount, ceiling));
+                    if (currentCount != expectedCount) problem(wrongCount, where + " expected=" + std::to_string(expectedCount));
+                    else if (currentCount > previousCount) ++addedCount;
+                }
+            }
+            d.expect(loweredCount == 0, "Add All Items lowered or removed an item the bag already held", pass + " " + firstProblem);
+            d.expect(keyItemCount == 0, "Add All Items changed a key item while key items were switched off", pass + " " + firstProblem);
+            d.expect(wrongCount == 0, "Add All Items gave an item the wrong count", pass + " amount=" + std::to_string(amount) + " " + firstProblem);
+            d.expect(missingCount == 0, "Add All Items left out a legal item while its pouch still had room", pass + " " + firstProblem);
+            d.expect(addedCount > 0 || s.storageStatus.rfind("Every item is already", 0) == 0, "Add All Items added nothing and did not say why", pass);
+            d.expect(addedCount == 0 || s.hasUnsavedChanges, "Add All Items changed the bag without marking the save as changed", pass);
+            if (withKeyItems) {
+                int keyItemsGiven = 0;
+                for (size_t pouchIndex = 0; pouchIndex < tr->items.size(); ++pouchIndex)
+                    for (const Trainer::InventoryItem& item : tr->items[pouchIndex])
+                        if (item.count > 0 && Names::isKeyItem(group, item.itemId)) ++keyItemsGiven;
+                d.expect(keyItemsGiven > 0, "Add All Items with key items switched on holds no key item at all", pass);
+            }
+
+            if (std::unique_ptr<Trainer::Trainer> reopened = loader.writeAndReopen(*tr))
+                expectItemsSurviveReload(context, *tr, *reopened, pass);
+            else
+                context.fail("the save written after Add All Items could not be read back", pass);
+        }
     }
 
     /// The Boxes view's Y opens the per-Pokemon menu the Storage view opens with A, so Clone, Export and
@@ -1661,6 +1874,123 @@ namespace {
         return true;
     }
 
+    /// TrainerT's own detect(); Gen 1's also reports the Japanese layout, which this does not need.
+    template <typename TrainerT>
+    bool detectsAs(const std::vector<uint8_t>& bytes) {
+        if constexpr (std::is_same_v<TrainerT, Trainer::Trainer1RBY>) {
+            bool japanese = false;
+            return TrainerT::detect(bytes, japanese);
+        } else {
+            return TrainerT::detect(bytes);
+        }
+    }
+
+    /// A loose save file, read and written by its own class.
+    template <typename TrainerT>
+    SaveLoader looseLoader(const std::string& path) {
+        return {
+            [path]() -> std::unique_ptr<Trainer::Trainer> {
+                std::vector<uint8_t> bytes = readFile(path);
+                if (bytes.empty()) return nullptr;
+                if (!detectsAs<TrainerT>(bytes) && !(Save::stripRtcFooter(bytes) && detectsAs<TrainerT>(bytes))) return nullptr;
+                return std::make_unique<TrainerT>(std::move(bytes), path);
+            },
+            [path](Trainer::Trainer& trainer) -> std::unique_ptr<Trainer::Trainer> {
+                std::vector<uint8_t> written = static_cast<TrainerT&>(trainer).serialize();
+                return std::make_unique<TrainerT>(std::move(written), path);
+            }};
+    }
+
+    /// A Switch save of encrypted blocks.
+    template <typename TrainerT>
+    SaveLoader scBlockLoader(const std::string& path) {
+        return {
+            [path]() -> std::unique_ptr<Trainer::Trainer> {
+                std::vector<uint8_t> bytes = readFile(path);
+                if (bytes.empty()) return nullptr;
+                std::vector<Save::Block> blocks = Encryption::decrypt(bytes.data(), bytes.size());
+                if (blocks.empty()) return nullptr;
+                return std::make_unique<TrainerT>(std::move(blocks));
+            },
+            [](Trainer::Trainer& trainer) -> std::unique_ptr<Trainer::Trainer> {
+                trainer.updateItemBlock();
+                std::vector<uint8_t> written = Encryption::encrypt(trainer.getBlocks());
+                std::vector<Save::Block> blocks = Encryption::decrypt(written.data(), written.size());
+                if (blocks.empty()) return nullptr;
+                return std::make_unique<TrainerT>(std::move(blocks));
+            }};
+    }
+
+    /// Add All Items on every format PKSE edits, from the save tree. Separate from runUI because three
+    /// of these (Ruby/Sapphire/Emerald, Brilliant Diamond/Shining Pearl, Scarlet/Violet) are not
+    /// walked there, and this test needs each one.
+    int runAddAllItems(Test::Report& report, const std::string& saveRoot) {
+        struct Target { const char* label; Enums::GameVersion group; SaveLoader loader; };
+        const std::string letsGoPath = SaveTree::letsGoPikachu(saveRoot);
+        std::string bdspPath = SaveTree::folderFor(saveRoot, "Shining Pearl") + "/SaveData.bin";
+        if (readFile(bdspPath).empty()) bdspPath = SaveTree::forTitle(saveRoot, "Shining Pearl");
+        const std::vector<Target> targets = {
+            {"Red", Enums::GameVersion::RBY, looseLoader<Trainer::Trainer1RBY>(SaveTree::red(saveRoot))},
+            {"Gold", Enums::GameVersion::GSC, looseLoader<Trainer::Trainer2GSC>(SaveTree::forTitle(saveRoot, "Gold"))},
+            {"Crystal", Enums::GameVersion::GSC, looseLoader<Trainer::Trainer2GSC>(SaveTree::forTitle(saveRoot, "Crystal"))},
+            {"Ruby", Enums::GameVersion::RSE, looseLoader<Trainer::Trainer3RSE>(SaveTree::ruby(saveRoot))},
+            {"Emerald", Enums::GameVersion::RSE, looseLoader<Trainer::Trainer3RSE>(SaveTree::emerald(saveRoot))},
+            {"FireRed", Enums::GameVersion::FRLG, looseLoader<Trainer::Trainer3FRLG>(SaveTree::fireRed(saveRoot))},
+            {"Pearl", Enums::GameVersion::DP, looseLoader<Trainer::Trainer4DP>(SaveTree::forTitle(saveRoot, "Pearl"))},
+            {"Platinum", Enums::GameVersion::PT, looseLoader<Trainer::Trainer4PT>(SaveTree::forTitle(saveRoot, "Platinum"))},
+            {"SoulSilver", Enums::GameVersion::HGSS, looseLoader<Trainer::Trainer4HGSS>(SaveTree::forTitle(saveRoot, "SoulSilver"))},
+            {"Black", Enums::GameVersion::BW, looseLoader<Trainer::Trainer5BW>(SaveTree::forTitle(saveRoot, "Black"))},
+            {"Black 2", Enums::GameVersion::B2W2, looseLoader<Trainer::Trainer5B2W2>(SaveTree::forTitle(saveRoot, "Black 2"))},
+            {"X", Enums::GameVersion::XY, looseLoader<Trainer::Trainer6XY>(SaveTree::forTitle(saveRoot, "X"))},
+            {"Omega Ruby", Enums::GameVersion::ORAS, looseLoader<Trainer::Trainer6ORAS>(SaveTree::forTitle(saveRoot, "Omega Ruby"))},
+            {"Sun", Enums::GameVersion::SM, looseLoader<Trainer::Trainer7SM>(SaveTree::forTitle(saveRoot, "Sun"))},
+            {"Ultra Sun", Enums::GameVersion::USUM, looseLoader<Trainer::Trainer7USUM>(SaveTree::ultraSun(saveRoot))},
+            {"Let's Go Pikachu", Enums::GameVersion::GG, SaveLoader{
+                [letsGoPath]() -> std::unique_ptr<Trainer::Trainer> {
+                    std::vector<uint8_t> bytes = readFile(letsGoPath);
+                    if (bytes.size() < Trainer::SAVE_SIZE7_LGPE) return nullptr;
+                    std::vector<uint8_t> area(bytes.begin(), bytes.begin() + Trainer::SAVE_SIZE7_LGPE);
+                    return std::make_unique<Trainer::Trainer7LGPE>(Trainer::createBlocksFromSaveData7LGPE(area));
+                },
+                [letsGoPath](Trainer::Trainer& trainer) -> std::unique_ptr<Trainer::Trainer> {
+                    trainer.updateItemBlock();
+                    std::vector<uint8_t> bytes = readFile(letsGoPath);
+                    if (bytes.size() < Trainer::SAVE_SIZE7_LGPE) return nullptr;
+                    Trainer::writeBlocksToSaveData7LGPE(bytes, trainer.getBlocks());
+                    std::vector<uint8_t> area(bytes.begin(), bytes.begin() + Trainer::SAVE_SIZE7_LGPE);
+                    return std::make_unique<Trainer::Trainer7LGPE>(Trainer::createBlocksFromSaveData7LGPE(area));
+                }}},
+            {"Shield", Enums::GameVersion::SWSH, scBlockLoader<Trainer::Trainer8SWSH>(SaveTree::shield(saveRoot))},
+            {"Shining Pearl", Enums::GameVersion::BDSP, SaveLoader{
+                [bdspPath]() -> std::unique_ptr<Trainer::Trainer> {
+                    std::vector<uint8_t> bytes = readFile(bdspPath);
+                    if (bytes.empty()) return nullptr;
+                    return std::make_unique<Trainer::Trainer8BDSP>(std::move(bytes));
+                },
+                [](Trainer::Trainer& trainer) -> std::unique_ptr<Trainer::Trainer> {
+                    auto& bdsp = static_cast<Trainer::Trainer8BDSP&>(trainer);
+                    bdsp.updateItemBlock();
+                    bdsp.recomputeHash();
+                    return std::make_unique<Trainer::Trainer8BDSP>(bdsp.getSaveData());
+                }}},
+            {"Legends Arceus", Enums::GameVersion::PLA, scBlockLoader<Trainer::Trainer8LA>(SaveTree::legendsArceus(saveRoot))},
+            {"Violet", Enums::GameVersion::SV, scBlockLoader<Trainer::Trainer9SV>(SaveTree::violet(saveRoot))},
+            {"Legends Z-A", Enums::GameVersion::ZA, scBlockLoader<Trainer::Trainer9LZA>(SaveTree::legendsZA(saveRoot))},
+        };
+        std::set<Enums::GameVersion> groupsTested;
+        for (const Target& target : targets) {
+            if (!target.loader.open()) {
+                report.setScope(target.label, "ui");
+                Test::Context context; context.report = &report; context.suite = "ui"; context.target = target.label;
+                context.skip("no save for this title, so Add All Items was not tested on it", SaveTree::missing(saveRoot, target.label));
+                continue;
+            }
+            testAddAllItems(report, target.label, target.group, target.loader);
+            groupsTested.insert(target.group);
+        }
+        return static_cast<int>(groupsTested.size());
+    }
+
     /// A refusal the file browser reports has to be DRAWN. The save picker always set its reason in
     /// `status`, and the browser drew that only for an empty folder -- which a refused file never is,
     /// being a row of the listing -- so every refusal was invisible and the pick read as a dead A
@@ -1877,6 +2207,15 @@ int main(int argc, char** argv) {
         // weight, so the creator journey checks something here it checks nowhere else.
         opened += openSCBlock<Trainer::Trainer8LA>(report, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot), 0x01001F5010DFA000ULL) ? 1 : 0;
         opened += openSCBlock<Trainer::Trainer9LZA>(report, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
+    }
+
+    if (!saveRoot.empty()) {
+        // Every one of the nineteen save formats, so a pouch or a writer that cannot take a full bag
+        // is found on the format it breaks.
+        const int addAllGroupCount = runAddAllItems(report, saveRoot);
+        report.setScope("-", "ui");
+        Test::Context context; context.report = &report; context.suite = "ui";
+        context.check(addAllGroupCount == 19, "Add All Items was not tested on every save format", "formats=" + std::to_string(addAllGroupCount) + "/19");
     }
 
     if (opened == 0) {

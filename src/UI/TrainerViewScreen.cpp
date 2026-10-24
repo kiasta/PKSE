@@ -46,6 +46,7 @@
 #include "Trainer/Inventory9SV.h"
 #include "Trainer/Inventory8LA.h"
 #include "Trainer/Inventory8BDSP.h"
+#include "Trainer/Inventory8SWSH.h"
 #include "Trainer/Inventory7LGPE.h"
 #include "Trainer/Inventory3FRLG.h"
 #include "Trainer/Inventory3RSE.h"
@@ -925,6 +926,8 @@ namespace UI
             return "Left/Right: +/-1  |  Up/Down: +/-10  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel";
         if (itemRemoveConfirmActive)
             return "A: Remove  |  B: Cancel";
+        if (addAllItemsDialogActive)
+            return "Left/Right: +/-1  |  L/R: +/-10  |  ZL/ZR: +/-100  |  X: Key Items  |  A: Add  |  B: Cancel";
         if (saveConfirmActive)
             return "Up/Down: Choose  |  A: Save  |  B: Cancel";
         if (releaseConfirmActive)
@@ -2487,8 +2490,12 @@ namespace UI
     // its item block is resized on write, so appending without a documented bound could overflow it.
     int TrainerViewScreen::currentPouchCapacity() const
     {
+        return pouchCapacity(selectedCategory);
+    }
+
+    int TrainerViewScreen::pouchCapacity(int categoryIndex) const
+    {
         using namespace Trainer;
-        const int categoryIndex = selectedCategory;
         if (categoryIndex < 0)
             return 0;
         switch (trainer.getGameGroup())
@@ -2536,8 +2543,12 @@ namespace UI
     //     nothing is gained by allowing counts no game will ever show.
     int TrainerViewScreen::currentItemMaxCount() const
     {
+        return pouchItemMaxCount(selectedCategory);
+    }
+
+    int TrainerViewScreen::pouchItemMaxCount(int categoryIndex) const
+    {
         using Version = Enums::GameVersion;
-        const int categoryIndex = selectedCategory;
         switch (trainer.getGameGroup())
         {
         case Version::FRLG:
@@ -2563,6 +2574,128 @@ namespace UI
             return pouchMaxCount > 0 ? pouchMaxCount : 999;
         }
         }
+    }
+
+    // PKHeX's per-item limits (PlayerBag*.GetMaxCount), on top of the pouch's own.
+    int TrainerViewScreen::itemMaxCount(int categoryIndex, uint16_t itemId) const
+    {
+        using Version = Enums::GameVersion;
+        const Version group = trainer.getGameGroup();
+        const int pouchMaxCount = pouchItemMaxCount(categoryIndex);
+        // A player only ever gets one of each HM. PKHeX caps it in the TM pocket alone, but Gen 2's and
+        // Ruby/Sapphire's PC accepts HMs too, and one is still the only count a real save holds.
+        const bool isHM = (group == Version::GSC && itemId >= 243 && itemId <= 249) || (Enums::isGen3Group(group) && itemId >= 339 && itemId <= 346) || ((group == Version::DP || group == Version::PT || group == Version::HGSS) && ((itemId >= 420 && itemId <= 427) || itemId == 737));
+        if (isHM) return std::min(pouchMaxCount, 1);
+        switch (group)
+        {
+        // The Z-Ring is held twice: Hala takes the first one back during the story and gives it again.
+        case Version::SM:
+        case Version::USUM:
+        {
+            constexpr uint16_t zRingItemId = 797;
+            if (itemId == zRingItemId) return 2;
+            break;
+        }
+            break;
+        // TMs are kept once each; TRs stack.
+        case Version::SWSH:
+        {
+            constexpr uint16_t firstTechnicalRecordItemId = 1130;
+            constexpr uint16_t technicalRecordCount = 100;
+            const bool isTechnicalRecord = itemId >= firstTechnicalRecordItemId && itemId < firstTechnicalRecordItemId + technicalRecordCount;
+            if (categoryIndex == static_cast<int>(Trainer::PouchType8SWSH::TMs) && !isTechnicalRecord) return 1;
+            break;
+        }
+        // Picnic accessories (tablecloths, chairs, cups) are kept once each. The picks inside those
+        // ranges are ingredients and stack.
+        case Version::SV:
+            if (categoryIndex == static_cast<int>(Trainer::PouchType9SV::Ingredients))
+            {
+                const bool isPick = (itemId >= 2334 && itemId <= 2342) || (itemId >= 2385 && itemId <= 2394) || itemId == 2548;
+                const bool isAccessory = ((itemId >= 2311 && itemId <= 2400) || (itemId >= 2417 && itemId <= 2437)) && !isPick;
+                if (isAccessory) return 1;
+            }
+            break;
+        // The Cherished Ring is a quest item the player never holds, and the Colorful Screw's count is
+        // story progress that PKHeX refuses to change.
+        case Version::ZA:
+        {
+            constexpr uint16_t cherishedRingItemId = 2612;
+            constexpr uint16_t colorfulScrewItemId = 2619;
+            if (itemId == cherishedRingItemId || itemId == colorfulScrewItemId) return 0;
+            break;
+        }
+        default:
+            break;
+        }
+        // Key items are possession flags, wherever the game files them.
+        if (Names::isKeyItem(group, itemId)) return std::min(pouchMaxCount, 1);
+        return pouchMaxCount;
+    }
+
+    // Every legal item of every pouch, from the same generated lists the add-item picker offers. An
+    // existing stack only ever grows, so an item already above what this would give is left alone.
+    TrainerViewScreen::AddAllItemsResult TrainerViewScreen::addAllItems(int amountToAdd, bool includeKeyItems)
+    {
+        AddAllItemsResult addAllResult;
+        if (amountToAdd <= 0) return addAllResult;
+        const Enums::GameVersion group = trainer.getGameGroup();
+        for (int categoryIndex = 0; categoryIndex < static_cast<int>(trainer.items.size()); ++categoryIndex)
+        {
+            auto &pouch = trainer.items[categoryIndex];
+            const int pouchSlotCapacity = pouchCapacity(categoryIndex);
+            int pouchChangedCount = 0;
+            int pouchNoRoomCount = 0;
+            for (const uint16_t legalItemId : Names::getPouchItems(group, static_cast<size_t>(categoryIndex)))
+            {
+                if (!includeKeyItems && Names::isKeyItem(group, legalItemId))
+                {
+                    continue;
+                }
+                const int legalItemMaxCount = itemMaxCount(categoryIndex, legalItemId);
+                if (legalItemMaxCount <= 0)
+                {
+                    continue;
+                }
+                const auto existingEntry = std::find_if(pouch.begin(), pouch.end(), [legalItemId](const Trainer::InventoryItem &item)
+                                                        { return item.itemId == legalItemId; });
+                if (existingEntry != pouch.end())
+                {
+                    const int previousItemCount = existingEntry->count;
+                    const int newItemCount = std::min(previousItemCount + amountToAdd, legalItemMaxCount);
+                    if (newItemCount <= previousItemCount)
+                    {
+                        continue;
+                    }
+                    existingEntry->count = static_cast<uint16_t>(newItemCount);
+                    if (previousItemCount == 0)
+                    {
+                        existingEntry->isNew = true;
+                    }
+                    ++pouchChangedCount;
+                }
+                else if (static_cast<int>(pouch.size()) < pouchSlotCapacity)
+                {
+                    pouch.push_back(Trainer::InventoryItem{legalItemId, static_cast<uint16_t>(std::min(amountToAdd, legalItemMaxCount)), true, false});
+                    ++pouchChangedCount;
+                }
+                else
+                {
+                    ++pouchNoRoomCount;
+                }
+            }
+            if (g_debugLogging && (pouchChangedCount > 0 || pouchNoRoomCount > 0))
+            {
+                Utils::logEventToFile(std::string("ITEM action=ADDALL ") + Utils::logField("pouch", Panels::pouchDisplayName(trainer, categoryIndex)) + " amount=" + std::to_string(amountToAdd) + " keyitems=" + (includeKeyItems ? "1" : "0") + " changed=" + std::to_string(pouchChangedCount) + " noroom=" + std::to_string(pouchNoRoomCount) + " pouchsize=" + std::to_string(pouch.size()) + "/" + std::to_string(pouchSlotCapacity));
+            }
+            addAllResult.changedItemCount += pouchChangedCount;
+            addAllResult.noRoomItemCount += pouchNoRoomCount;
+        }
+        if (addAllResult.changedItemCount > 0)
+        {
+            hasUnsavedChanges = true;
+        }
+        return addAllResult;
     }
 
     // Wraps on the pouches the trainer actually loaded, so every group pages through its own bag
@@ -3321,7 +3454,7 @@ namespace UI
         // and R opens legality details, so those action bindings deliberately remain edge-triggered.
         const bool fileBrowserNavigation = fileBrowser.active && !pksmImport.previewActive && !pksmImport.resultActive;
         const bool viewShoulderNavigation = !pksmImportActive() && !details.active && (selectedMode == ViewMode::Storage || selectedMode == ViewMode::Items || selectedMode == ViewMode::Boxes);
-        const u64 repeatableShoulders = (pickerActive || fileBrowserNavigation || statEdit.dialogActive || itemEditDialogActive || viewShoulderNavigation) ? (HidNpadButton_L | HidNpadButton_R) : 0;
+        const u64 repeatableShoulders = (pickerActive || fileBrowserNavigation || statEdit.dialogActive || itemEditDialogActive || addAllItemsDialogActive || viewShoulderNavigation) ? (HidNpadButton_L | HidNpadButton_R) : 0;
 
         u64 buttonsDown = controllerNavigation.apply(padGetButtonsDown(&pad), padGetButtons(&pad), stick.x, stick.y, HidNpadButton_Up, HidNpadButton_Down, HidNpadButton_Left, HidNpadButton_Right, repeatableShoulders) | navTouchButton(touch); // nav-bar badges are tappable
 
@@ -5259,6 +5392,99 @@ namespace UI
             return;
         }
 
+        // Add All Items: ZR in the Items list. The step buttons and keys match the Edit Item dialog's;
+        // X switches key items in or out, A adds, B cancels.
+        if (addAllItemsDialogActive)
+        {
+            switch (touchedButtonId(touch))
+            {
+            case 34:
+                buttonsDown |= HidNpadButton_ZL;
+                break;
+            case 30:
+                buttonsDown |= HidNpadButton_L;
+                break;
+            case 31:
+                buttonsDown |= HidNpadButton_Left;
+                break;
+            case 32:
+                buttonsDown |= HidNpadButton_Right;
+                break;
+            case 33:
+                buttonsDown |= HidNpadButton_R;
+                break;
+            case 35:
+                buttonsDown |= HidNpadButton_ZR;
+                break;
+            case 41:
+                buttonsDown |= HidNpadButton_X;
+                break;
+            case 1:
+                if (armTap(1, HidNpadButton_A)) return;
+                break;
+            case 0:
+                if (armTap(0, HidNpadButton_B)) return;
+                break;
+            default:
+                break;
+            }
+            // No item stacks past 999 in any pouch, so neither does the amount.
+            constexpr int addAllItemsMaxAmount = 999;
+            if (buttonsDown & HidNpadButton_Left)
+            {
+                addAllItemsAmount -= 1;
+            }
+            if (buttonsDown & HidNpadButton_Right)
+            {
+                addAllItemsAmount += 1;
+            }
+            if (buttonsDown & HidNpadButton_L)
+            {
+                addAllItemsAmount -= 10;
+            }
+            if (buttonsDown & HidNpadButton_R)
+            {
+                addAllItemsAmount += 10;
+            }
+            if (buttonsDown & HidNpadButton_ZL)
+            {
+                addAllItemsAmount -= 100;
+            }
+            if (buttonsDown & HidNpadButton_ZR)
+            {
+                addAllItemsAmount += 100;
+            }
+            addAllItemsAmount = std::clamp(addAllItemsAmount, 1, addAllItemsMaxAmount);
+            if (buttonsDown & HidNpadButton_X)
+            {
+                addAllItemsIncludesKeyItems = !addAllItemsIncludesKeyItems;
+            }
+
+            if (buttonsDown & HidNpadButton_A)
+            {
+                const AddAllItemsResult addAllResult = addAllItems(addAllItemsAmount, addAllItemsIncludesKeyItems);
+                addAllItemsDialogActive = false;
+                const int visibleItemCount = static_cast<int>(visibleItemIndices().size());
+                if (selectedItemIndex >= visibleItemCount)
+                {
+                    selectedItemIndex = std::max(0, visibleItemCount - 1);
+                }
+                std::string addAllStatus = addAllResult.changedItemCount > 0 ? "Added or topped up " + std::to_string(addAllResult.changedItemCount) + (addAllResult.changedItemCount == 1 ? " item." : " items.") : std::string("Every item is already at its limit.");
+                if (addAllResult.noRoomItemCount > 0)
+                {
+                    addAllStatus += " " + std::to_string(addAllResult.noRoomItemCount) + (addAllResult.noRoomItemCount == 1 ? " item did not fit." : " items did not fit.");
+                }
+                postStatus(addAllStatus, 360);
+                return;
+            }
+            if (buttonsDown & HidNpadButton_B)
+            {
+                addAllItemsDialogActive = false;
+                return;
+            }
+            return;
+        }
+
         // Lossy-move acknowledgement. The two warnings differ only in what they SAY -- both guard the
         // same pending action and answer the same question -- so the input handling is shared here
         // deliberately, while the notices themselves are separate dialogs. Continue runs the stashed
@@ -5892,6 +6118,14 @@ namespace UI
                         {
                             postStatus("You already have every item this pocket can hold.", 300);
                         }
+                        return;
+                    }
+
+                    // ZR opens Add All Items. It is the one shoulder this view leaves free: L/R change
+                    // the pocket, and the dialog itself uses ZL/ZR for +/-100.
+                    if (buttonsDown & HidNpadButton_ZR)
+                    {
+                        addAllItemsDialogActive = true;
                         return;
                     }
 
@@ -6545,7 +6779,7 @@ namespace UI
         {
             if (selectedMode == ViewMode::Items)
             {
-                instructions = "Up/Down: Select  |  A: Edit Amount  |  Y: Search  |  -: Add Item  |  X: Remove Item  |  Left/Right: Page  |  L/R: Category  |  B: Back";
+                instructions = "Up/Down: Select  |  A: Edit Amount  |  Y: Search  |  -: Add Item  |  ZR: Add All  |  X: Remove Item  |  Left/Right: Page  |  L/R: Category  |  B: Back";
             }
             else if (selectedMode == ViewMode::Boxes)
             {
@@ -6679,6 +6913,10 @@ namespace UI
         if (itemRemoveConfirmActive)
         {
             Dialogs::drawItemRemoveConfirm(*this, framebuffer);
+        }
+        if (addAllItemsDialogActive)
+        {
+            Dialogs::drawAddAllItemsDialog(*this, framebuffer);
         }
         if (statEdit.dialogActive)
         {

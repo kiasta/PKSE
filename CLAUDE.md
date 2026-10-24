@@ -23,7 +23,8 @@ Pokemon HOME are the source of truth for anything a user reads.** PKHeX's string
 games' own text verbatim. A few are labels PKHeX added for its own UI (e.g. `Champion (Gen3)`), and
 when PKHeX and a game disagree, **the game wins**. Where the games are ambiguous, disambiguate
 deliberately and leave a comment saying so. PKHeX is the only data source. Nothing comes from
-pokemondb or any other site.
+pokemondb or any other site. The one exception is Gen 1's key-item list, which PKHeX lacks: it is
+the game's own ROM table (chapter 07).
 
 ## Coding standards (binding)
 
