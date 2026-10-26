@@ -671,6 +671,11 @@ namespace UI
                 screen.touchButtons.push_back({index, centreColumnX + 8, statRowY - 6, Cw - 16, statRowH - 6});
                 statRowY += statRowH;
             }
+            if (p->isHyperTrained())
+            {
+                framebuffer.drawText(nameX, statRowY - 8, "HT: Hyper Trained, plays as " + std::to_string(p->maxIV()), Colors::TextDim, TextStyle::Caption);
+                statRowY += 14;
+            }
 
             // Shiny toggle row (selectable index 6).
             statRowY += 10;

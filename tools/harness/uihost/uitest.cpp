@@ -66,6 +66,8 @@
 #include "UI/ScreenChrome.h" // NAV_BAR_HEIGHT -- the one-nav-bar rule is checked against its geometry
 #include "UI/Dialogs/FileBrowserDialog.h"
 #include "UI/Dialogs/KeyboardDialog.h"
+#include "UI/Dialogs/StatEditDialog.h"
+#include "Globals.h"         // g_allowIllegalEdits -- the Hyper Training row gives way to it
 #include "Utils/Settings.h"
 #include "Save/RtcFooter.h"
 #include "Save/SaveFileName.h"
@@ -1202,6 +1204,164 @@ namespace {
         }
     }
 
+    /// Hyper Training, seen and edited. The stat editor's row sets and clears one stat's flag, the
+    /// stat follows it while the stored IV stays put, Cancel keeps nothing, the details page and the
+    /// party card both mark a trained IV, and the row refuses what the game could not have done:
+    /// below the format's level, or on an IV that is already maximal.
+    void testHyperTraining(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
+        int boxIndex = -1, boxSlot = -1;
+        for (int box = 0; box < static_cast<int>(tr.boxes.size()) && boxSlot < 0; ++box) {
+            for (int slot = 0; slot < static_cast<int>(tr.boxes[box].size()); ++slot) {
+                if (!Test::isEmptySlot(tr.boxes[box][slot].get()) && !tr.boxes[box][slot]->isEgg()) { boxIndex = box; boxSlot = slot; break; }
+            }
+        }
+        if (boxSlot < 0) {
+            context.note("this save's boxes hold no Pokemon, so the Hyper Training row was not exercised", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+
+        Pokemon::Pokemon* target = tr.boxes[boxIndex][boxSlot].get();
+        const std::span<const std::byte> originalSpan = target->getData();
+        const std::vector<std::byte> originalBytes(originalSpan.begin(), originalSpan.end());
+        // Let's Go keeps its party in the boxes, and a saved edit is mirrored into the party copy, so
+        // the party is put back as well as the box slot.
+        std::vector<std::vector<std::byte>> originalPartyBytes;
+        for (const auto& member : tr.party) {
+            if (!member) { originalPartyBytes.emplace_back(); continue; }
+            const std::span<const std::byte> memberSpan = member->getData();
+            originalPartyBytes.emplace_back(memberSpan.begin(), memberSpan.end());
+        }
+        auto restore = [&]() {
+            std::memcpy(target->getData().data(), originalBytes.data(), originalBytes.size());
+            for (size_t partyIndex = 0; partyIndex < tr.party.size() && partyIndex < originalPartyBytes.size(); ++partyIndex)
+                if (tr.party[partyIndex] && !originalPartyBytes[partyIndex].empty())
+                    std::memcpy(tr.party[partyIndex]->getData().data(), originalPartyBytes[partyIndex].data(), originalPartyBytes[partyIndex].size());
+        };
+        const int maxIV = target->maxIV();
+        // A known starting point whatever the save holds: old enough to train, HP untrained and below
+        // the maximum. A Legends: Arceus Pokemon also needs the HOME visit its flags would come from.
+        if (target->hasHyperTraining()) {
+            target->setLevel(100);
+            target->setIV(0, 10);
+            target->setHyperTrainFlags(0);
+            if (target->hasHomeTracker() && target->homeTracker() == 0) target->setHomeTracker(0x0123456789ABCDEFull);
+            target->recalculateStats();
+            target->refreshChecksum();
+        }
+
+        Driver d(context, s, "hyper-training");
+        d.step("open the box view");
+        gotoHome(d, s, 0);
+        d.press(Btn::A).frame();
+        if (!d.expect(s.detailViewActive, "could not open the box view")) return;
+        s.selectedBoxIndex = boxIndex;
+        s.selectedItemIndex = boxSlot;
+        d.step("open the details page").press(Btn::A).frame(2);
+        if (!d.expect(s.details.active, "A on an occupied slot did not open the details page")) return;
+        Pokemon::Pokemon* pokemon = s.detailsTargetPokemon();
+        if (!d.expect(pokemon == target, "the details page is not editing the Pokemon it was opened on")) { restore(); return; }
+
+        s.details.selectedField = 0;
+        d.step("open the HP stat editor").press(Btn::A).frame();
+        if (!d.expect(s.statEdit.dialogActive, "A on the HP row did not open the stat editor")) { restore(); return; }
+        if (!pokemon->hasHyperTraining()) {
+            d.notSee("Hyper Trained");
+            d.step("close the stat editor").press(Btn::B).frame();
+            restore();
+            return;
+        }
+        d.see("Hyper Trained");
+        d.see("Plays as 10");
+
+        const uint16_t untrainedHP = pokemon->statHPMax();
+        d.step("select the Hyper Trained row").press(Btn::Down).frame();
+        d.expect(s.statEdit.mode == UI::Dialogs::StatEditMode::HyperTrain, "Down from the IV row did not select the Hyper Trained row");
+        d.step("set it").press(Btn::Right).frame();
+        d.expect(s.statEdit.currentHyperTrained, "Right on the Hyper Trained row did not set it");
+        d.see("Plays as " + std::to_string(maxIV));
+        d.step("save the stat").press(Btn::A).frame();
+        d.expect(!s.statEdit.dialogActive, "A did not close the stat editor");
+        pokemon = s.detailsTargetPokemon();
+        if (!d.expect(pokemon != nullptr, "the details page lost its Pokemon after the edit")) { restore(); return; }
+        d.expect(pokemon->isHyperTrained(0), "saving the stat editor did not set HP's Hyper Training flag", "flags=" + std::to_string(pokemon->hyperTrainFlags()));
+        d.expect(pokemon->hyperTrainFlags() == 0x01, "saving one stat's Hyper Training touched another stat's flag", "flags=" + std::to_string(pokemon->hyperTrainFlags()));
+        d.expect(pokemon->ivHP() == 10, "Hyper Training changed the stored IV", "ivHP=" + std::to_string(pokemon->ivHP()));
+        d.expect(pokemon->checksumValid(), "the record's checksum is stale after Hyper Training");
+        d.expect(s.hasUnsavedChanges, "Hyper Training did not mark the save as changed");
+        // Shedinja's HP is 1 whatever its IV, so it has nothing to show here.
+        if (pokemon->speciesID() != 292 && untrainedHP != 0)
+            d.expect(pokemon->statHPMax() > untrainedHP, "the HP stat did not follow its Hyper Training flag", "before=" + std::to_string(untrainedHP) + " after=" + std::to_string(pokemon->statHPMax()));
+        d.step("the details page marks the trained IV").frame();
+        d.see("HT");
+        d.see("HT: Hyper Trained, plays as " + std::to_string(maxIV));
+
+        // The tap path: the first tap on the row selects it, the second flips it.
+        d.step("reopen the HP stat editor").press(Btn::A).frame();
+        if (!d.expect(s.statEdit.dialogActive && s.statEdit.currentHyperTrained, "the reopened stat editor does not show HP as Hyper Trained")) { restore(); return; }
+        for (int tapIndex = 0; tapIndex < 2; ++tapIndex) {
+            const UI::TouchButton* rowButton = nullptr;
+            for (const auto& button : s.touchButtons)
+                if (button.buttonId == 12) { rowButton = &button; break; }
+            if (!d.expect(rowButton != nullptr, "the Hyper Trained row published no touch target")) { restore(); return; }
+            d.step(tapIndex == 0 ? "tap the Hyper Trained row" : "tap it again").tap(rowButton->hitX + rowButton->hitWidth / 2, rowButton->hitY + rowButton->hitHeight / 2).frame();
+        }
+        d.expect(s.statEdit.mode == UI::Dialogs::StatEditMode::HyperTrain && !s.statEdit.currentHyperTrained, "two taps on the Hyper Trained row did not select it and clear it");
+        d.step("cancel").press(Btn::B).frame();
+        pokemon = s.detailsTargetPokemon();
+        d.expect(pokemon && pokemon->isHyperTrained(0), "Cancel kept the cleared Hyper Training flag");
+
+        // Raising a trained IV to the maximum leaves a flag the game could never have set; it drops.
+        d.step("raise the trained IV to the maximum").press(Btn::A).frame();
+        d.press(Btn::R, 3).frame();
+        d.expect(s.statEdit.currentIV == maxIV && !s.statEdit.currentHyperTrained, "raising a Hyper Trained IV to the maximum kept the flag", "iv=" + std::to_string(s.statEdit.currentIV));
+        d.see("IV is already " + std::to_string(maxIV));
+        d.step("cancel").press(Btn::B).frame();
+
+        // Below the format's level the row refuses to set the flag, says why, and gives way to the
+        // illegal-values override.
+        pokemon = s.detailsTargetPokemon();
+        if (!pokemon) { restore(); return; }
+        pokemon->setHyperTrainFlags(0);
+        pokemon->setLevel(static_cast<uint8_t>(pokemon->hyperTrainMinimumLevel() - 1));
+        d.step("open the stat editor below the level").press(Btn::A).frame();
+        d.press(Btn::Down).frame();
+        d.press(Btn::Right).frame();
+        d.expect(!s.statEdit.currentHyperTrained, "the Hyper Trained row set a flag below the level the game requires", "level=" + std::to_string(pokemon->hyperTrainMinimumLevel() - 1));
+        d.see("Needs Lv. " + std::to_string(pokemon->hyperTrainMinimumLevel()));
+        g_allowIllegalEdits = true;
+        d.press(Btn::Right).frame();
+        g_allowIllegalEdits = false;
+        d.expect(s.statEdit.currentHyperTrained, "the illegal-values override did not let the Hyper Trained row set the flag");
+        d.step("cancel").press(Btn::B).frame();
+        restore();
+    }
+
+    /// The party card, where a team is checked at a glance, marks a Hyper Trained IV too.
+    void testHyperTrainingPartyMark(Test::Context& context, TrainerViewScreen& s, Trainer::Trainer& tr) {
+        Pokemon::Pokemon* partyMember = nullptr;
+        for (auto& member : tr.party)
+            if (!Test::isEmptySlot(member.get()) && !member->isEgg()) { partyMember = member.get(); break; }
+        if (!partyMember) {
+            context.note("this save's party is empty, so the party card's Hyper Training mark was not checked", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        if (!partyMember->hasHyperTraining()) return;
+        const uint8_t savedPartyFlags = partyMember->hyperTrainFlags();
+        partyMember->setHyperTrainFlags(0);
+        Driver party(context, s, "hyper-training-party");
+        party.step("open the party view");
+        gotoHome(party, s, 1);
+        party.press(Btn::A).frame(2);
+        if (party.expect(s.detailViewActive && s.selectedMode == TrainerViewScreen::ViewMode::Party, "could not open the party view")) {
+            // Counted, not merely looked for: another member of a real team may be trained already.
+            const size_t untrainedMarkCount = party.frameData().textExact("HT").size();
+            partyMember->setHyperTrainFlags(0x01);
+            party.step("Hyper Train a party member's HP").frame();
+            party.expect(party.frameData().textExact("HT").size() == untrainedMarkCount + 1, "the party card does not mark a Hyper Trained IV", "before=" + std::to_string(untrainedMarkCount) + " after=" + std::to_string(party.frameData().textExact("HT").size()));
+        }
+        partyMember->setHyperTrainFlags(savedPartyFlags);
+    }
+
     /// The picker's search box.
     ///
     /// The property that matters is not "a filter happened" but that the filtered list still writes
@@ -1759,6 +1919,8 @@ namespace {
         { auto s = fresh(); testEggTextIsNotForeign(context, *s, tr); }
         { auto s = fresh(); testPickerSearch(context, *s, tr); }
         { auto s = fresh(); testAlphaToggle(context, *s, tr); }
+        { auto s = fresh(); testHyperTraining(context, *s, tr); }
+        { auto s = fresh(); testHyperTrainingPartyMark(context, *s, tr); }
         { auto s = fresh(); testItemsKeys(context, *s, tr); }
         { auto s = fresh(); testBoxMenus(context, *s, tr); }
         { auto s = fresh(); testTapIsSeenBeforeItActs(context, *s, tr); }
@@ -1921,9 +2083,8 @@ namespace {
             }};
     }
 
-    /// Add All Items on every format PKSE edits, from the save tree. Separate from runUI because three
-    /// of these (Ruby/Sapphire/Emerald, Brilliant Diamond/Shining Pearl, Scarlet/Violet) are not
-    /// walked there, and this test needs each one.
+    /// Add All Items on every format PKSE edits, from the save tree. Separate from runUI because one
+    /// of these (Ruby/Sapphire/Emerald) is not walked there, and this test needs each one.
     int runAddAllItems(Test::Report& report, const std::string& saveRoot) {
         struct Target { const char* label; Enums::GameVersion group; SaveLoader loader; };
         const std::string letsGoPath = SaveTree::letsGoPikachu(saveRoot);
@@ -2207,6 +2368,19 @@ int main(int argc, char** argv) {
         // weight, so the creator journey checks something here it checks nowhere else.
         opened += openSCBlock<Trainer::Trainer8LA>(report, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot), 0x01001F5010DFA000ULL) ? 1 : 0;
         opened += openSCBlock<Trainer::Trainer9LZA>(report, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot), 0x0100F43008C44000ULL) ? 1 : 0;
+        // Every format with Hyper Training is walked, or its stat editor row ships untested: these two
+        // were once opened only for Add All Items. Shining Pearl's save is one flat file, not blocks.
+        {
+            std::string bdspPath = SaveTree::folderFor(saveRoot, "Shining Pearl") + "/SaveData.bin";
+            if (readFile(bdspPath).empty()) bdspPath = SaveTree::forTitle(saveRoot, "Shining Pearl");
+            std::vector<uint8_t> bdsp = readFile(bdspPath);
+            if (!bdsp.empty()) {
+                Trainer::Trainer8BDSP trainer(std::move(bdsp));
+                runUI(report, "Shining Pearl", Enums::GameVersion::BDSP, trainer, 0x010018E011D92000ULL);
+                ++opened;
+            }
+        }
+        opened += openSCBlock<Trainer::Trainer9SV>(report, "Violet", Enums::GameVersion::SV, SaveTree::violet(saveRoot), 0x01008F6008C5E000ULL) ? 1 : 0;
     }
 
     if (!saveRoot.empty()) {

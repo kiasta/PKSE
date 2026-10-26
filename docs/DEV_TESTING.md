@@ -471,8 +471,7 @@ fixed-seed sweep of random presses — worth running at all.
   search branch returned first, so adding an item became unreachable while the nav bar still
   advertised it. Nothing failed.
 - **`testAddAllItems`** runs Add All Items through its dialog on **all nineteen save formats**,
-  including the three `runUI` does not walk (Ruby/Sapphire/Emerald, Brilliant Diamond/Shining Pearl,
-  Scarlet/Violet), twice: key items off with a small amount, then key items on at 999. Every legal id
+  including Ruby/Sapphire/Emerald, the one `runUI` does not walk, twice: key items off with a small amount, then key items on at 999. Every legal id
   of every pouch is checked against the bag before it (the amount added, clamped to the item's own
   ceiling, never lowered, key items untouched while off, and left out only when its pouch is full).
   The ceilings PKHeX sets per item are written out again in the test, so a rule dropped from
@@ -483,6 +482,13 @@ fixed-seed sweep of random presses — worth running at all.
   Search from the `X` box menu in both the Boxes and Storage views. The Pokemon menu is one list
   shared by two views, and the Boxes view's Move is a swap rather than a carry, so a change made
   for one view can quietly break the other.
+- **`testHyperTraining`** sets one stat's Hyper Training flag through the stat editor, by button and
+  by tap, and requires the flag alone to change, the stored IV to stay put, the stat to follow and the
+  checksum to hold. It also checks that Cancel keeps nothing, that raising a trained IV to the maximum
+  drops the flag, that the row refuses below the format's level until "Allow illegal values" is on,
+  and that the details page and the party card both mark a trained IV. `runUI` walks every format
+  with Hyper Training for this; Brilliant Diamond/Shining Pearl and Scarlet/Violet were once opened
+  only for Add All Items, so a test that passed everywhere had never run on them.
 - **`Driver::tilt`** checks the on-screen keyboard's left stick against its D-pad. The keyboard runs
   its own loop, so the stick has to be sampled there too.
 - **The box summary panel's legality verdict clears the edit hint.** The panel is 452px wide; a

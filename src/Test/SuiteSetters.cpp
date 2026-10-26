@@ -331,6 +331,29 @@ namespace Test
             context.check(pokemon.effectiveIV(0) == pokemon.maxIV(), "a Hyper Trained stat does not read as a maximal IV", whereLabel + " got=" + std::to_string(pokemon.effectiveIV(0)) + " maxIV=" + std::to_string(pokemon.maxIV()));
             context.check(pokemon.ivHP() == 0, "Hyper Training changed the STORED IV, which it must never do", whereLabel + " ivHP=" + std::to_string(pokemon.ivHP()));
             pokemon.setHyperTrainFlags(savedFlags);
+
+            // The editor offers Hyper Training only where the game could have, so both gates are
+            // held to PKHeX: level 50 from Scarlet/Violet on and 100 before (GetHyperTrainMinLevel),
+            // and Legends: Arceus, which sells no Bottle Caps, only with a HOME tracker.
+            const uint8_t expectedMinimumLevel = (context.group == Enums::GameVersion::SV || context.group == Enums::GameVersion::ZA) ? 50 : 100;
+            context.check(pokemon.hyperTrainMinimumLevel() == expectedMinimumLevel, "hyperTrainMinimumLevel() disagrees with the level PKHeX requires for Hyper Training", whereLabel + " got=" + std::to_string(pokemon.hyperTrainMinimumLevel()) + " expected=" + std::to_string(expectedMinimumLevel));
+            if (context.group == Enums::GameVersion::PLA)
+            {
+                const uint64_t savedTracker = pokemon.homeTracker();
+                pokemon.setHomeTracker(0);
+                context.check(!pokemon.isHyperTrainingAvailable(), "a Legends: Arceus Pokemon that never visited HOME reads as able to be Hyper Trained", whereLabel);
+                pokemon.setHomeTracker(0x0123456789ABCDEFull);
+                context.check(pokemon.isHyperTrainingAvailable(), "a Legends: Arceus Pokemon with a HOME tracker reads as unable to be Hyper Trained", whereLabel);
+                pokemon.setHomeTracker(savedTracker);
+            }
+            else
+            {
+                context.check(pokemon.isHyperTrainingAvailable(), "a format that stores Hyper Training reads as unable to be Hyper Trained", whereLabel);
+            }
+        }
+        else
+        {
+            context.check(!pokemon.isHyperTrainingAvailable(), "a format with no Hyper Training field reads as able to be Hyper Trained", whereLabel);
         }
 
         // The two Legends formats are the only ones with an Alpha flag (PKHeX IAlpha: PA8, PA9). The

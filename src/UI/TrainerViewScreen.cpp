@@ -921,7 +921,11 @@ namespace UI
         if (pickerActive)
             return "Up/Down: Move  |  L/R: Page  |  A: Select  |  Y: Search  |  B: Cancel";
         if (statEdit.dialogActive)
+        {
+            if (statEdit.mode == Dialogs::StatEditMode::HyperTrain)
+                return "Up/Down: Row  |  Left/Right: Toggle Hyper Training  |  A: Confirm  |  B: Cancel";
             return statEdit.mode != Dialogs::StatEditMode::IV ? "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel" : "Up/Down: IV/AV-EV  |  Arrows: +/- Value  |  A: Confirm  |  B: Cancel";
+        }
         if (itemEditDialogActive)
             return "Left/Right: +/-1  |  Up/Down: +/-10  |  ZL/ZR: +/-100  |  A: Confirm  |  B: Cancel";
         if (itemRemoveConfirmActive)
@@ -4109,16 +4113,16 @@ namespace UI
 
         if (statEdit.dialogActive)
         {
-            // Touch: map on-screen buttons to their equivalent presses (IV/EV rows -> Up/Down mode
-            // switch, the step buttons -> ZL/L/Left/Right/R/ZR, Save -> A, Cancel -> B), then reuse
-            // the button logic below.
+            // Touch: map on-screen buttons to their equivalent presses (the step buttons ->
+            // ZL/L/Left/Right/R/ZR, Save -> A, Cancel -> B), then reuse the button logic below. A row
+            // tap selects that row, which is resolved once the rows are known.
+            int touchedRowButtonId = -1;
             switch (touchedButtonId(touch))
             {
             case 10:
-                buttonsDown |= HidNpadButton_Up;
-                break;
             case 11:
-                buttonsDown |= HidNpadButton_Down;
+            case 12:
+                touchedRowButtonId = touchedButtonId(touch);
                 break;
             case 34:
                 buttonsDown |= HidNpadButton_ZL;
@@ -4163,27 +4167,33 @@ namespace UI
                 const bool usesAV = pokemon->hasAwakeningValues();
                 const Dialogs::StatEditMode secondMode = usesAV ? Dialogs::StatEditMode::AV : Dialogs::StatEditMode::EV;
 
-                // Up/Down to switch between IV and the second stat (EV / AV)
-                if (buttonsDown & HidNpadButton_Up)
+                // The dialog's rows, top to bottom; Up/Down step through them. Hyper Training sits
+                // under the IV it overrides, and only where the format stores it.
+                const bool showsHyperTraining = pokemon->hasHyperTraining();
+                const Dialogs::StatEditMode rowModes[3] = {Dialogs::StatEditMode::IV, showsHyperTraining ? Dialogs::StatEditMode::HyperTrain : secondMode, secondMode};
+                const int rowCount = showsHyperTraining ? 3 : 2;
+                const Dialogs::StatEditMode previousMode = statEdit.mode;
+                int selectedRowIndex = 0;
+                for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
                 {
-                    if (statEdit.mode == secondMode)
-                    {
-                        if (usesAV)
-                            statEdit.currentAV = statEdit.value;
-                        else
-                            statEdit.currentEV = statEdit.value;
-                    }
-                    statEdit.mode = Dialogs::StatEditMode::IV;
-                    statEdit.value = statEdit.currentIV; // Load IV value
+                    if (rowModes[rowIndex] == statEdit.mode)
+                        selectedRowIndex = rowIndex;
                 }
+                if (buttonsDown & HidNpadButton_Up)
+                    selectedRowIndex = std::max(0, selectedRowIndex - 1);
                 if (buttonsDown & HidNpadButton_Down)
+                    selectedRowIndex = std::min(rowCount - 1, selectedRowIndex + 1);
+                if (touchedRowButtonId == 10)
+                    selectedRowIndex = 0;
+                else if (touchedRowButtonId == 11)
+                    selectedRowIndex = rowCount - 1;
+                else if (touchedRowButtonId == 12 && showsHyperTraining)
+                    selectedRowIndex = 1;
+                statEdit.mode = rowModes[selectedRowIndex];
+                if (statEdit.mode != previousMode)
                 {
-                    if (statEdit.mode == Dialogs::StatEditMode::IV)
-                    {
-                        statEdit.currentIV = statEdit.value;
-                    }
-                    statEdit.mode = secondMode;
-                    statEdit.value = usesAV ? statEdit.currentAV : statEdit.currentEV; // Load AV/EV value
+                    // The current values are kept up to date every frame, so a switch only loads.
+                    statEdit.value = (statEdit.mode == Dialogs::StatEditMode::IV) ? statEdit.currentIV : (statEdit.mode == Dialogs::StatEditMode::AV) ? statEdit.currentAV : (statEdit.mode == Dialogs::StatEditMode::EV) ? statEdit.currentEV : 0;
                 }
 
                 // Ranges come from the FORMAT, not from constants. Gen 1/2 store 4-bit DVs
@@ -4198,6 +4208,22 @@ namespace UI
                 // it: 65535 Stat Exp is the GAME's own maximum, not an illegal edit.
                 const int evCap = (fmtMaxEV > 255) ? fmtMaxEV : (g_allowIllegalEdits ? 255 : 252);
                 int maxValue = (statEdit.mode == Dialogs::StatEditMode::IV) ? fmtMaxIV : (statEdit.mode == Dialogs::StatEditMode::AV) ? (g_allowIllegalEdits ? 255 : 200) : evCap;
+
+                if (statEdit.mode == Dialogs::StatEditMode::HyperTrain)
+                {
+                    // A flag, not a quantity: Left/Right (or a second tap on the row) flips it, and
+                    // the shoulder steps do nothing. Setting it is offered only where the game could
+                    // have, unless illegal values are allowed; clearing it always is.
+                    const bool toggleRequested = (buttonsDown & (HidNpadButton_Left | HidNpadButton_Right)) || (touchedRowButtonId == 12 && previousMode == Dialogs::StatEditMode::HyperTrain);
+                    if (toggleRequested)
+                    {
+                        if (statEdit.currentHyperTrained)
+                            statEdit.currentHyperTrained = false;
+                        else if (g_allowIllegalEdits || Dialogs::getHyperTrainBlockedReason(*pokemon, statEdit.currentIV).empty())
+                            statEdit.currentHyperTrained = true;
+                    }
+                    buttonsDown &= ~static_cast<u64>(HidNpadButton_Left | HidNpadButton_Right | HidNpadButton_L | HidNpadButton_R | HidNpadButton_ZL | HidNpadButton_ZR);
+                }
 
                 // Adjust value: Left/Right = -/+1, L/R = -/+10, ZL/ZR = -/+100. On a 0-31 IV the
                 // +/-100 steps just clamp, which is harmless.
@@ -4216,10 +4242,16 @@ namespace UI
 
                 // Store back into whichever value the active mode edits.
                 if (statEdit.mode == Dialogs::StatEditMode::IV)
+                {
+                    // Hyper Training a maximal IV is something the game cannot do (PKHeX flags it), so
+                    // raising the IV to the maximum drops the flag -- visibly, on the row below.
+                    if (statEdit.value != statEdit.currentIV && statEdit.value >= fmtMaxIV && statEdit.currentHyperTrained && !g_allowIllegalEdits)
+                        statEdit.currentHyperTrained = false;
                     statEdit.currentIV = statEdit.value;
+                }
                 else if (statEdit.mode == Dialogs::StatEditMode::AV)
                     statEdit.currentAV = statEdit.value;
-                else
+                else if (statEdit.mode == Dialogs::StatEditMode::EV)
                     statEdit.currentEV = statEdit.value;
 
                 // For EVs, enforce the 510 legal total — unless the illegal-values override is on
@@ -4256,6 +4288,9 @@ namespace UI
                     {
                         illegalDataWritten = true;
                     }
+                    const bool hyperTrainingEdited = (statEdit.currentHyperTrained != statEdit.originalHyperTrained);
+                    if (statEdit.currentHyperTrained && (hyperTrainingEdited || statEdit.currentIV != statEdit.originalIV) && !Dialogs::getHyperTrainBlockedReason(*pokemon, statEdit.currentIV).empty())
+                        illegalDataWritten = true;
 
                     // Map UI stat index to Pokemon data stat index
                     // UI order: HP, ATK, DEF, SPA, SPD, SPE (indices 0-5)
@@ -4285,6 +4320,16 @@ namespace UI
                         // setEVWide, so a 16-bit Stat Experience value survives the write. It
                         // forwards to setEV() for every format where the two are the same thing.
                         pokemon->setEVWide(dataStatIndex, static_cast<uint16_t>(statEdit.currentEV));
+                        hasUnsavedChanges = true;
+                        anyModified = true;
+                    }
+                    if (hyperTrainingEdited)
+                    {
+                        // The UI stat order IS the Hyper Training bit order, so no mapping. The flag
+                        // setter does not recompute the stats, so the stored ones are brought in line here.
+                        pokemon->setHyperTrained(statEdit.selectedStat, statEdit.currentHyperTrained);
+                        pokemon->recalculateStats();
+                        pokemon->refreshChecksum();
                         hasUnsavedChanges = true;
                         anyModified = true;
                     }
@@ -5114,6 +5159,8 @@ namespace UI
                     statEdit.currentIV = statEdit.originalIV;
                     statEdit.currentEV = statEdit.originalEV;
                     statEdit.currentAV = statEdit.originalAV;
+                    statEdit.originalHyperTrained = pokemon->isHyperTrained(statIndex);
+                    statEdit.currentHyperTrained = statEdit.originalHyperTrained;
                     statEdit.mode = Dialogs::StatEditMode::IV;
                     statEdit.value = statEdit.currentIV;
                     statEdit.dialogActive = true;
