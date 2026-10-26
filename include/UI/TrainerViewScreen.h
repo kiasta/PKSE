@@ -511,11 +511,12 @@ namespace UI
         struct StatEditState
         {
             bool dialogActive = false;
-            int selectedStat = 0; // 0-5: HP, ATK, DEF, SPE, SPA, SPD
+            int selectedStat = 0; // 0-5: HP, ATK, DEF, SPA, SPD, SPE (the Hyper Training bit order)
             Dialogs::StatEditMode mode = Dialogs::StatEditMode::IV;
             int value = 0;                                      // current edit (the active IV/EV/AV)
             int originalIV = 0, originalEV = 0, originalAV = 0; // on entry (AV = Let's Go)
             int currentIV = 0, currentEV = 0, currentAV = 0;    // edits, kept across mode switches
+            bool originalHyperTrained = false, currentHyperTrained = false;
         };
         StatEditState statEdit;
 

@@ -226,6 +226,15 @@ namespace Pokemon
         virtual uint8_t hyperTrainFlags() const noexcept { return 0; }
         virtual void setHyperTrainFlags(uint8_t) noexcept {}
 
+        /// The level at which the game offers Hyper Training: 100 in Gens 7 and 8, 50 from Scarlet /
+        /// Violet on (PKHeX's GetHyperTrainMinLevel). Only meaningful where hasHyperTraining().
+        virtual uint8_t hyperTrainMinimumLevel() const noexcept { return 100; }
+
+        /// Whether this record could have been Hyper Trained at all. Distinct from hasHyperTraining(),
+        /// which says the field exists: Legends: Arceus stores the flags but sells no Bottle Caps, so
+        /// they can only have been set in a game visited through HOME (PKHeX's IsHyperTrainingAvailable).
+        virtual bool isHyperTrainingAvailable() const noexcept { return hasHyperTraining(); }
+
         /// Stat index, in the IV/HT bit order: 0 HP, 1 ATK, 2 DEF, 3 SPA, 4 SPD, 5 SPE.
         enum HyperTrainStat : int
         {

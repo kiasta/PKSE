@@ -221,6 +221,7 @@ namespace Pokemon
             data[0x126] = static_cast<std::byte>(value);
             refreshChecksum();
         }
+        uint8_t hyperTrainMinimumLevel() const noexcept override { return 50; }
 
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xCE]); }
         void setOriginGame(uint8_t version) noexcept override

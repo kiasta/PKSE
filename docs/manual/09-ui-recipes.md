@@ -15,7 +15,7 @@ Reserved touch ids to avoid colliding with:
 | `2` | Remove (Y) in the item edit dialog |
 | `30`–`35` | The six ±1/±10/±100 step buttons |
 | `40` | Item-type drop-down in the item edit dialog |
-| `10` / `11` | IV row / EV-AV row in the stat editor |
+| `10` / `11` / `12` | IV row / EV-AV row / Hyper Trained row in the stat editor |
 | `0`–`33` | Details-modal field ids (32 = Species, 33 = Evolve) |
 | `94` / `99` | Ribbon overlay / close button in the details modal |
 | `100`–`105` | HOME menu pills and icons |

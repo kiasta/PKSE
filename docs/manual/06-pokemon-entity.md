@@ -179,6 +179,8 @@ moves — PK8/PB8/PK9 `0x126`, PB7 `0xDE`, PA8 `0x13E`.
 virtual bool    hasHyperTraining() const noexcept { return false; }
 virtual uint8_t hyperTrainFlags()  const noexcept { return 0; }
 virtual void    setHyperTrainFlags(uint8_t) noexcept {}
+virtual uint8_t hyperTrainMinimumLevel() const noexcept { return 100; }        // 50 in 9SV / 9LZA
+virtual bool    isHyperTrainingAvailable() const noexcept { return hasHyperTraining(); }
 
 bool    isHyperTrained(int statIndex) const noexcept;   // non-virtual, built on the three above
 bool    isHyperTrained() const noexcept;                // any stat at all
@@ -194,6 +196,13 @@ stat. It surfaced as party Pokémon whose stored battle stats did not match a re
 `ivHP()` and friends stay the **raw stored value**, because that is what the legality tables match an
 encounter against and what an IV editor must show and write. `effectiveIV()` is what every stat
 *calculation* must read.
+
+`setHyperTrainFlags()` writes the byte and the checksum and **does not** recompute the stats, so a
+caller that changes a flag calls `recalculateStats()` itself. The stat editor's Hyper Trained row
+does, and it offers to *set* a flag only where PKHeX's `HyperTrainingVerifier` would accept it:
+`isHyperTrainingAvailable()` (Legends: Arceus sells no Bottle Caps, so only a Pokémon with a HOME
+tracker can carry the flags), at least `hyperTrainMinimumLevel()`, and an IV below `maxIV()`.
+Clearing a flag is always allowed, and "Allow illegal values" lifts the gate, as it does the EV caps.
 
 ## Checksums, and formats without one
 

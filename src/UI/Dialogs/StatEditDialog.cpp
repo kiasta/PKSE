@@ -8,6 +8,7 @@
 #include "UI/PKSEFramebuffer.h"
 #include "Trainer/Trainer.h"
 #include "Pokemon/Pokemon.h"
+#include "Pokemon/Experience.h"
 #include "Globals.h"
 
 using namespace Trainer;
@@ -16,6 +17,21 @@ namespace UI
 {
     namespace Dialogs
     {
+        std::string getHyperTrainBlockedReason(const Pokemon::Pokemon &pokemon, int individualValue)
+        {
+            if (!pokemon.isHyperTrainingAvailable())
+                return "Not available";
+            // A box record in the packed formats carries no level byte; EXP is the authority there.
+            uint8_t levelValue = pokemon.level();
+            if (levelValue == 0)
+                levelValue = Pokemon::getLevelFromExp(pokemon.exp(), Pokemon::getGrowthRate(pokemon.speciesID()));
+            if (levelValue < pokemon.hyperTrainMinimumLevel())
+                return "Needs Lv. " + std::to_string(pokemon.hyperTrainMinimumLevel());
+            if (individualValue >= pokemon.maxIV())
+                return "IV is already " + std::to_string(pokemon.maxIV());
+            return std::string();
+        }
+
         void drawStatEditDialog(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
         {
             // Resolve the Pokemon being edited (party / box / bank).
@@ -38,15 +54,17 @@ namespace UI
             const char *statNames[] = {"HP", "Atk", "Def", "SpA", "SpD", "Spe"};
             const char *statName = statNames[screen.statEdit.selectedStat];
 
-            constexpr int dialogWidth = 600, h = 384;
+            const bool showsHyperTraining = pokemon->hasHyperTraining();
+            constexpr int dialogWidth = 600;
+            const int dialogHeight = showsHyperTraining ? 426 : 384;
             const int dialogX = (framebuffer.getWidth() - dialogWidth) / 2;
-            const int dialogY = (framebuffer.getHeight() - h) / 2;
-            int centerY = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, h, std::string("Edit ") + statName, Colors::Text);
+            const int dialogY = (framebuffer.getHeight() - dialogHeight) / 2;
+            int centerY = drawDialogFrame(framebuffer, dialogX, dialogY, dialogWidth, dialogHeight, std::string("Edit ") + statName, Colors::Text);
 
             screen.touchButtons.clear();
 
             const bool ivMode = (screen.statEdit.mode == StatEditMode::IV);
-            const int labelX = dialogX + 28, valX = dialogX + 150, rangeX = dialogX + dialogWidth - 150;
+            const int labelX = dialogX + 28, valX = dialogX + 180, rangeX = dialogX + dialogWidth - 150;
 
             // IV row (tap -> select IV, id 10)
             if (ivMode)
@@ -57,11 +75,27 @@ namespace UI
             screen.touchButtons.push_back({10, dialogX + 16, centerY - 4, dialogWidth - 32, 34});
             centerY += 42;
 
+            // Hyper Training row, under the IV it overrides (tap -> select it, tap again -> toggle, id 12).
+            const bool hyperTrainMode = (screen.statEdit.mode == StatEditMode::HyperTrain);
+            if (showsHyperTraining)
+            {
+                if (hyperTrainMode)
+                    framebuffer.drawSelectionHighlight(dialogX + 16, centerY - 4, dialogWidth - 32, 34);
+                framebuffer.drawText(labelX, centerY + 2, "Hyper Trained", hyperTrainMode ? Colors::Text : Colors::TextDim);
+                framebuffer.drawText(valX, centerY + 2, screen.statEdit.currentHyperTrained ? "Yes" : "No", hyperTrainMode ? Colors::Accent : Colors::Text);
+                const std::string blockedReason = getHyperTrainBlockedReason(*pokemon, screen.statEdit.currentIV);
+                const std::string hyperTrainNote = (screen.statEdit.currentHyperTrained || blockedReason.empty()) ? "Plays as " + std::to_string(screen.statEdit.currentHyperTrained ? fmtMaxIV : screen.statEdit.currentIV) : blockedReason;
+                framebuffer.drawText(rangeX, centerY + 4, hyperTrainNote, Colors::TextDim, TextStyle::Caption);
+                screen.touchButtons.push_back({12, dialogX + 16, centerY - 4, dialogWidth - 32, 34});
+                centerY += 42;
+            }
+
             // Second row: AV (Let's Go) or EV (tap -> select it, id 11)
-            if (!ivMode)
+            const bool secondMode = !ivMode && !hyperTrainMode;
+            if (secondMode)
                 framebuffer.drawSelectionHighlight(dialogX + 16, centerY - 4, dialogWidth - 32, 34);
-            framebuffer.drawText(labelX, centerY + 2, evLabel, !ivMode ? Colors::Text : Colors::TextDim);
-            framebuffer.drawText(valX, centerY + 2, std::to_string(usesAV ? screen.statEdit.currentAV : screen.statEdit.currentEV), !ivMode ? Colors::Accent : Colors::Text);
+            framebuffer.drawText(labelX, centerY + 2, evLabel, secondMode ? Colors::Text : Colors::TextDim);
+            framebuffer.drawText(valX, centerY + 2, std::to_string(usesAV ? screen.statEdit.currentAV : screen.statEdit.currentEV), secondMode ? Colors::Accent : Colors::Text);
             {
                 const std::string evRange = usesAV ? (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 200)")) : gbStats ? ("(0 - " + std::to_string(fmtMaxEV) + ")") : (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 252)"));
                 framebuffer.drawText(rangeX, centerY + 4, evRange, Colors::TextDim, TextStyle::Caption);
@@ -112,8 +146,8 @@ namespace UI
             }
 
             // Step buttons (ZL -100 | L -10 | < -1 | > +1 | R +10 | ZR +100), then Cancel / Save labelled
-            // with B / A. Up/Down still switch the IV <-> EV/AV row (handled in the input path).
-            const int choiceButtonHeight = TouchTargetMin, cby = dialogY + h - choiceButtonHeight - 14;
+            // with B / A. Up/Down still step between the rows (handled in the input path).
+            const int choiceButtonHeight = TouchTargetMin, cby = dialogY + dialogHeight - choiceButtonHeight - 14;
             drawEditStepRow(screen, framebuffer, dialogX, dialogWidth, cby - 58 - 14, 58);
 
             const int choiceButtonWidth = 190;

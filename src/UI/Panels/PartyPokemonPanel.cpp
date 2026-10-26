@@ -146,11 +146,21 @@ namespace UI
                 framebuffer.drawText(cStat, statRowY, "Stat", colHdr, TextStyle::Caption);
                 statRowY += lineH;
 
-                for (const auto &r : rows)
+                for (int statIndex = 0; statIndex < 6; ++statIndex)
                 {
+                    const StatRow &r = rows[statIndex];
                     framebuffer.drawText(labelX, statRowY, r.name, Colors::TextDim, TextStyle::Caption);
                     framebuffer.drawText(cBase, statRowY, std::to_string(r.base), Colors::Text, TextStyle::Caption);
-                    framebuffer.drawText(ivColumnX, statRowY, std::to_string(r.iv), Colors::Text, TextStyle::Caption);
+                    const std::string ivText = std::to_string(r.iv);
+                    framebuffer.drawText(ivColumnX, statRowY, ivText, Colors::Text, TextStyle::Caption);
+                    // The stored IV stays what is shown, as on the details page; "HT" says the game
+                    // plays it at the maximum. Row order matches the Hyper Training bit order.
+                    if (pokemon->isHyperTrained(statIndex))
+                    {
+                        int ivTextWidth, ivTextHeight;
+                        framebuffer.measureText(ivText, ivTextWidth, ivTextHeight, TextStyle::Caption);
+                        framebuffer.drawText(ivColumnX + ivTextWidth + 3, statRowY, "HT", Colors::Accent, TextStyle::Caption);
+                    }
                     framebuffer.drawText(evColumnX, statRowY, std::to_string(r.evav), Colors::Text, TextStyle::Caption);
                     framebuffer.drawText(cStat, statRowY, std::to_string(r.stat), Colors::Accent, TextStyle::Caption);
                     statRowY += lineH;

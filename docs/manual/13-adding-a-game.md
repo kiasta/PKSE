@@ -130,6 +130,7 @@ recalculateStats  regeneratePID  setShiny  getGameGroup
 maxIV(), maxEV(), evWide(), setEVWide()          // if not 31 / 255
 hasNature/Ability/HeldItem/Friendship/Ball/MetData/OriginGame/PID/StoredGender()
 hasAwakeningValues(), hasPokerus(), hasHyperTraining(), isAlpha(), hasAlphaFlag(), setAlpha()
+hyperTrainMinimumLevel(), isHyperTrainingAvailable()   // if not level 100 / not "the field exists"
 getMaxNicknameLength(), canStoreNickname()
 isStructurallyValid()                            // if there is no checksum
 clone()                                          // ALWAYS. The base returns nullptr.

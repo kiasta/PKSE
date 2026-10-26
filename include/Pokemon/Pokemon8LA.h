@@ -249,6 +249,7 @@ namespace Pokemon
             data[0x13E] = static_cast<std::byte>(value);
             refreshChecksum();
         }
+        bool isHyperTrainingAvailable() const noexcept override { return homeTracker() != 0; }
 
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xEE]); }
         void setOriginGame(uint8_t version) noexcept override
