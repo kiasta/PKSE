@@ -787,24 +787,26 @@ namespace Legality
         /// them, so a fateful-encounter egg is left alone entirely and everything else is a Warning.
         void checkRibbons(const Pokemon::Pokemon &pokemon, Report &report, Enums::GameVersion originVersion, bool fatefulEncounter)
         {
-            // Read-only: getMonRibbons() is the whole ribbon surface PKSE has, and it answers both
-            // questions below. A mark is named as one -- the tables spell every mark "... Mark" so
-            // it reads distinctly from a ribbon in the details view -- so counting them apart needs
-            // no second table and no per-bit addressing.
-            const std::vector<std::string> held = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(pokemon.getData().data()), pokemon.getGameGroup());
-            // none set, including every format that stores none
-            if (held.empty()) return;
-
+            // Marks are told apart by their definition rather than by their display name, which is
+            // in the active language.
+            const uint8_t *entityData = reinterpret_cast<const uint8_t *>(pokemon.getData().data());
+            int heldCount = 0;
             int markCount = 0;
             std::string firstMark;
-            for (const std::string &name : held)
+            for (const Names::RibbonDefinition &ribbon : Names::getRibbonDefinitions(pokemon.getGameGroup()))
             {
-                if (name.size() <= 5 || name.compare(name.size() - 5, 5, " Mark") != 0)
+                const uint8_t ribbonValue = Names::getRibbonValue(entityData, ribbon);
+                if (ribbonValue == 0)
+                    continue;
+                ++heldCount;
+                if (!Names::isRibbonMark(ribbon))
                     continue;
                 if (markCount == 0)
-                    firstMark = name;
+                    firstMark = Names::getRibbonName(ribbon, ribbonValue);
                 ++markCount;
             }
+            // none set, including every format that stores none
+            if (heldCount == 0) return;
 
             // Origin generation 0 means the format records no origin at all, so there is nothing to
             // compare against -- silence, not a finding.
@@ -813,7 +815,7 @@ namespace Legality
                 add(report, Severity::Invalid, "Marks were introduced in Sword/Shield, but this Pokémon carries " + firstMark + " and originated in " + Enums::getGameVersionName(originVersion));
 
             if (pokemon.isEgg() && !fatefulEncounter)
-                add(report, Severity::Warning, "An unhatched egg carries " + std::to_string(held.size()) + " ribbon/mark(s), which it has not been anywhere to earn");
+                add(report, Severity::Warning, "An unhatched egg carries " + std::to_string(heldCount) + " ribbon/mark(s), which it has not been anywhere to earn");
         }
 
         /// The Pokemon HOME tracker.

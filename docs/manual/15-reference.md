@@ -351,7 +351,8 @@ pokemon.canStoreNickname(u16) / trainer.canStoreBoxName(u8)
 | `src/Names/MoveNames.cpp`, `SpeciesNames.cpp` | `gen_movenames.py`, `gen_speciesnames.py` |
 | `src/Names/ItemNames.cpp` | `gen_itemnames.py` |
 | `src/Names/AbilityNames.cpp`, `NatureNames.cpp`, `TypeNames.cpp` | `gen_simplenames.py` |
-| `src/Names/FormNamesLocalized.cpp`, `RibbonNamesLocalized.cpp` | `gen_formnames.py`, `gen_ribbonnames.py` |
+| `src/Names/FormNamesLocalized.cpp` | `gen_formnames.py` |
+| `src/Names/RibbonNames.cpp`, `RibbonNamesLocalized.cpp` | `gen_ribbonnames.py` |
 | `include/Trainer/Blocks5BW.h` … `Blocks7USUM.h` (6) | `gen_blocktables.py` |
 | `include/Utils/Gen2Text.h`, `Gen4Text.h` | `gen_gen2text.py`, `gen_gen4text.py` |
 | `src/Pokemon/DexTable8SWSH.cpp`, `DexTable9SV.cpp`, `DexTable8LA.cpp` | `gen_dextable8swsh.py`, `gen_dextable9sv.py`, `gen_dextable8la.py` |
@@ -359,6 +360,7 @@ pokemon.canStoreNickname(u16) / trainer.canStoreBoxName(u8)
 | `romfs/sprites/pokemon_hd/` | `tools/gen_hdsprites.py` |
 | `romfs/sprites/types/` | `tools/gen_typeicons.py` |
 | `romfs/sprites/marks/` | `tools/gen_marks.py` |
+| `romfs/sprites/ribbons/` | `tools/gen_ribbons.py` |
 | `romfs/fonts/` | `tools/gen_fonts.py` |
 
 ### UI
@@ -392,6 +394,7 @@ make                                   # -> PKSE.nro (fails if a romfs asset is 
 python tools/gen_fonts.py             # the 3 UI fonts
 python tools/gen_typeicons.py         # the 19 type icons
 python tools/gen_marks.py             # the origin markings
+python tools/gen_ribbons.py           # the ribbon and mark images
 python tools/gen_hdsprites.py         # the 3260 sprites (needs Pillow)
 
 # Verify, in cost order

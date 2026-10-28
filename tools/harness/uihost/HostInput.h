@@ -11,34 +11,35 @@
  * software keyboard are different -- both are console services with no struct to fill in -- so each
  * gets a host implementation of the same wrapper the .nro calls, fed from a script.
  */
-namespace UIHost {
+namespace UIHost
+{
 
     /// What TouchInput::update() will observe on the next frame. The driver sets it; the host
     /// TouchInput.cpp reads it and derives the same press/hold/release edges the real one does.
-    void setTouch(bool down, int x, int y);
+    void setTouch(bool touchDown, int touchX, int touchY);
 
     /// Queue one answer for the next Utils::promptText() call -- the equivalent of cy.type().
     /// swkbd BLOCKS the app on console, so a queued answer models exactly that: the call returns
     /// immediately with this text, as though the user had typed it and pressed OK.
-    void queueText(const std::string& text);
+    void queueText(const std::string &text);
     /// Queue one answer for the next Utils::promptNumber().
-    void queueNumber(int value);
+    void queueNumber(int enteredValue);
     /// Make the next prompt come back cancelled. Worth testing on its own: a cancel must mean
     /// "no change", and treating it as an empty string would blank the field being edited.
     void queueCancel();
 
     /// How many queued keyboard answers were never consumed -- a test that queued input the UI
     /// never asked for did not do what it thought it did.
-    int  pendingPrompts();
+    int pendingPromptCount();
     void clearPrompts();
     /// How many prompts the UI has raised so far this run.
-    int  promptsRaised();
+    int raisedPromptCount();
 
     /// What the next save commit reports back. The write itself is console-only, but the UI's
     /// handling of both outcomes is not -- see HostStubs.cpp.
-    void setSaveResult(bool ok);
-    int  saveCalls();
-    void resetSaveCalls();
+    void setSaveResult(bool saveSucceeds);
+    int saveCallCount();
+    void resetSaveCallCount();
 }
 
 #endif

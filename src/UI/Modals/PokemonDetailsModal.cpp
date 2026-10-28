@@ -11,6 +11,7 @@
 #include "UI/PKSEFramebuffer.h"
 #include "UI/ScreenChrome.h"
 #include "UI/SpriteManager.h"
+#include "UI/Dialogs/RibbonEditDialog.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/OriginStamp.h" // originStampLabel -- the Origin row
 #include "Utils/HelperUtilities.h"
@@ -54,6 +55,7 @@ namespace UI
             const bool usesAwakeningValues = p->hasAwakeningValues();
             const int selectedIndex = screen.details.selectedField; // 0-5 stats, 6 shiny, 7 nature, 8 gender, 9 level, 10-13 moves, 14 item
             const Legality::Report legalityRep = Legality::analyze(*p, p->getGameGroup());
+            const bool hasRibbons = !Names::getRibbonDefinitions(p->getGameGroup()).empty();
 
             screen.touchButtons.clear();
 
@@ -499,16 +501,14 @@ namespace UI
                 else
                     row("Pokerus", pkrs);
             }
-            // Ribbons: count only (there can be dozens); Y / tap opens the full list.
+            // Ribbons: count only (there can be dozens); Y / tap opens the editor. Shown with none
+            // owned too, because the editor is also where ribbons are added.
+            if (hasRibbons)
             {
-                auto ribbonList = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup());
-                if (!ribbonList.empty())
-                {
-                    const int rectY = infoRowY - scroll;
-                    row("Ribbons", std::to_string(ribbonList.size()) + "  (Y)"); // advances iy
-                    if (rowVisible(rectY))
-                        screen.touchButtons.push_back({94, leftColumnX + 8, rectY, Lw - 16, editRowHeight});
-                }
+                const int rectY = infoRowY - scroll;
+                row("Ribbons", std::to_string(Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup()).size()) + "  (Y)"); // advances iy
+                if (rowVisible(rectY))
+                    screen.touchButtons.push_back({94, leftColumnX + 8, rectY, Lw - 16, editRowHeight});
             }
             framebuffer.clearClip();
             screen.details.leftOrder = leftOrder; // hand the nav its draw-order field list
@@ -814,7 +814,7 @@ namespace UI
 
             // Bottom nav bar -- the SAME badge guide as the rest of the app. This is a full-screen page, so
             // it gets a real nav bar. The context depends on which column is focused (values / details /
-            // moves). Drawn before the overlays so an open legality or ribbon popup dims it like everything
+            // moves). Drawn before the overlays so an open legality popup dims it like everything
             // else behind them.
             {
                 // An overlay drawn OVER this page owns input, so it names the keys -- this page's own
@@ -834,12 +834,14 @@ namespace UI
                 // than discarding on the spot, so "Discard" would be a promise it does not keep. Dirtiness
                 // is already signalled by the top-bar "Unsaved changes" marker.
                 const std::string backSeg = "B: Close";
+                // Gen 1 and Gen 2 store no ribbons, so Y has nothing to open there.
+                const std::string ribbonSeg = hasRibbons ? "Y: Ribbons  |  " : "";
                 if (selectedIndex >= 15)
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Right: Values  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Right: Values  |  " + saveSeg + "  |  " + backSeg;
                 else if (selectedIndex >= 10)
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Left: Values  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Left: Values  |  " + saveSeg + "  |  " + backSeg;
                 else
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Left: Details  |  Right: Moves  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Left: Details  |  Right: Moves  |  " + saveSeg + "  |  " + backSeg;
                 drawNavBar(framebuffer, navHint);
                 }
             }
@@ -953,41 +955,10 @@ namespace UI
                 screen.touchButtons.push_back({96, 0, 0, screenWidth, H - NAV_BAR_HEIGHT});
             }
 
-            // Ribbon list overlay — opened by tapping the Ribbons row; any tap / B closes.
-            // Two columns, because a fully-decorated Gen 8/9 pokemon can carry dozens of ribbons and marks.
+            // The ribbon editor, opened by Y or by tapping the Ribbons row. It owns input and names
+            // its own keys through overlayNavHint().
             if (screen.details.ribbonOverlay)
-            {
-                const auto ribbonList = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup());
-                framebuffer.drawFilledRect(0, 0, screenWidth, H, Color(0, 0, 0, 170));
-                const int cols = (ribbonList.size() > 12) ? 2 : 1;
-                const int perCol = (static_cast<int>(ribbonList.size()) + cols - 1) / std::max(1, cols);
-                const int overlayWidth = (cols == 2) ? 860 : 560;
-                const int overlayHeight = std::min(H - 60, 96 + std::max(1, perCol) * 28);
-                const int overlayX = (screenWidth - overlayWidth) / 2, oy = (H - overlayHeight) / 2;
-                framebuffer.drawFilledRoundedRect(overlayX, oy, overlayWidth, overlayHeight, 16, Colors::Panel);
-                framebuffer.drawRoundedRect(overlayX, oy, overlayWidth, overlayHeight, 16, Colors::Border, 1);
-                framebuffer.drawText(overlayX + 24, oy + 20, "Ribbons & Marks", Colors::Text, TextStyle::Heading);
-                {
-                    const char *h = "B / tap: close";
-                    int headingWidth, hh;
-                    framebuffer.measureText(h, headingWidth, hh, TextStyle::Caption);
-                    framebuffer.drawText(overlayX + overlayWidth - 24 - headingWidth, oy + 28, h, Colors::TextDim, TextStyle::Caption);
-                }
-                const int colW = (overlayWidth - 56) / std::max(1, cols);
-                for (size_t rbIndex = 0; rbIndex < ribbonList.size(); ++rbIndex)
-                {
-                    const int color = static_cast<int>(rbIndex) / std::max(1, perCol);
-                    const int ribbonRowIndex = static_cast<int>(rbIndex) % std::max(1, perCol);
-                    const int ribbonX = overlayX + 28 + color * colW;
-                    const int statRowY = oy + 66 + ribbonRowIndex * 28;
-                    if (statRowY > oy + overlayHeight - 26)
-                        continue;
-                    framebuffer.drawText(ribbonX, statRowY, ribbonList[rbIndex], Colors::Text, TextStyle::Caption);
-                }
-                // id 96: tap anywhere closes -- but NOT over the nav bar, whose badges are themselves
-                // tappable. Overlapping them would fire both the badge's button and this close.
-                screen.touchButtons.push_back({96, 0, 0, screenWidth, H - NAV_BAR_HEIGHT});
-            }
+                Dialogs::drawRibbonEditDialog(screen, framebuffer);
         }
     }
 }

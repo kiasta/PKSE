@@ -281,16 +281,17 @@ Two consequences worth knowing:
 - **The screen skips its own bar while the details page is up.** That page paints an opaque gradient
   over the whole screen and draws its own, so the one underneath was invisible work — and
   indistinguishable, to a test, from the real double-bar bug.
-- **The legality and ribbon overlays are deliberately absent from `overlayNavHint()`.** They dim the
-  entire page, bar included, and carry their own `B / tap: close` line inside the card. Naming it on
+- **The legality overlay is deliberately absent from `overlayNavHint()`.** It dims the
+  entire page, bar included, and carries its own `B / tap: close` line inside the card. Naming it on
   a bar the overlay has just dimmed would be the second hint this whole thing exists to remove.
 
 - **An overlay's bar is drawn after the overlay.** Every dialog paints a full-screen scrim, and the
   bar used to be drawn before it, so the keys the dialog owns were dimmed along with the screen
   behind it and read as that screen's. When `overlayNavHint()` is non-empty, `TrainerViewScreen::draw`
   draws the bar after every dialog, and the details page draws no bar of its own;
-  `SaveSelectScreen::draw` draws its bar after the file browser. The legality and ribbon overlays
-  are still exempt, for the reason above.
+  `SaveSelectScreen::draw` draws its bar after the file browser. The legality overlay is still
+  exempt, for the reason above. The ribbon editor is not: it has a dozen keys, so it owns the bar
+  like any other dialog.
 
 **The invariant, stated so it can be checked: at most one full-width rounded sheet pinned to the
 bottom edge per frame**, and while an overlay owns input, no full-screen scrim drawn after it. The nav bar is the only primitive of that shape, so counting them in a
@@ -641,7 +642,8 @@ function cannot see.
 | 10–13 | right | move slots 0–3 |
 | 14 | right | held item |
 | 15–34 | left | Ability (15), Friendship (16), Egg (17), Met Lv (18), Ball (19), Language (20), Origin (21), Pokerus (22), Nickname (23), EXP (24), Met (25), Form (26), Stat Nature (27), Met Date (28), Egg Loc (29), Egg Date (30), Fateful (31), Species (32), Evolve / Trade Evolve (33), Alpha (34) |
-| 94, 99 | — | ribbon overlay, close button |
+| 94, 99 | — | open the ribbon editor, close button |
+| 200 + index | — | a ribbon editor tile, by its index in the format's ribbon table (`RIBBON_TILE_BUTTON_ID_BASE`) |
 
 The left column is **built at draw time** into `details.leftOrder`, in draw order, so conditional
 rows appear only when actually shown and the cursor visits exactly what is on screen:

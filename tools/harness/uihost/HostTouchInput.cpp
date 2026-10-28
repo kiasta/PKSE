@@ -8,30 +8,49 @@
 #include "UI/TouchInput.h"
 #include "HostInput.h"
 
-namespace {
-    bool gDown = false;
-    int  gX = 0, gY = 0;
+namespace
+{
+    bool g_touchDown = false;
+    int g_touchX = 0;
+    int g_touchY = 0;
 }
 
-namespace UIHost {
-    void setTouch(bool down, int x, int y) { gDown = down; gX = x; gY = y; }
+namespace UIHost
+{
+    void setTouch(bool touchDown, int touchX, int touchY)
+    {
+        g_touchDown = touchDown;
+        g_touchX = touchX;
+        g_touchY = touchY;
+    }
 }
 
-namespace UI {
-    void TouchInput::update() {
+namespace UI
+{
+    void TouchInput::update()
+    {
         prevDown = curDown;
-        if (gDown) {
-            curX = gX;
-            curY = gY;
-            if (!curDown) { begX = curX; begY = curY; }   // press edge records the start position
+        if (g_touchDown)
+        {
+            curX = g_touchX;
+            curY = g_touchY;
+            if (!curDown)
+            {
+                begX = curX;
+                begY = curY;
+            }   // press edge records the start position
             curDown = true;
-        } else {
+        }
+        else
+        {
             curDown = false;
         }
     }
 
-    bool TouchInput::dragged() const {
-        const int dx = curX - begX, dy = curY - begY;
-        return (dx * dx + dy * dy) > (20 * 20);
+    bool TouchInput::dragged() const
+    {
+        const int deltaX = curX - begX;
+        const int deltaY = curY - begY;
+        return (deltaX * deltaX + deltaY * deltaY) > (20 * 20);
     }
 }
