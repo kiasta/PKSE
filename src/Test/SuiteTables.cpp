@@ -20,6 +20,7 @@
 #include "Names/FormNames.h"
 #include "Names/ItemNames.h"
 #include "Names/RibbonNames.h"
+#include "Conversion/Convert.h" // affixedRibbonOffset -- which formats index ribbons for display
 #include <cstring>
 #include "Names/NameLanguage.h"
 #include "Names/MoveNames.h"
@@ -94,6 +95,7 @@ namespace Test
             HandlerTradeChunk,
             TradePartnerRulesChunk,
             EncounterRulesChunk,
+            RibbonDefinitionsChunk,
             KnownValuesChunk,
             ChunkCount
         };
@@ -318,44 +320,33 @@ namespace Test
                 }
             }
 
-            // RIBBONS, by the same direct contract as forms. A whole-buffer sweep is used rather
-            // than a sample because the two collectors differ: the Gen 8/9 and Let's Go sets read
-            // flag bits, while the Gen 3 set COMPOSES its contest names ("Cool Ribbon Hyper") and
-            // so exercises a different path through the same lookup.
+            // RIBBONS, by the same direct contract as forms: every name a ribbon table can produce,
+            // at every value it can take, in every language. Driven off the definitions rather than a
+            // buffer of set bits, because a Gen 3 contest rank COMPOSES its name ("Cool Ribbon Hyper")
+            // from its value, and an all-ones buffer reads as no rank at all.
+            for (Enums::GameVersion group : ALL_SAVE_GROUPS)
             {
-                uint8_t allRibbonBytes[0x50];
-                std::memset(allRibbonBytes, 0xFF, sizeof(allRibbonBytes));
-                const Enums::GameVersion ribbonGroups[] = {
-                    Enums::GameVersion::SWSH, Enums::GameVersion::GG, Enums::GameVersion::FRLG};
-                for (Enums::GameVersion group : ribbonGroups)
+                for (const Names::RibbonDefinition &ribbon : Names::getRibbonDefinitions(group))
                 {
-                    Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
-                    const std::vector<std::string> englishRibbons = Names::getMonRibbons(allRibbonBytes, group);
-                    context.check(!englishRibbons.empty(), "no ribbons decoded for a group", Enums::getGameVersionName(group));
-                    for (size_t languageIndex = 0; languageIndex < Names::LANGUAGE_COUNT; ++languageIndex)
+                    for (int ribbonValue = 1; ribbonValue <= ribbon.maxCount; ++ribbonValue)
                     {
-                        if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH) continue;
-                        Names::setDisplayLanguage(languageIndex);
-                        const std::vector<std::string> localizedRibbons = Names::getMonRibbons(allRibbonBytes, group);
-                        const std::string languageLabel = Enums::getGameVersionName(group) + " language=" + Names::nameLanguageSuffix(languageIndex);
-                        if (!context.check(localizedRibbons.size() == englishRibbons.size(), "a language decoded a different number of ribbons", languageLabel)) continue;
-                        size_t untranslatedCount = 0;
-                        size_t missingRowCount = 0;
-                        for (size_t ribbonIndex = 0; ribbonIndex < localizedRibbons.size(); ++ribbonIndex)
+                        Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
+                        const std::string englishRibbonName = Names::getRibbonName(ribbon, static_cast<uint8_t>(ribbonValue));
+                        for (size_t languageIndex = 0; languageIndex < Names::LANGUAGE_COUNT; ++languageIndex)
                         {
-                            const char *expectedRibbonName = Names::getRibbonNameLocalized(englishRibbons[ribbonIndex].c_str(), languageIndex);
-                            if (expectedRibbonName == nullptr || expectedRibbonName[0] == '\0')
+                            if (languageIndex == Names::LANGUAGE_INDEX_ENGLISH)
                             {
-                                ++missingRowCount;   // every producible name should have a row
                                 continue;
                             }
-                            if (localizedRibbons[ribbonIndex] != expectedRibbonName)
+                            Names::setDisplayLanguage(languageIndex);
+                            const std::string where = Enums::getGameVersionName(group) + " ribbon=\"" + englishRibbonName + "\" language=" + Names::nameLanguageSuffix(languageIndex);
+                            const char *expectedRibbonName = Names::getRibbonNameLocalized(englishRibbonName.c_str(), languageIndex);
+                            if (!context.check(expectedRibbonName != nullptr && expectedRibbonName[0] != '\0', "a ribbon PKSE can show has no localized row", where))
                             {
-                                ++untranslatedCount;
+                                continue;
                             }
+                            context.check(Names::getRibbonName(ribbon, static_cast<uint8_t>(ribbonValue)) == expectedRibbonName, "getRibbonName ignored the localized ribbon table", where);
                         }
-                        context.check(missingRowCount == 0, "a ribbon PKSE can show has no localized row", languageLabel + " missing=" + std::to_string(missingRowCount));
-                        context.check(untranslatedCount == 0, "getMonRibbons ignored the localized ribbon table", languageLabel + " wrong=" + std::to_string(untranslatedCount) + " of " + std::to_string(localizedRibbons.size()));
                     }
                 }
             }
@@ -1578,7 +1569,139 @@ namespace Test
                 }
             }
         }
+        /// The ribbon tables, as the editor writes through them. Each row must own its bits alone --
+        /// a write that spills into a neighbour hands out or takes away a ribbon nobody touched --
+        /// and the HOME block's rows must sit in RibbonIndex order, because AffixedRibbon stores that
+        /// index and the editor derives it from the row.
+        void checkRibbonDefinitions(Context &context)
+        {
+            // Covers the largest ribbon block, PK4/PK5's 0x24..0x63.
+            constexpr size_t entityBufferSize = 0x100;
+            for (Enums::GameVersion group : ALL_SAVE_GROUPS)
+            {
+                const std::string groupLabel = Enums::getGameVersionName(group);
+                const std::span<const Names::RibbonDefinition> ribbons = Names::getRibbonDefinitions(group);
+                // Gen 3 introduced ribbons; every format from it on stores some.
+                const bool storesRibbons = Enums::getVersionGeneration(Enums::getGroupRepVersion(group)) >= 3;
+                if (!context.check(ribbons.empty() != storesRibbons, "a format's ribbon table is empty where the format stores ribbons, or not where it stores none", groupLabel + " ribbons=" + std::to_string(ribbons.size())))
+                {
+                    continue;
+                }
+
+                const bool homeBlock = Conversion::affixedRibbonOffset(group) != 0;
+                int expectedAffixIndex = 0;
+                for (size_t ribbonIndex = 0; ribbonIndex < ribbons.size(); ++ribbonIndex)
+                {
+                    const Names::RibbonDefinition &ribbon = ribbons[ribbonIndex];
+                    const std::string where = groupLabel + " ribbon=\"" + ribbon.englishName + "\"";
+                    context.check(ribbon.maxCount >= 1 && (ribbon.kind != Names::RibbonKind::Flag || ribbon.maxCount == 1), "a ribbon's maximum does not fit its kind", where + " max=" + std::to_string(ribbon.maxCount));
+
+                    // Set to its top on an empty record: it reads back, and no other ribbon moved.
+                    uint8_t entityBytes[entityBufferSize] = {};
+                    Names::setRibbonValue(entityBytes, ribbon, ribbon.maxCount);
+                    context.check(Names::getRibbonValue(entityBytes, ribbon) == ribbon.maxCount, "a ribbon set to its maximum does not read back", where);
+                    int movedCount = 0;
+                    for (size_t otherIndex = 0; otherIndex < ribbons.size(); ++otherIndex)
+                    {
+                        if (otherIndex != ribbonIndex && Names::getRibbonValue(entityBytes, ribbons[otherIndex]) != 0)
+                        {
+                            ++movedCount;
+                        }
+                    }
+                    context.check(movedCount == 0, "setting a ribbon gave the Pokemon another ribbon too", where + " others=" + std::to_string(movedCount));
+                    Names::setRibbonValue(entityBytes, ribbon, 0);
+                    bool clearedToZero = true;
+                    for (uint8_t entityByte : entityBytes)
+                    {
+                        clearedToZero = clearedToZero && entityByte == 0;
+                    }
+                    context.check(clearedToZero, "clearing a ribbon left bytes behind on an empty record", where);
+
+                    // Cleared on a full record: only its own value falls, and every other byte holds.
+                    uint8_t fullBytes[entityBufferSize];
+                    std::memset(fullBytes, 0xFF, sizeof(fullBytes));
+                    uint8_t expectedBytes[entityBufferSize];
+                    std::memcpy(expectedBytes, fullBytes, sizeof(fullBytes));
+                    Names::setRibbonValue(fullBytes, ribbon, 0);
+                    context.check(Names::getRibbonValue(fullBytes, ribbon) == 0, "a cleared ribbon still reads as held", where);
+                    int strayByteCount = 0;
+                    for (size_t byteOffset = 0; byteOffset < entityBufferSize; ++byteOffset)
+                    {
+                        const bool ownByte = byteOffset == ribbon.byteOffset || (ribbon.kind == Names::RibbonKind::MemoryCount && byteOffset == ribbon.countByteOffset) || (ribbon.kind == Names::RibbonKind::ContestRank && byteOffset >= ribbon.byteOffset && byteOffset < ribbon.byteOffset + 4u);
+                        if (!ownByte && fullBytes[byteOffset] != expectedBytes[byteOffset])
+                        {
+                            ++strayByteCount;
+                        }
+                    }
+                    context.check(strayByteCount == 0, "clearing a ribbon changed a byte that is not its own", where + " bytes=" + std::to_string(strayByteCount));
+                    // A PK3's bit 31 is FatefulEncounter, in the same word as the contest ranks.
+                    if (Enums::isGen3Group(group))
+                    {
+                        context.check((fullBytes[0x4F] & 0x80) != 0, "clearing a Gen 3 ribbon cleared the fateful-encounter bit", where);
+                    }
+
+                    // A memory count carries its has-flag with it, both ways.
+                    if (ribbon.kind == Names::RibbonKind::MemoryCount)
+                    {
+                        uint8_t countBytes[entityBufferSize] = {};
+                        Names::setRibbonValue(countBytes, ribbon, 1);
+                        context.check(((countBytes[ribbon.byteOffset] >> ribbon.bit) & 1) == 1, "a memory count was set without its has-flag", where);
+                        Names::setRibbonValue(countBytes, ribbon, static_cast<uint8_t>(ribbon.maxCount + 5));
+                        context.check(Names::getRibbonValue(countBytes, ribbon) == ribbon.maxCount, "a memory count was stored past its maximum", where + " got=" + std::to_string(Names::getRibbonValue(countBytes, ribbon)));
+                        Names::setRibbonValue(countBytes, ribbon, 0);
+                        context.check(((countBytes[ribbon.byteOffset] >> ribbon.bit) & 1) == 0, "a memory count cleared to zero kept its has-flag", where);
+                    }
+
+                    // Only the HOME block feeds AffixedRibbon, and its rows count up from 0 in order.
+                    const int affixIndex = Names::getRibbonAffixIndex(ribbon);
+                    if (homeBlock)
+                    {
+                        context.check(affixIndex == expectedAffixIndex, "a HOME ribbon row is out of RibbonIndex order", where + " affix=" + std::to_string(affixIndex) + " want=" + std::to_string(expectedAffixIndex));
+                        ++expectedAffixIndex;
+                    }
+                    else
+                    {
+                        context.check(affixIndex == -1, "a ribbon outside the HOME block claims an AffixedRibbon index", where + " affix=" + std::to_string(affixIndex));
+                    }
+
+                    for (int ribbonValue = 0; ribbonValue <= ribbon.maxCount; ++ribbonValue)
+                    {
+                        context.check(!Names::getRibbonSpriteStem(ribbon, static_cast<uint8_t>(ribbonValue), group).empty(), "a ribbon value has no sprite stem", where + " value=" + std::to_string(ribbonValue));
+                    }
+                }
+
+                // PKHeX's RibbonIndex anchors: the first row, the contest memory, the first row after
+                // the count bytes and the last, so a row inserted or dropped anywhere shifts one of them.
+                if (homeBlock)
+                {
+                    const auto affixIndexOf = [&](const char *englishName)
+                    {
+                        for (const Names::RibbonDefinition &ribbon : ribbons)
+                        {
+                            if (std::strcmp(ribbon.englishName, englishName) == 0) return Names::getRibbonAffixIndex(ribbon);
+                        }
+                        return -2;
+                    };
+                    context.check(affixIndexOf("Kalos Champion") == 0, "Kalos Champion is not RibbonIndex 0", groupLabel);
+                    context.check(affixIndexOf("Contest Memory") == 37, "Contest Memory is not RibbonIndex 37", groupLabel);
+                    context.check(affixIndexOf("Misty Mark") == 64, "Misty Mark is not RibbonIndex 64", groupLabel);
+                    context.check(affixIndexOf("Partner") == 110, "Partner is not RibbonIndex 110", groupLabel);
+                }
+            }
+
+            // The Gen 3 contest ranks are named and drawn per rank, not per flag.
+            const std::span<const Names::RibbonDefinition> gen3Ribbons = Names::getRibbonDefinitions(Enums::GameVersion::RSE);
+            if (context.check(!gen3Ribbons.empty() && gen3Ribbons[0].kind == Names::RibbonKind::ContestRank, "the Gen 3 table does not open with the Cool contest rank", ""))
+            {
+                const size_t originalLanguage = Names::displayLanguageIndex();
+                Names::setDisplayLanguage(Names::LANGUAGE_INDEX_ENGLISH);
+                context.check(Names::getRibbonName(gen3Ribbons[0], 3) == "Cool Ribbon Hyper", "a Gen 3 contest rank is misnamed", "got=\"" + Names::getRibbonName(gen3Ribbons[0], 3) + "\"");
+                Names::setDisplayLanguage(originalLanguage);
+                context.check(Names::getRibbonSpriteStem(gen3Ribbons[0], 4, Enums::GameVersion::RSE) == "ribbong3coolmaster", "a Gen 3 contest rank draws the wrong art", "got=" + Names::getRibbonSpriteStem(gen3Ribbons[0], 4, Enums::GameVersion::RSE));
+            }
+        }
     }
+
 
     int tablesPlan(Context &) { return ChunkCount; }
 
@@ -1641,6 +1764,9 @@ namespace Test
             break;
         case EncounterRulesChunk:
             checkEncounterRules(context);
+            break;
+        case RibbonDefinitionsChunk:
+            checkRibbonDefinitions(context);
             break;
         default:
             break;

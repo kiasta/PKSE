@@ -1,0 +1,73 @@
+# The formatting rules of docs/CODING_STANDARDS.md section 7, for clang-format.
+#
+# Format only the lines you changed: `git clang-format` (staged changes) or
+# `git clang-format <commit>`. Section 7 forbids reformatting lines a change did not otherwise
+# touch, and much of src/ predates this file. Run it whole-file (`clang-format -i`) only on a file
+# being brought up to the standard on purpose.
+#
+# What it cannot express, so check by hand:
+#   - One declaration per line: `int first = 0, second = 0;` is left as it is.
+#   - A braced list with a trailing comma is laid out one value per line, and one without is joined
+#     onto a single line. Section 7 lets an initializer list be hand-wrapped; to keep one that way,
+#     wrap it in `// clang-format off` / `// clang-format on`.
+# Vendored code (nanovg/, memecrypto/, include/Libs/) carries its own DisableFormat file.
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+# No column limit in spirit: a statement is one line however long (section 7). A real limit of 0
+# keeps whatever breaks are already there; a very large one re-joins a hard-wrapped statement.
+ColumnLimit: 4000
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+  BeforeCatch: true
+  BeforeElse: true
+  # A lambda that spans lines opens its body on its own line, as src/ writes them; a short one
+  # stays on its line.
+  BeforeLambdaBody: true
+  BeforeWhile: true
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+NamespaceIndentation: All
+AccessModifierOffset: -4
+IndentCaseLabels: false
+PointerAlignment: Right
+ReferenceAlignment: Right
+# Braces on every if / for / while body (section 7).
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+# One-line accessors inside a class (`uint16_t species() const { return ...; }`) are the headers' style;
+# a function defined outside one is always Allman.
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+SortIncludes: Never
+ReflowComments: false
+FixNamespaceComments: false
+MaxEmptyLinesToKeep: 2
+AlignTrailingComments:
+  Kind: Leave
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignOperands: DontAlign
+# A macro's line continuations stay next to the code; aligning them pads to the column limit.
+AlignEscapedNewlines: DontAlign
+AlignAfterOpenBracket: DontAlign
+Cpp11BracedListStyle: true
+SpaceAfterCStyleCast: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+BreakTemplateDeclarations: Yes

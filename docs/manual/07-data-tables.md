@@ -33,7 +33,7 @@ Rerun the generator.
 | `Names/LocationNames.cpp` | `gen_locations.py` | Met-location names, per origin version |
 | `Names/FormNames.cpp` | — (hand-curated) | Form display names, **English** |
 | `Names/FormNamesLocalized.cpp` | `gen_formnames.py` (+ `tools/formdump/`) | Form display names, the other eight languages |
-| `Names/RibbonNames.cpp` | — (hand-transcribed from PKHeX) | Ribbon/mark names, **English**, + per-format bit offsets |
+| `Names/RibbonNames.cpp` | `gen_ribbonnames.py` | One `RibbonDefinition` row per ribbon/mark per format: kind, offsets, **English** name, sprite stem |
 | `Names/RibbonNamesLocalized.cpp` | `gen_ribbonnames.py` | Ribbon/mark names, the other eight languages |
 | `Names/TMMoves.cpp` | — (extracted from PKHeX) | Which move a TM/HM/TR item teaches, per game |
 | `Pokemon/PersonalInfo1RBY.cpp` … `PersonalInfo9LZA.cpp` (19) | `gen_personaltables.py` | **Per-species data, one file per save-format group** — stats, types, abilities, gender ratio, friendship, growth rate, catch rate, forms |
@@ -52,6 +52,7 @@ Rerun the generator.
 | `romfs/sprites/pokemon_hd/` | `gen_hdsprites.py` | The 3260 sprite PNGs |
 | `romfs/sprites/types/` | `gen_typeicons.py` | The 19 type icons — 18 plus Stellar, which is Tera-only |
 | `romfs/sprites/marks/` | `gen_marks.py` | The origin markings, from PKHeX's `Markings` |
+| `romfs/sprites/ribbons/` | `gen_ribbons.py` | Every ribbon and mark image, from PKHeX's `img/ribbons` |
 | `romfs/fonts/` | `gen_fonts.py` | Nunito + both Noto Sans Symbols faces (SIL OFL) |
 
 Rows marked "—" are hand-maintained; everything else is generated output and is never edited by
@@ -702,14 +703,15 @@ answer from another localized getter, the indirect check is not a check.**
 
 ### Ribbon names
 
-**RIBBON NAMES ARE THE GAMES', NOT PKHeX'S, and four of them were simply wrong.** `Battle Royale` is
-`Battle Royal Master`; `Champion Battle` / `Champion Regional` / `Champion National` are `Battle
-Champion` / `Regional Champion` / `National Champion` — PKSE's own Gen 8/9 block already spelled
-those three the right way round at 0x38. Two more carried disambiguation no game shows:
-`RibbonChampionG3` is just **Champion Ribbon** in game and `RibbonChampionG6Hoenn` is **Hoenn
-Champion Ribbon** — separately named, so neither needs PKSE's `(Gen 3)` or PKHeX's `(Gen3)`. Nothing
-checks ribbon names against the games automatically, which is how four wrong ones survived; check a
-new one by hand.
+**RIBBON NAMES ARE THE GAMES', AND PKHeX's LABEL IS ONLY THE STARTING POINT.** A ribbon's English
+name is PKHeX's label with its disambiguator stripped: `Champion (Gen3)` is just **Champion Ribbon**
+in game and `Hoenn Champion (ORAS)` is **Hoenn Champion Ribbon**, separately named, so neither needs
+a suffix. The contest ribbons are the exception: the games say `Cool Ribbon Super` where PKHeX says
+`Cool Super`, so `pkse_aliases()` spells those the games' way. When the English table was typed by
+hand, four names were simply wrong (`Battle Royale` for **Battle Royal Master**, and `Champion
+Battle` / `Regional` / `National` backwards); taking the rest from PKHeX is what keeps that from
+recurring. Nothing checks ribbon names against the games automatically, so check a new alias by
+hand.
 
 **LOCALIZING A NAME-KEYED TABLE MEANS HANDLING AMBIGUITY, NOT HOPING PAST IT.**
 `gen_ribbonnames.py` keys on the English string PKSE produces, and several PKHeX keys collapse to one
@@ -718,9 +720,48 @@ English label once its `(G3)`/`(G4)` suffixes are stripped — `RibbonG3Cool`, `
 Ambiguous labels whose languages disagree are DROPPED rather than guessed, and the one PKSE actually
 needs (`Beauty Master` → `RibbonMasterBeauty`, the Gen 8 contest ribbon) is an explicit alias. Its
 four siblings need none: BDSP names those contests `Coolness`/`Cuteness`/`Cleverness`/`Toughness`,
-which collide with nothing. Every name `RibbonNames.cpp` can produce — 113 flag entries plus 20
-composed Gen 3 contest names — is verified to have a row, so a fallback to English means a bug
-rather than a gap.
+which collide with nothing. The Sinnoh contest ribbons of Gen 4/5 are aliased the same way, to
+`RibbonG4<Category><Rank>` (`SINNOH_CONTEST_RANKS`). Every name `RibbonNames.cpp` can produce — every
+row of every format at every value, Gen 3's composed contest ranks included — must have a row: the
+generator refuses to write the tables otherwise, and `SuiteTables` checks it again at runtime, so a
+fallback to English means a bug rather than a gap.
+
+### Ribbon tables
+
+**ONE ROW PER RIBBON PER FORMAT, AND EVERYTHING GOES THROUGH THE ROW.** `Names::RibbonDefinition`
+carries the bit (or byte) PKHeX stores the ribbon at, its English name and its image stem, and
+`getRibbonValue` / `setRibbonValue` / `getRibbonName` / `getRibbonSpriteStem` take the row. Five
+tables cover the formats that store ribbons: PK3 (RSE and FRLG), PK4/PK5, PK6, PK7/PB7 and the HOME
+block shared by every Gen 8/9 format. A ribbon is one of three shapes, and treating a shape as
+another is how Gen 6+ memory ribbons used to read as plain flags:
+
+- a **flag**, one bit;
+- a Gen 3 **contest rank**, a 3-bit field in the u32 at 0x4C holding the highest rank won. Bit 31 of
+  that word is FatefulEncounter, so a rank write touches its own three bits only;
+- a **memory count** (Contest Memory, Battle Memory; Gen 6 on), a count byte plus a has-flag that
+  `setRibbonValue` keeps equal to `count != 0`, as the games and PKHeX's setters do.
+
+**THE TABLES ARE PARSED FROM PKHeX's ENTITY CLASSES** (`tools/gen_ribbonnames.py`, which writes
+`RibbonNames.cpp` beside `RibbonNamesLocalized.cpp`). Every `Ribbon*` property of `PK3` … `PA9` is
+read from its getter: a bit of a `RIBn` byte alias, a `FlagUtil.GetFlag(Data, offset, bit)`, a PK3
+rank field, or a memory count with its `Has*MemoryRibbon` flag. A getter the generator cannot read
+stops it, and classes that share a table (PK4/PK5, PK7/PB7, every Gen 8/9 class) must parse to the
+same rows, so an upstream layout change fails the run rather than shipping a table that writes the
+wrong bit. The maxima are PKHeX's `RibbonInfo.MaxCount`. The C++ around the tables (reading and
+writing a value, naming it, picking its image) is a string constant in the generator, like
+`gen_itemnames.py`'s.
+
+**THE HOME BLOCK'S ROWS ARE IN `RibbonIndex` ORDER, AND THE ORDER IS DATA.** `AffixedRibbon` stores a
+ribbon's index into that block, and `getRibbonAffixIndex()` is the row's position. The generator
+compares the rows with PKHeX's `RibbonIndex` enum and refuses to write a table in any other order,
+because a row out of place silently re-points every affixed ribbon after it. `SuiteTables` pins the
+indices again at runtime (Kalos Champion 0, Contest Memory 37, Misty Mark 64, Partner 110).
+
+**THE ART IS PKHeX'S, BY PROPERTY NAME** (`tools/gen_ribbons.py` → `romfs/sprites/ribbons/`, PKHeX
+`master`'s whole `img/ribbons` folder). A row's `spriteStem` is the PKHeX property name in lower case;
+a Gen 3 rank adds `super`/`hyper`/`master` and a memory ribbon at its maximum adds `2` (the gold
+image; PKHeX's editor turns Battle Memory gold at seven in the Gen 9 formats, and so does PKSE).
+`SuiteAssets` checks that every stem any row can produce is in the `.nro`.
 
 ### Origin markings
 

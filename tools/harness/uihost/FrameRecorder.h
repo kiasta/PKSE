@@ -21,15 +21,26 @@
  * deliberately kept backend-independent across the NanoVG migration. Nothing in the UI layer had to
  * change to make this work, and no product code knows the harness exists.
  */
-namespace UIHost {
+namespace UIHost
+{
 
-    enum class Kind : uint8_t { Clear, Shape, Text, Sprite };
+    enum class Kind : uint8_t
+    {
+        Clear,
+        Shape,
+        Text,
+        Sprite
+    };
 
-    struct Draw {
-        Kind        kind = Kind::Shape;
-        const char* op   = "";        // which primitive: "filledRect", "pill", "card", "hexagon"...
-        int drawX = 0, drawY = 0, drawWidth = 0, drawHeight = 0;
-        UI::Color   color{0, 0, 0, 0};
+    struct Draw
+    {
+        Kind kind = Kind::Shape;
+        const char *primitive = "";   // which primitive: "filledRect", "pill", "card", "hexagon"...
+        int drawX = 0;
+        int drawY = 0;
+        int drawWidth = 0;
+        int drawHeight = 0;
+        UI::Color color{0, 0, 0, 0};
         std::string text;             // Text/Symbol only
         UI::TextStyle style = UI::TextStyle::Body;
         /// False when the active clip rect excluded this primitive entirely. A draw that happened
@@ -37,27 +48,28 @@ namespace UIHost {
         /// scrolled out of its pane", and those are different bugs.
         bool visible = true;
 
-        int right()   const { return drawX + drawWidth; }
-        int bottom()  const { return drawY + drawHeight; }
+        int right() const { return drawX + drawWidth; }
+        int bottom() const { return drawY + drawHeight; }
         int centerX() const { return drawX + drawWidth / 2; }
         int centerY() const { return drawY + drawHeight / 2; }
     };
 
     /// One flushed frame.
-    struct Frame {
-        long index = 0;
+    struct Frame
+    {
+        long frameIndex = 0;
         std::vector<Draw> draws;
 
         /// Every text primitive whose content CONTAINS `needle`, visible ones only by default.
-        std::vector<const Draw*> text(const std::string& needle, bool visibleOnly = true) const;
+        std::vector<const Draw *> text(const std::string &needle, bool visibleOnly = true) const;
         /// As text(), but the whole string must match.
-        std::vector<const Draw*> textExact(const std::string& s, bool visibleOnly = true) const;
-        bool   has(const std::string& needle) const { return !text(needle).empty(); }
-        size_t count(const std::string& needle) const { return text(needle).size(); }
+        std::vector<const Draw *> textExact(const std::string &wholeText, bool visibleOnly = true) const;
+        bool has(const std::string &needle) const { return !text(needle).empty(); }
+        size_t matchCount(const std::string &needle) const { return text(needle).size(); }
         /// First match in draw order, or nullptr.
-        const Draw* first(const std::string& needle) const;
-        std::vector<const Draw*> ops(const char* op, bool visibleOnly = true) const;
-        size_t sprites() const;
+        const Draw *first(const std::string &needle) const;
+        std::vector<const Draw *> primitives(const char *primitive, bool visibleOnly = true) const;
+        size_t spriteCount() const;
         /// All visible text in draw order, one per line -- what a failure report prints so the
         /// reader can see the screen that failed instead of guessing at it.
         std::string dump() const;
@@ -65,27 +77,32 @@ namespace UIHost {
 
     /// Global sink the recording framebuffer writes into. One UI runs at a time in a harness, so a
     /// singleton is honest here rather than plumbing a pointer through PKSEFramebuffer's fixed API.
-    class Recorder {
+    class Recorder
+    {
     public:
-        static Recorder& get();
+        static Recorder &get();
 
-        void   beginFrame();          // drop the in-progress frame and start a new one
-        Frame& building() { return cur; }
-        const Frame& last() const { return done; }
-        long   frameCount() const { return frames; }
+        void beginFrame();          // drop the in-progress frame and start a new one
+        Frame &building() { return currentFrame; }
+        const Frame &last() const { return finishedFrame; }
+        long frameCount() const { return flushedFrameCount; }
 
-        void push(Draw d);
-        void endFrame();              // called from flush(): cur -> done
+        void push(Draw draw);
+        void endFrame();              // called from flush(): currentFrame -> finishedFrame
 
-        void setClip(int x, int y, int w, int h);
+        void setClip(int rectX, int rectY, int rectWidth, int rectHeight);
         void clearClip();
-        bool clipContains(int x, int y, int w, int h) const;
+        bool clipContains(int drawX, int drawY, int drawWidth, int drawHeight) const;
 
     private:
-        Frame cur, done;
-        long  frames = 0;
-        bool  clipping = false;
-        int   cx = 0, cy = 0, cw = 0, ch = 0;
+        Frame currentFrame;
+        Frame finishedFrame;
+        long flushedFrameCount = 0;
+        bool clipEnabled = false;
+        int clipX = 0;
+        int clipY = 0;
+        int clipWidth = 0;
+        int clipHeight = 0;
     };
 }
 

@@ -61,35 +61,51 @@
 #include "Trainer/Trainer9LZA.h"
 #include "Trainer/Trainer9SV.h"
 
-namespace Utils {
-    void logInfoToFile(const char*)  {}
-    void logInfoToFile(std::string)  {}
-    void logErrorToFile(const char*) {}
+namespace Utils
+{
+    void logInfoToFile(const char *) {}
+    void logInfoToFile(std::string) {}
+    void logErrorToFile(const char *) {}
     void logErrorToFile(std::string) {}
-    void logInfoToFile(const char*, const char*)  {}
-    void logErrorToFile(const char*, const char*) {}
-    void logEventToFile(const std::string&) {}
-    void logTest(const std::string&)        {}
-    void logTestSession(const std::string&) {}
+    void logInfoToFile(const char *, const char *) {}
+    void logErrorToFile(const char *, const char *) {}
+    void logEventToFile(const std::string &) {}
+    void logTest(const std::string &) {}
+    void logTestSession(const std::string &) {}
     // Real, because PokemonFile::write reads its own file back to verify it before promoting it. The
     // app's version allocates with new[] and so does this one, so delete[] matches either way.
-    uint8_t* readAllBytes(const char* path, size_t* outSize) {
-        if (outSize) *outSize = 0;
-        FILE* file = std::fopen(path, "rb");
-        if (!file) return nullptr;
+    uint8_t *readAllBytes(const char *path, size_t *outSize)
+    {
+        if (outSize)
+        {
+            *outSize = 0;
+        }
+        FILE *file = std::fopen(path, "rb");
+        if (!file)
+        {
+            return nullptr;
+        }
         std::fseek(file, 0, SEEK_END);
-        const long length = std::ftell(file);
+        const long fileSize = std::ftell(file);
         std::fseek(file, 0, SEEK_SET);
-        uint8_t* bytes = new uint8_t[length > 0 ? (size_t)length : 1];
-        const size_t got = (bytes && length > 0) ? std::fread(bytes, 1, (size_t)length, file) : 0;
+        uint8_t *fileBytes = new uint8_t[fileSize > 0 ? static_cast<size_t>(fileSize) : 1];
+        const size_t readByteCount = (fileBytes && fileSize > 0) ? std::fread(fileBytes, 1, static_cast<size_t>(fileSize), file) : 0;
         std::fclose(file);
-        if (!bytes || got != (size_t)(length > 0 ? length : 0)) { delete[] bytes; return nullptr; }
-        if (outSize) *outSize = got;
-        return bytes;
+        if (!fileBytes || readByteCount != static_cast<size_t>(fileSize > 0 ? fileSize : 0))
+        {
+            delete[] fileBytes;
+            return nullptr;
+        }
+        if (outSize)
+        {
+            *outSize = readByteCount;
+        }
+        return fileBytes;
     }
 }
 
-namespace {
+namespace
+{
 
     /// Every save-format group, so the per-generation tables are swept for all of them rather than
     /// only for the ones this machine happens to have a save for. On hardware the same suite runs
@@ -99,48 +115,58 @@ namespace {
     using Test::ALL_SAVE_GROUPS;
 
     /// The scratch directory a suite may write into, as the runner's work directory is on console.
-    std::string g_workDir;
+    std::string g_workDirectory;
 
-    void runSuite(Test::Report& report, const char* name, const std::string& target, Enums::GameVersion group, Enums::GameVersion version, int (*plan)(Test::Context&), void (*run)(Test::Context&, int), Trainer::Trainer* trainer = nullptr) {
+    void runSuite(Test::Report &report, const char *suiteName, const std::string &target, Enums::GameVersion group, Enums::GameVersion version, int (*plan)(Test::Context &), void (*run)(Test::Context &, int), Trainer::Trainer *trainer = nullptr)
+    {
         Test::Context context;
-        context.report     = &report;
-        context.suite   = name;
-        context.target  = target;
-        context.group   = group;
+        context.report = &report;
+        context.suite = suiteName;
+        context.target = target;
+        context.group = group;
         context.version = version;
         context.trainer = trainer;
-        context.workDirectory = g_workDir;
-        report.setScope(target, name);
+        context.workDirectory = g_workDirectory;
+        report.setScope(target, suiteName);
 
-        const int chunks = plan(context);
-        std::printf("  %-10s %s  (%d chunk%s)\n", name, target.c_str(), chunks, chunks == 1 ? "" : "s");
-        for (int c = 0; c < chunks; ++c) {
-            report.setScope(target, name);
-            run(context, c);
+        const int chunkCount = plan(context);
+        std::printf("  %-10s %s  (%d chunk%s)\n", suiteName, target.c_str(), chunkCount, chunkCount == 1 ? "" : "s");
+        for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+        {
+            report.setScope(target, suiteName);
+            run(context, chunkIndex);
         }
     }
 
-    std::vector<uint8_t> readFile(const std::string& path) {
-        FILE* f = std::fopen(path.c_str(), "rb");
-        if (!f) return {};
-        std::fseek(f, 0, SEEK_END);
-        const long n = std::ftell(f);
-        std::fseek(f, 0, SEEK_SET);
-        std::vector<uint8_t> out(n > 0 ? (size_t)n : 0);
-        if (!out.empty() && std::fread(out.data(), 1, out.size(), f) != out.size()) out.clear();
-        std::fclose(f);
-        return out;
+    std::vector<uint8_t> readFile(const std::string &filePath)
+    {
+        FILE *file = std::fopen(filePath.c_str(), "rb");
+        if (!file)
+        {
+            return {};
+        }
+        std::fseek(file, 0, SEEK_END);
+        const long fileSize = std::ftell(file);
+        std::fseek(file, 0, SEEK_SET);
+        std::vector<uint8_t> fileBytes(fileSize > 0 ? static_cast<size_t>(fileSize) : 0);
+        if (!fileBytes.empty() && std::fread(fileBytes.data(), 1, fileBytes.size(), file) != fileBytes.size())
+        {
+            fileBytes.clear();
+        }
+        std::fclose(file);
+        return fileBytes;
     }
 
     /// Run every suite that needs a loaded save, against one. The save is never written back --
     /// the write path is the one part of the "save" suite that genuinely needs a console, so it
     /// is not run here at all rather than half-run.
-    void runTargetSuites(Test::Report& report, const std::string& target, Enums::GameVersion group, Trainer::Trainer& trainer) {
+    void runTargetSuites(Test::Report &report, const std::string &target, Enums::GameVersion group, Trainer::Trainer &trainer)
+    {
         // The trainer names its own title -- the same answer the on-console runner uses for a
         // loose save -- so the harness and the console bucket samples identically.
         const Enums::GameVersion version = trainer.getGameVersion();
-        runSuite(report, "entity",   target, group, version, Test::entityPlan,   Test::entityRun,   &trainer);
-        runSuite(report, "setters",  target, group, version, Test::settersPlan,  Test::settersRun,  &trainer);
+        runSuite(report, "entity", target, group, version, Test::entityPlan, Test::entityRun, &trainer);
+        runSuite(report, "setters", target, group, version, Test::settersPlan, Test::settersRun, &trainer);
         runSuite(report, "legality", target, group, version, Test::legalityPlan, Test::legalityRun, &trainer);
         runSuite(report, "pokemonfile", target, group, version, Test::pokemonFilePlan, Test::pokemonFileRun, &trainer);
     }
@@ -149,17 +175,26 @@ namespace {
     /// emulator RTC footer is trimmed only when the bytes as they stand do not detect. Without these
     /// the per-save suites never saw nine of the nineteen formats on the host.
     template <typename TrainerT>
-    bool openLoose(Test::Report& report, const char* title, Enums::GameVersion group, const std::string& path) {
-        std::vector<uint8_t> bytes = readFile(path);
-        if (bytes.empty()) return false;
-        if (!TrainerT::detect(bytes)) Save::stripRtcFooter(bytes);
-        if (!TrainerT::detect(bytes)) {
-            std::printf("  !! %s: present but not detected as a save (%s)\n", title, path.c_str());
+    bool openLoose(Test::Report &report, const char *title, Enums::GameVersion group, const std::string &savePath)
+    {
+        std::vector<uint8_t> saveBytes = readFile(savePath);
+        if (saveBytes.empty())
+        {
             return false;
         }
-        TrainerT trainer(bytes, path);
-        if (!trainer.isValid()) {
-            std::printf("  !! %s: detected but did not parse (%s)\n", title, path.c_str());
+        if (!TrainerT::detect(saveBytes))
+        {
+            Save::stripRtcFooter(saveBytes);
+        }
+        if (!TrainerT::detect(saveBytes))
+        {
+            std::printf("  !! %s: present but not detected as a save (%s)\n", title, savePath.c_str());
+            return false;
+        }
+        TrainerT trainer(saveBytes, savePath);
+        if (!trainer.isValid())
+        {
+            std::printf("  !! %s: detected but did not parse (%s)\n", title, savePath.c_str());
             return false;
         }
         runTargetSuites(report, title, group, trainer);
@@ -172,9 +207,13 @@ namespace {
     /// through the same Test::countBoxSlotChanges, but only against the save on that console; this
     /// runs it against every save here, and a save whose empty slots still hold the game's own blank
     /// is what tells a wrong slot stride from a right one.
-    void checkUnmodifiedBoxWrite(Test::Report& report, const std::string& target, Enums::GameVersion group, Trainer::Trainer& trainer, const std::vector<Save::Block>& originalBlocks) {
+    void checkUnmodifiedBoxWrite(Test::Report &report, const std::string &target, Enums::GameVersion group, Trainer::Trainer &trainer, const std::vector<Save::Block> &originalBlocks)
+    {
         Test::SCBlockLayout layout;
-        if (!Test::scBlockLayout(group, layout)) return;
+        if (!Test::scBlockLayout(group, layout))
+        {
+            return;
+        }
         Test::Context context;
         context.report = &report;
         context.suite = "boxwrite";
@@ -185,35 +224,55 @@ namespace {
         std::printf("  %-10s %s\n", "boxwrite", target.c_str());
 
         trainer.updateBoxBlock();
-        const Save::Block* originalBoxBlock = nullptr;
-        for (const Save::Block& block : originalBlocks) {
-            if (block.key == layout.boxBlockKey) originalBoxBlock = &block;
+        const Save::Block *originalBoxBlock = nullptr;
+        for (const Save::Block &block : originalBlocks)
+        {
+            if (block.key == layout.boxBlockKey)
+            {
+                originalBoxBlock = &block;
+            }
         }
-        const Save::Block* writtenBoxBlock = nullptr;
-        for (const Save::Block& block : trainer.getBlocks()) {
-            if (block.key == layout.boxBlockKey) writtenBoxBlock = &block;
+        const Save::Block *writtenBoxBlock = nullptr;
+        for (const Save::Block &block : trainer.getBlocks())
+        {
+            if (block.key == layout.boxBlockKey)
+            {
+                writtenBoxBlock = &block;
+            }
         }
-        if (!context.check(originalBoxBlock != nullptr && writtenBoxBlock != nullptr, "the save has no box block to write", Test::hexField("key", layout.boxBlockKey, 8))) return;
+        if (!context.check(originalBoxBlock != nullptr && writtenBoxBlock != nullptr, "the save has no box block to write", Test::hexField("key", layout.boxBlockKey, 8)))
+        {
+            return;
+        }
 
         Test::BoxSlotChanges boxSlotChanges;
-        if (!context.check(Test::countBoxSlotChanges(trainer, originalBoxBlock->data, writtenBoxBlock->data, layout.boxSlotStride, boxSlotChanges), "the box block cannot be split into this format's slots", "size=" + std::to_string(originalBoxBlock->data.size()) + " stride=" + std::to_string(layout.boxSlotStride))) return;
-        context.check(boxSlotChanges.occupiedSlotByteCount == 0, "an unedited box write changed an OCCUPIED box slot", Test::numberField("bytes", (long long)boxSlotChanges.occupiedSlotByteCount) + " " + Test::slot((int)(boxSlotChanges.firstOccupiedSlotIndex / trainer.getSlotsPerBox()), (int)(boxSlotChanges.firstOccupiedSlotIndex % trainer.getSlotsPerBox())));
-        if (boxSlotChanges.emptySlotByteCount) {
-            context.note("an unedited box write normalised empty box slots to the canonical blank (documented)", Test::numberField("bytes", (long long)boxSlotChanges.emptySlotByteCount));
+        if (!context.check(Test::countBoxSlotChanges(trainer, originalBoxBlock->data, writtenBoxBlock->data, layout.boxSlotStride, boxSlotChanges), "the box block cannot be split into this format's slots", "size=" + std::to_string(originalBoxBlock->data.size()) + " stride=" + std::to_string(layout.boxSlotStride)))
+        {
+            return;
+        }
+        context.check(boxSlotChanges.occupiedSlotByteCount == 0, "an unedited box write changed an OCCUPIED box slot", Test::numberField("bytes", static_cast<long long>(boxSlotChanges.occupiedSlotByteCount)) + " " + Test::slot(static_cast<int>(boxSlotChanges.firstOccupiedSlotIndex / trainer.getSlotsPerBox()), static_cast<int>(boxSlotChanges.firstOccupiedSlotIndex % trainer.getSlotsPerBox())));
+        if (boxSlotChanges.emptySlotByteCount)
+        {
+            context.note("an unedited box write normalised empty box slots to the canonical blank (documented)", Test::numberField("bytes", static_cast<long long>(boxSlotChanges.emptySlotByteCount)));
         }
     }
 
     /// An SCBlock game (SwSh / BDSP-less / LA / SV / Z-A): decrypt the file into blocks and hand
     /// them to that game's Trainer, exactly as Save::readTrainerInfo does on console.
     template <typename TrainerT>
-    bool openSCBlock(Test::Report& report, const char* label, Enums::GameVersion group, const std::string& path) {
-        std::vector<uint8_t> bytes = readFile(path);
-        if (bytes.empty()) return false;
+    bool openSCBlock(Test::Report &report, const char *label, Enums::GameVersion group, const std::string &savePath)
+    {
+        std::vector<uint8_t> saveBytes = readFile(savePath);
+        if (saveBytes.empty())
+        {
+            return false;
+        }
         // decrypt() takes a non-const pointer (it decrypts the XOR pad in place on a copy it makes
         // internally); the buffer here is ours and about to be discarded either way.
-        std::vector<Save::Block> blocks = Encryption::decrypt(bytes.data(), bytes.size());
-        if (blocks.empty()) {
-            std::printf("  !! %s: decrypt produced no blocks (%s)\n", label, path.c_str());
+        std::vector<Save::Block> blocks = Encryption::decrypt(saveBytes.data(), saveBytes.size());
+        if (blocks.empty())
+        {
+            std::printf("  !! %s: decrypt produced no blocks (%s)\n", label, savePath.c_str());
             return false;
         }
         const std::vector<Save::Block> originalBlocks = blocks;
@@ -230,15 +289,16 @@ namespace {
     }
 }
 
-int main(int argc, char** argv) {
-    const std::string reportFilePath  = (argc > 1) ? argv[1] : std::string("selftest-report.log");
+int main(int argc, char **argv)
+{
+    const std::string reportFilePath = (argc > 1) ? argv[1] : std::string("selftest-report.log");
     const std::string saveRoot = (argc > 2) ? argv[2] : (std::getenv("HOME") ? std::string(std::getenv("HOME")) + "/pkse-test-saves" : std::string());
 
     // build-selftest.sh points this into build-harness/, which is ignored; run by hand, it goes next
     // to the report.
-    const char* workEnv = std::getenv("PKSE_SELFTEST_WORK");
-    g_workDir = workEnv ? std::string(workEnv) : (reportFilePath.find('/') == std::string::npos ? std::string(".") : reportFilePath.substr(0, reportFilePath.rfind('/'))) + "/selftest-work";
-    mkdir(g_workDir.c_str(), 0755);
+    const char *workDirectoryOverride = std::getenv("PKSE_SELFTEST_WORK");
+    g_workDirectory = workDirectoryOverride ? std::string(workDirectoryOverride) : (reportFilePath.find('/') == std::string::npos ? std::string(".") : reportFilePath.substr(0, reportFilePath.rfind('/'))) + "/selftest-work";
+    mkdir(g_workDirectory.c_str(), 0755);
 
     Test::Report report;
     report.reset();
@@ -249,14 +309,18 @@ int main(int argc, char** argv) {
     runSuite(report, "tables", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::tablesPlan, Test::tablesRun);
 
     for (Enums::GameVersion group : ALL_SAVE_GROUPS)
+    {
         runSuite(report, "gentables", Enums::getGameVersionName(group), group, static_cast<Enums::GameVersion>(Enums::getGroupRepVersion(group)), Test::generationTablesPlan, Test::generationTablesRun);
+    }
 
-    int opened = 0;
-    if (!saveRoot.empty()) {
+    int openedSaveCount = 0;
+    if (!saveRoot.empty())
+    {
         std::printf("\n  saves: %s\n", saveRoot.c_str());
         {
-            const std::vector<uint8_t> frlg = readFile(SaveTree::fireRed(saveRoot));
-            if (!frlg.empty()) {
+            const std::vector<uint8_t> fireRedBytes = readFile(SaveTree::fireRed(saveRoot));
+            if (!fireRedBytes.empty())
+            {
                 // The Gen 3 discriminator, BOTH WAYS. Trainer3FRLG::detect() is what identifies a
                 // FireRed/LeafGreen save whose Switch title id PKSE does not recognise -- and
                 // FR/LG ship a separate title per language, so an unreported localisation reaches
@@ -266,22 +330,32 @@ int main(int argc, char** argv) {
                 // offsets and show a plausible, wrong trainer. Asserting only the positive would
                 // not catch that; the negatives below are the half that matters.
                 report.setScope("FireRed", "gen3detect");
-                auto expect = [&report](bool held, const char* what) {
-                    if (held) report.pass();
-                    else      report.record(Test::Severity::Fail, what, "");
+                auto expect = [&report](bool held, const char *failureDescription)
+                {
+                    if (held)
+                    {
+                        report.pass();
+                    }
+                    else
+                    {
+                        report.record(Test::Severity::Fail, failureDescription, "");
+                    }
                 };
-                expect(Trainer::Trainer3FRLG::detect(frlg), "a real FireRed save is identified by content");
+                expect(Trainer::Trainer3FRLG::detect(fireRedBytes), "a real FireRed save is identified by content");
                 std::vector<uint8_t> hoennProbe = readFile(SaveTree::ruby(saveRoot));
                 if (hoennProbe.empty())
+                {
                     hoennProbe = readFile(SaveTree::emerald(saveRoot));
-                if (!hoennProbe.empty()) {
+                }
+                if (!hoennProbe.empty())
+                {
                     Save::stripRtcFooter(hoennProbe);
                     expect(!Trainer::Trainer3FRLG::detect(hoennProbe), "a Ruby/Emerald save is NOT mistaken for FireRed/LeafGreen");
-                    expect(!Trainer::Trainer3RSE::detect(frlg), "a FireRed save is NOT mistaken for Ruby/Sapphire/Emerald");
+                    expect(!Trainer::Trainer3RSE::detect(fireRedBytes), "a FireRed save is NOT mistaken for Ruby/Sapphire/Emerald");
                 }
-                Trainer::Trainer3FRLG trainer(frlg, "FireRed_e.sav");
+                Trainer::Trainer3FRLG trainer(fireRedBytes, "FireRed_e.sav");
                 runTargetSuites(report, "FireRed", Enums::GameVersion::FRLG, trainer);
-                ++opened;
+                ++openedSaveCount;
             }
         }
         // Ruby, Sapphire and Emerald, each from its own folder. Ruby and Sapphire are byte-identical
@@ -290,17 +364,22 @@ int main(int argc, char** argv) {
         // layout (30-slot pouches, keyed counts) rather than a different game with the same one.
         // Every one of these files carries an emulator RTC footer, so they are trimmed the way
         // Save::openExternalSave trims them before a Trainer ever sees the bytes.
-        for (const char* title : { "Ruby", "Sapphire", "Emerald" }) {
-            const std::string path = (std::string(title) == "Ruby") ? SaveTree::ruby(saveRoot) : (std::string(title) == "Sapphire") ? SaveTree::sapphire(saveRoot) : SaveTree::emerald(saveRoot);
-            std::vector<uint8_t> hoenn = readFile(path);
-            if (hoenn.empty())
+        for (const char *title : {"Ruby", "Sapphire", "Emerald"})
+        {
+            const std::string savePath = (std::string(title) == "Ruby") ? SaveTree::ruby(saveRoot) : (std::string(title) == "Sapphire") ? SaveTree::sapphire(saveRoot) : SaveTree::emerald(saveRoot);
+            std::vector<uint8_t> hoennBytes = readFile(savePath);
+            if (hoennBytes.empty())
+            {
                 continue;
-            Save::stripRtcFooter(hoenn);
-            if (!Trainer::Trainer3RSE::detect(hoenn))
+            }
+            Save::stripRtcFooter(hoennBytes);
+            if (!Trainer::Trainer3RSE::detect(hoennBytes))
+            {
                 continue;
-            Trainer::Trainer3RSE trainer(std::move(hoenn), path);
+            }
+            Trainer::Trainer3RSE trainer(std::move(hoennBytes), savePath);
             runTargetSuites(report, title, Enums::GameVersion::RSE, trainer);
-            ++opened;
+            ++openedSaveCount;
         }
         // Gen 1 and Let's Go were both missing here, and both cost a real failure on hardware that
         // the host run could not have caught: Gen 1 because the setters suite assumed every format
@@ -311,34 +390,38 @@ int main(int argc, char** argv) {
         // no version byte anywhere in its 32 KiB -- the folder is the only thing that can say which
         // game it came from, and running one file as "Red/Blue" reports a pair when the user told
         // us a game.
-        for (const char* title : { "Red", "Blue" }) {
-            const std::string path = (std::string(title) == "Red") ? SaveTree::red(saveRoot) : SaveTree::blue(saveRoot);
-            std::vector<uint8_t> rby = readFile(path);
-            bool japanese = false;
-            if (!rby.empty() && Trainer::Trainer1RBY::detect(rby, japanese)) {
-                Trainer::Trainer1RBY trainer(std::move(rby), path);
+        for (const char *title : {"Red", "Blue"})
+        {
+            const std::string savePath = (std::string(title) == "Red") ? SaveTree::red(saveRoot) : SaveTree::blue(saveRoot);
+            std::vector<uint8_t> redBlueBytes = readFile(savePath);
+            bool isJapanese = false;
+            if (!redBlueBytes.empty() && Trainer::Trainer1RBY::detect(redBlueBytes, isJapanese))
+            {
+                Trainer::Trainer1RBY trainer(std::move(redBlueBytes), savePath);
                 runTargetSuites(report, title, Enums::GameVersion::RBY, trainer);
-                ++opened;
+                ++openedSaveCount;
             }
         }
         {
-            std::vector<uint8_t> gg = readFile(SaveTree::letsGoPikachu(saveRoot));
-            if (gg.size() >= Trainer::SAVE_SIZE7_LGPE) {
-                std::vector<uint8_t> area(gg.begin(), gg.begin() + Trainer::SAVE_SIZE7_LGPE);
-                Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(area));
+            std::vector<uint8_t> letsGoBytes = readFile(SaveTree::letsGoPikachu(saveRoot));
+            if (letsGoBytes.size() >= Trainer::SAVE_SIZE7_LGPE)
+            {
+                std::vector<uint8_t> saveAreaBytes(letsGoBytes.begin(), letsGoBytes.begin() + Trainer::SAVE_SIZE7_LGPE);
+                Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(saveAreaBytes));
                 runTargetSuites(report, "Let's Go Pikachu", Enums::GameVersion::GG, trainer);
-                ++opened;
+                ++openedSaveCount;
             }
         }
         {
             // Eevee is its own save and its own Pokedex, and an unedited write of it changed bytes on
             // the console that the Pikachu save never did.
-            std::vector<uint8_t> gg = readFile(SaveTree::letsGoEevee(saveRoot));
-            if (gg.size() >= Trainer::SAVE_SIZE7_LGPE) {
-                std::vector<uint8_t> area(gg.begin(), gg.begin() + Trainer::SAVE_SIZE7_LGPE);
-                Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(area));
+            std::vector<uint8_t> letsGoBytes = readFile(SaveTree::letsGoEevee(saveRoot));
+            if (letsGoBytes.size() >= Trainer::SAVE_SIZE7_LGPE)
+            {
+                std::vector<uint8_t> saveAreaBytes(letsGoBytes.begin(), letsGoBytes.begin() + Trainer::SAVE_SIZE7_LGPE);
+                Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(saveAreaBytes));
                 runTargetSuites(report, "Let's Go Eevee", Enums::GameVersion::GG, trainer);
-                ++opened;
+                ++openedSaveCount;
             }
         }
         {
@@ -346,63 +429,101 @@ int main(int argc, char** argv) {
             // conversion ENDPOINT now (Gen 1/2 land in it, and every Gen 8/9 game converts both
             // ways with it), so the matrix needs a real 3DS Pokemon to push through the remap
             // rather than only the synthetic ones it builds itself.
-            const std::string usumPath = SaveTree::ultraSun(saveRoot);
-            std::vector<uint8_t> usum = readFile(usumPath);
-            if (!usum.empty() && Trainer::Trainer7USUM::detect(usum)) {
-                Trainer::Trainer7USUM trainer(std::move(usum), usumPath);
-                if (trainer.isValid()) {
+            const std::string ultraSunPath = SaveTree::ultraSun(saveRoot);
+            std::vector<uint8_t> ultraSunBytes = readFile(ultraSunPath);
+            if (!ultraSunBytes.empty() && Trainer::Trainer7USUM::detect(ultraSunBytes))
+            {
+                Trainer::Trainer7USUM trainer(std::move(ultraSunBytes), ultraSunPath);
+                if (trainer.isValid())
+                {
                     runTargetSuites(report, "Ultra Sun", Enums::GameVersion::USUM, trainer);
-                    ++opened;
+                    ++openedSaveCount;
                 }
             }
         }
-        struct LooseTitle { const char* title; Enums::GameVersion group; };
-        for (const LooseTitle& loose : { LooseTitle{"Gold", Enums::GameVersion::GSC},
-                                         LooseTitle{"Silver", Enums::GameVersion::GSC},
-                                         LooseTitle{"Crystal", Enums::GameVersion::GSC},
-                                         LooseTitle{"Diamond", Enums::GameVersion::DP},
-                                         LooseTitle{"Pearl", Enums::GameVersion::DP},
-                                         LooseTitle{"Platinum", Enums::GameVersion::PT},
-                                         LooseTitle{"HeartGold", Enums::GameVersion::HGSS},
-                                         LooseTitle{"SoulSilver", Enums::GameVersion::HGSS},
-                                         LooseTitle{"Black", Enums::GameVersion::BW},
-                                         LooseTitle{"White", Enums::GameVersion::BW},
-                                         LooseTitle{"Black 2", Enums::GameVersion::B2W2},
-                                         LooseTitle{"White 2", Enums::GameVersion::B2W2},
-                                         LooseTitle{"X", Enums::GameVersion::XY},
-                                         LooseTitle{"Y", Enums::GameVersion::XY},
-                                         LooseTitle{"Omega Ruby", Enums::GameVersion::ORAS},
-                                         LooseTitle{"Alpha Sapphire", Enums::GameVersion::ORAS},
-                                         LooseTitle{"Sun", Enums::GameVersion::SM},
-                                         LooseTitle{"Moon", Enums::GameVersion::SM} }) {
-            const std::string path = SaveTree::forTitle(saveRoot, loose.title);
-            if (path.empty()) continue;
-            bool ok = false;
-            switch (loose.group) {
-                case Enums::GameVersion::GSC:  ok = openLoose<Trainer::Trainer2GSC>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::DP:   ok = openLoose<Trainer::Trainer4DP>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::PT:   ok = openLoose<Trainer::Trainer4PT>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::HGSS: ok = openLoose<Trainer::Trainer4HGSS>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::BW:   ok = openLoose<Trainer::Trainer5BW>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::B2W2: ok = openLoose<Trainer::Trainer5B2W2>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::XY:   ok = openLoose<Trainer::Trainer6XY>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::ORAS: ok = openLoose<Trainer::Trainer6ORAS>(report, loose.title, loose.group, path); break;
-                case Enums::GameVersion::SM:   ok = openLoose<Trainer::Trainer7SM>(report, loose.title, loose.group, path); break;
-                default: break;
+        struct LooseTitle
+        {
+            const char *title;
+            Enums::GameVersion group;
+        };
+        // clang-format off
+        for (const LooseTitle &loose : {LooseTitle{"Gold", Enums::GameVersion::GSC},
+                                        LooseTitle{"Silver", Enums::GameVersion::GSC},
+                                        LooseTitle{"Crystal", Enums::GameVersion::GSC},
+                                        LooseTitle{"Diamond", Enums::GameVersion::DP},
+                                        LooseTitle{"Pearl", Enums::GameVersion::DP},
+                                        LooseTitle{"Platinum", Enums::GameVersion::PT},
+                                        LooseTitle{"HeartGold", Enums::GameVersion::HGSS},
+                                        LooseTitle{"SoulSilver", Enums::GameVersion::HGSS},
+                                        LooseTitle{"Black", Enums::GameVersion::BW},
+                                        LooseTitle{"White", Enums::GameVersion::BW},
+                                        LooseTitle{"Black 2", Enums::GameVersion::B2W2},
+                                        LooseTitle{"White 2", Enums::GameVersion::B2W2},
+                                        LooseTitle{"X", Enums::GameVersion::XY},
+                                        LooseTitle{"Y", Enums::GameVersion::XY},
+                                        LooseTitle{"Omega Ruby", Enums::GameVersion::ORAS},
+                                        LooseTitle{"Alpha Sapphire", Enums::GameVersion::ORAS},
+                                        LooseTitle{"Sun", Enums::GameVersion::SM},
+                                        LooseTitle{"Moon", Enums::GameVersion::SM}})
+        // clang-format on
+        {
+            const std::string savePath = SaveTree::forTitle(saveRoot, loose.title);
+            if (savePath.empty())
+            {
+                continue;
             }
-            if (ok) ++opened;
+            bool looseOpened = false;
+            switch (loose.group)
+            {
+            case Enums::GameVersion::GSC:
+                looseOpened = openLoose<Trainer::Trainer2GSC>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::DP:
+                looseOpened = openLoose<Trainer::Trainer4DP>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::PT:
+                looseOpened = openLoose<Trainer::Trainer4PT>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::HGSS:
+                looseOpened = openLoose<Trainer::Trainer4HGSS>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::BW:
+                looseOpened = openLoose<Trainer::Trainer5BW>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::B2W2:
+                looseOpened = openLoose<Trainer::Trainer5B2W2>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::XY:
+                looseOpened = openLoose<Trainer::Trainer6XY>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::ORAS:
+                looseOpened = openLoose<Trainer::Trainer6ORAS>(report, loose.title, loose.group, savePath);
+                break;
+            case Enums::GameVersion::SM:
+                looseOpened = openLoose<Trainer::Trainer7SM>(report, loose.title, loose.group, savePath);
+                break;
+            default:
+                break;
+            }
+            if (looseOpened)
+            {
+                ++openedSaveCount;
+            }
         }
-        opened += openSCBlock<Trainer::Trainer8SWSH>(report, "Sword/Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer8LA>(report, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9SV>(report, "Scarlet/Violet", Enums::GameVersion::SV, SaveTree::violet(saveRoot)) ? 1 : 0;
-        opened += openSCBlock<Trainer::Trainer9LZA>(report, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot)) ? 1 : 0;
+        openedSaveCount += openSCBlock<Trainer::Trainer8SWSH>(report, "Sword/Shield", Enums::GameVersion::SWSH, SaveTree::shield(saveRoot)) ? 1 : 0;
+        openedSaveCount += openSCBlock<Trainer::Trainer8LA>(report, "Legends Arceus", Enums::GameVersion::PLA, SaveTree::legendsArceus(saveRoot)) ? 1 : 0;
+        openedSaveCount += openSCBlock<Trainer::Trainer9SV>(report, "Scarlet/Violet", Enums::GameVersion::SV, SaveTree::violet(saveRoot)) ? 1 : 0;
+        openedSaveCount += openSCBlock<Trainer::Trainer9LZA>(report, "Legends Z-A", Enums::GameVersion::ZA, SaveTree::legendsZA(saveRoot)) ? 1 : 0;
     }
-    if (opened == 0) {
+    if (openedSaveCount == 0)
+    {
         report.setScope("-", "plan");
         Test::Context context;
         context.report = &report;
         context.skip("no saves were opened, so the entity / setters / legality / conversion suites did not run", "saveRoot=\"" + saveRoot + "\"");
-    } else {
+    }
+    else
+    {
         runSuite(report, "conversion", "cross-title", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::conversionPlan, Test::conversionRun);
         // AND AGAIN WITH AUTO-LEGALIZE ON. The console runs the suite under whatever the user has set,
         // and that setting changes what a Gen 3 conversion does -- so a host that only ever ran the
@@ -418,16 +539,24 @@ int main(int argc, char** argv) {
     }
 
     std::printf("\n");
-    for (const auto& t : report.tallies())
-        std::printf("  %-34s %-10s %7d checks  %4d fail  %4d warn  %4d skip\n", t.target.c_str(), t.suite.c_str(), t.checks, t.fails, t.warns, t.skips);
+    for (const auto &tally : report.tallies())
+    {
+        std::printf("  %-34s %-10s %7d checks  %4d fail  %4d warn  %4d skip\n", tally.target.c_str(), tally.suite.c_str(), tally.checks, tally.fails, tally.warns, tally.skips);
+    }
 
     std::printf("\nfindings:\n");
-    for (const auto& g : report.groups()) {
-        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(g.severity), g.suite.c_str(), g.what.c_str(), g.occurrenceCount);
-        for (size_t i = 0; i < g.samples.size() && i < 4; ++i)
-            std::printf("        %s\n", g.samples[i].c_str());
+    for (const auto &findingGroup : report.groups())
+    {
+        std::printf("  [%s] %s: %s  x%d\n", Test::severityName(findingGroup.severity), findingGroup.suite.c_str(), findingGroup.what.c_str(), findingGroup.occurrenceCount);
+        for (size_t i = 0; i < findingGroup.samples.size() && i < 4; ++i)
+        {
+            std::printf("        %s\n", findingGroup.samples[i].c_str());
+        }
     }
-    if (report.groups().empty()) std::printf("  (none)\n");
+    if (report.groups().empty())
+    {
+        std::printf("  (none)\n");
+    }
 
     report.write(reportFilePath, "PKSE SELF TEST (host, data tables only)\n");
     std::printf("\nchecks=%d failures=%d warnings=%d skipped=%d notes=%d  -> %s\n", report.checks(), report.failures(), report.warnings(), report.skips(), report.notes(), reportFilePath.c_str());

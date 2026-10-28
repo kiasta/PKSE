@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <span>
 #include <sys/stat.h>
 
 #include "Names/NameLanguage.h" // display language for every generated name table
@@ -13,6 +14,7 @@
 #include "Names/MovePresence.h"  // isMovePresent -> hide moves a game doesn't have (PKHeX-style filter)
 #include "Names/LocationNames.h" // getLocationTable -> the Met Location picker's per-game list
 #include "Names/FormNames.h"     // getDisplayName -> variant prefix in the "can't go in this game" toast
+#include "Names/RibbonNames.h"   // the ribbon editor reads and writes through the format's ribbon table
 #include "Enums/Ball.h"          // getBallList -> the per-game Ball picker
 #include "Legality/Legality.h"   // analyze() -> gate the details-page Legality (R) button when clean
 
@@ -30,6 +32,7 @@
 #include "UI/Dialogs/ItemEditDialog.h"
 #include "UI/Dialogs/SaveConfirmDialog.h"
 #include "UI/Dialogs/StatEditDialog.h"
+#include "UI/Dialogs/RibbonEditDialog.h"
 #include "UI/Dialogs/FileBrowserDialog.h"
 #include "UI/Dialogs/PKSMImportDialog.h"
 #include "UI/Dialogs/KeyboardDialog.h"
@@ -953,9 +956,11 @@ namespace UI
             return "A: Use a save  |  Y: Generate  |  B: Cancel";
         if (tradePartnerTitles.active)
             return "A: Choose  |  B: Cancel";
-        // The legality and ribbon lists are deliberately NOT here. They dim the whole page, nav bar
-        // included, and carry their own "B / tap: close" line inside the card -- naming it on a bar
-        // the overlay has just dimmed would be the second hint this function exists to remove.
+        if (details.ribbonOverlay)
+            return details.ribbonAffixAvailable ? "Arrows: Move  |  A: Toggle  |  L/R: -/+1  |  X: Affix  |  ZL: Remove All  |  ZR: Give All  |  B: Back" : "Arrows: Move  |  A: Toggle  |  L/R: -/+1  |  ZL: Remove All  |  ZR: Give All  |  B: Back";
+        // The legality list is deliberately NOT here. It dims the whole page, nav bar included, and
+        // carries its own "B / tap: close" line inside the card -- naming it on a bar the overlay has
+        // just dimmed would be the second hint this function exists to remove.
         return "";
     }
 
@@ -1483,6 +1488,122 @@ namespace UI
         tradeEvolveChoiceActive = false;
         tradePartnerTitles.active = false;    // ...nor the donor title picker
         details.editSnapshot.clear();
+    }
+
+    void TrainerViewScreen::openRibbonEditor()
+    {
+        const Pokemon::Pokemon *pokemon = detailsTargetPokemon();
+        // Gen 1 and Gen 2 store no ribbons, so there is nothing to open.
+        if (!pokemon || Names::getRibbonDefinitions(pokemon->getGameGroup()).empty()) return;
+        details.ribbonOverlay = true;
+        details.selectedRibbonIndex = 0;
+        details.ribbonScrollRow = 0;
+        details.ribbonAffixAvailable = Conversion::affixedRibbonOffset(pokemon->getGameGroup()) != 0;
+    }
+
+    void TrainerViewScreen::setTargetRibbonValue(const Names::RibbonDefinition &ribbon, uint8_t ribbonValue)
+    {
+        Pokemon::Pokemon *pokemon = detailsTargetPokemon();
+        if (!pokemon)
+            return;
+        std::span<std::byte> pokemonBytes = pokemon->getData();
+        uint8_t *entityData = reinterpret_cast<uint8_t *>(pokemonBytes.data());
+        Names::setRibbonValue(entityData, ribbon, ribbonValue);
+        // A ribbon the Pokemon no longer owns cannot stay on display beside its name.
+        const size_t affixOffset = Conversion::affixedRibbonOffset(pokemon->getGameGroup());
+        const int affixIndex = Names::getRibbonAffixIndex(ribbon);
+        if (Names::getRibbonValue(entityData, ribbon) == 0 && affixOffset != 0 && affixOffset < pokemonBytes.size() && affixIndex >= 0 && entityData[affixOffset] == affixIndex)
+            entityData[affixOffset] = Conversion::AFFIXED_RIBBON_NONE;
+        pokemon->refreshChecksum();
+        hasUnsavedChanges = true;
+        mirrorEditedPartyMember();
+    }
+
+    void TrainerViewScreen::handleRibbonEditInput(u64 buttonsDown, int touchedButton)
+    {
+        Pokemon::Pokemon *pokemon = detailsTargetPokemon();
+        const std::span<const Names::RibbonDefinition> ribbons = pokemon ? Names::getRibbonDefinitions(pokemon->getGameGroup()) : std::span<const Names::RibbonDefinition>();
+        if ((buttonsDown & HidNpadButton_B) || ribbons.empty())
+        {
+            details.ribbonOverlay = false;
+            return;
+        }
+        const int ribbonCount = static_cast<int>(ribbons.size());
+
+        // The first tap on a tile selects it and a second toggles it, so a stray touch never
+        // changes a ribbon the user had not looked at.
+        if (touchedButton >= Dialogs::RIBBON_TILE_BUTTON_ID_BASE && touchedButton < Dialogs::RIBBON_TILE_BUTTON_ID_BASE + ribbonCount)
+        {
+            const int tappedRibbonIndex = touchedButton - Dialogs::RIBBON_TILE_BUTTON_ID_BASE;
+            if (tappedRibbonIndex != details.selectedRibbonIndex)
+            {
+                details.selectedRibbonIndex = tappedRibbonIndex;
+                return;
+            }
+            if (armTap(touchedButton, HidNpadButton_A))
+                return;
+        }
+
+        int selectedRibbonIndex = std::clamp(details.selectedRibbonIndex, 0, ribbonCount - 1);
+        if (buttonsDown & HidNpadButton_Left)
+            selectedRibbonIndex = std::max(0, selectedRibbonIndex - 1);
+        if (buttonsDown & HidNpadButton_Right)
+            selectedRibbonIndex = std::min(ribbonCount - 1, selectedRibbonIndex + 1);
+        if ((buttonsDown & HidNpadButton_Up) && selectedRibbonIndex >= Dialogs::RIBBON_GRID_COLUMNS)
+            selectedRibbonIndex -= Dialogs::RIBBON_GRID_COLUMNS;
+        if (buttonsDown & HidNpadButton_Down)
+            selectedRibbonIndex = std::min(ribbonCount - 1, selectedRibbonIndex + Dialogs::RIBBON_GRID_COLUMNS);
+        details.selectedRibbonIndex = selectedRibbonIndex;
+        const int selectedRow = selectedRibbonIndex / Dialogs::RIBBON_GRID_COLUMNS;
+        if (selectedRow < details.ribbonScrollRow)
+            details.ribbonScrollRow = selectedRow;
+        else if (selectedRow >= details.ribbonScrollRow + Dialogs::RIBBON_GRID_VISIBLE_ROWS)
+            details.ribbonScrollRow = selectedRow - Dialogs::RIBBON_GRID_VISIBLE_ROWS + 1;
+
+        const Names::RibbonDefinition &selectedRibbon = ribbons[selectedRibbonIndex];
+        uint8_t *entityData = reinterpret_cast<uint8_t *>(pokemon->getData().data());
+        const uint8_t selectedValue = Names::getRibbonValue(entityData, selectedRibbon);
+
+        // A toggles between none and the most the ribbon can hold -- for a flag, owned; for a rank
+        // or a count, its top -- the way PKHeX's editor treats a click on the ribbon's name.
+        if (buttonsDown & HidNpadButton_A)
+            setTargetRibbonValue(selectedRibbon, selectedValue == 0 ? selectedRibbon.maxCount : 0);
+        else if ((buttonsDown & HidNpadButton_R) && selectedValue < selectedRibbon.maxCount)
+            setTargetRibbonValue(selectedRibbon, static_cast<uint8_t>(selectedValue + 1));
+        else if ((buttonsDown & HidNpadButton_L) && selectedValue > 0)
+            setTargetRibbonValue(selectedRibbon, static_cast<uint8_t>(selectedValue - 1));
+
+        // X affixes the selected ribbon, or takes it down if it is the one on display. The games
+        // only display a ribbon the Pokemon owns, so an unowned one is refused with a status line.
+        if ((buttonsDown & HidNpadButton_X) && details.ribbonAffixAvailable)
+        {
+            const size_t affixOffset = Conversion::affixedRibbonOffset(pokemon->getGameGroup());
+            const int affixIndex = Names::getRibbonAffixIndex(selectedRibbon);
+            if (affixOffset != 0 && affixOffset < pokemon->getData().size() && affixIndex >= 0)
+            {
+                if (Names::getRibbonValue(entityData, selectedRibbon) == 0)
+                {
+                    postStatus("Only a ribbon the Pokemon owns can be affixed.", 200);
+                }
+                else
+                {
+                    entityData[affixOffset] = (entityData[affixOffset] == affixIndex) ? Conversion::AFFIXED_RIBBON_NONE : static_cast<uint8_t>(affixIndex);
+                    pokemon->refreshChecksum();
+                    hasUnsavedChanges = true;
+                    mirrorEditedPartyMember();
+                }
+            }
+        }
+
+        // ZR gives every ribbon and mark at its top value; ZL removes them all, the affix with them.
+        const bool giveAll = (buttonsDown & HidNpadButton_ZR) != 0;
+        if (giveAll || (buttonsDown & HidNpadButton_ZL))
+        {
+            if (g_debugLogging)
+                Utils::logEventToFile(std::string("RIBBONS action=") + (giveAll ? "GIVE-ALL " : "REMOVE-ALL ") + Utils::briefPokemon(*pokemon));
+            for (const Names::RibbonDefinition &ribbon : ribbons)
+                setTargetRibbonValue(ribbon, giveAll ? ribbon.maxCount : 0);
+        }
     }
 
     // The bag keeps "owned but empty" slots (count 0 — e.g. used-up story key items) that we must
@@ -4561,17 +4682,15 @@ namespace UI
                     details.legalityOverlay = false;
                 return;
             }
-            // Ribbon overlay (full ribbon/mark list) does the same.
             if (details.ribbonOverlay)
             {
-                if ((buttonsDown & HidNpadButton_B) || touchedButton >= 0)
-                    details.ribbonOverlay = false;
+                handleRibbonEditInput(buttonsDown, touchedButton);
                 return;
             }
-            // Open the ribbon list: Y, or tapping the Ribbons row (id 94).
+            // Open the ribbon editor: Y, or tapping the Ribbons row (id 94).
             if ((buttonsDown & HidNpadButton_Y) || touchedButton == 94)
             {
-                details.ribbonOverlay = true;
+                openRibbonEditor();
                 return;
             }
             // Open the legality issue list: R, or tapping the legality summary (id 95) -- but ONLY

@@ -493,6 +493,13 @@ fixed-seed sweep of random presses — worth running at all.
   `itemMaxCount()` fails instead of agreeing with itself. Then the save is **written and read back**,
   and every stack must come back with its count: a writer that drops part of a full bag is still
   holding it in the trainer the editor filled.
+- **`testRibbonEditor`** opens the ribbon editor on **all nineteen save formats** (a box Pokemon, or
+  the party where a box is empty). Gen 1 and Gen 2 must not offer it. Everywhere else it checks the
+  nav badges, one tile and one image per row, then Remove All, A, L/R stepping, taps, Give All and,
+  in Gen 8/9, affixing (which an unowned ribbon must refuse, and taking the ribbon away must clear).
+  Every edit must refresh the checksum and mark the save unsaved, a Gen 3 edit must keep the
+  fateful-encounter bit, and the details page's Ribbons row must show the new count. Then the save is
+  **written and read back**, and every ribbon must come back with its value.
 - **`testBoxMenus`** opens the Boxes view's `Y` menu and runs Clone and Move from it, then runs
   Search from the `X` box menu in both the Boxes and Storage views. The Pokemon menu is one list
   shared by two views, and the Boxes view's Move is a swap rather than a carry, so a change made

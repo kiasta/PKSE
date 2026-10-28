@@ -26,6 +26,10 @@ namespace Pokemon
 {
     struct TradePartner;
 }
+namespace Names
+{
+    struct RibbonDefinition;
+}
 #include "Dialogs/StatEditDialog.h"
 #include "Dialogs/PickerDialog.h"
 #include "Dialogs/FileBrowserDialog.h"
@@ -135,6 +139,11 @@ namespace UI
         void restoreEditTarget(); // roll the details target back to the snapshot -- discards edits when the page closes
                                   // without Save
         void closeDetailsModal(); // reset all details-modal / edit state and close it
+        void openRibbonEditor(); // Y / the Ribbons row: open the grid on the target's first ribbon
+        void handleRibbonEditInput(u64 buttonsDown, int touchedButton); // owns input while the editor is open
+        /// Store `ribbonValue` into the details target's ribbon and do what every edit on the page does:
+        /// checksum, unsaved marker, party mirror. Clearing the affixed ribbon clears the affix with it.
+        void setTargetRibbonValue(const Names::RibbonDefinition &ribbon, uint8_t ribbonValue);
         std::vector<int> visibleItemIndices() const; // raw indices in the current pouch worth showing (count > 0)
         int currentPouchCapacity() const;            // slot limit of the current pouch; 0 = appending unsupported
         int pouchCapacity(int categoryIndex) const;  // the same, for any pouch
@@ -535,7 +544,12 @@ namespace UI
             bool editing = false;                // editing a stat value / main field
             int hexMode = 0;                     // hexagon (Y-cycled): 0 Summary, 1 Base Points (EV/AV), 2 Judge (IVs)
             bool legalityOverlay = false;        // full legality issue list (Y / tap)
-            bool ribbonOverlay = false;          // full ribbon/mark list (X / tap)
+            bool ribbonOverlay = false;          // the ribbon editor (Y / tap the Ribbons row)
+            int selectedRibbonIndex = 0;         // ribbon editor: row of the format's ribbon table under the cursor
+            int ribbonScrollRow = 0;             // ribbon editor: first grid row on screen
+            /// The target's format displays an affixed ribbon. Taken when the editor opens, because the
+            /// nav bar names X: Affix from a const path that cannot resolve the target itself.
+            bool ribbonAffixAvailable = false;
             /// "You have unsaved changes" prompt, raised when the page is closed while pokemonEditDirty().
             /// Rolling straight back to the snapshot on close loses the edits with nothing said -- the top-
             /// bar marker is the only clue, and it disappears along with the page.

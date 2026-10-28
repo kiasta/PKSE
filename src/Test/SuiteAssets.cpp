@@ -1,7 +1,7 @@
 /**
  * This is the suite the host harnesses cannot do at all. Every other kind of byte work in PKSE
  * compiles with an ordinary g++ and can be checked on a PC; whether the .nro that was just built
- * CONTAINS the 3260 sprite files, three fonts and nineteen type icons it will ask for is a question
+ * CONTAINS the 3260 sprite files, three fonts, nineteen type icons and the ribbon art it will ask for is a question
  * only the .nro can answer, and it is a question with real history: romfs/ is gitignored, so a fresh
  * checkout has none of it until every asset fetcher under tools/ has been run, and a build that
  * skipped one of those is a build where every Pokemon silently draws as its base form.
@@ -23,6 +23,7 @@
  * sweeping fifteen hundred of them through the cache would evict everything and take minutes to
  * answer a question stat() answers immediately.
  */
+#include <set>
 #include <string>
 #include <sys/stat.h>
 
@@ -31,6 +32,7 @@
 #include "Pokemon/PersonalInfoTable.h"
 #include "Pokemon/FormSpriteMapping.h"
 #include "Names/TypeNames.h"
+#include "Names/RibbonNames.h"
 #include "Trainer/OriginStamp.h"
 
 namespace Test
@@ -86,6 +88,24 @@ namespace Test
                     continue;
                 }
                 context.check(romfsHas(std::string("sprites/marks/") + stem + ".png"), "origin marking missing from ROMFS", std::string("mark=") + stem + " fix=\"python tools/gen_marks.py\"");
+            }
+
+            // Ribbon art, every image the ribbon editor can ask for: each row of each format's table
+            // at each value it takes, since a rank or a full memory count draws its own image.
+            std::set<std::string> ribbonSpriteStems;
+            for (Enums::GameVersion group : ALL_SAVE_GROUPS)
+            {
+                for (const Names::RibbonDefinition &ribbon : Names::getRibbonDefinitions(group))
+                {
+                    for (int ribbonValue = 0; ribbonValue <= ribbon.maxCount; ++ribbonValue)
+                    {
+                        ribbonSpriteStems.insert(Names::getRibbonSpriteStem(ribbon, static_cast<uint8_t>(ribbonValue), group));
+                    }
+                }
+            }
+            for (const std::string &ribbonSpriteStem : ribbonSpriteStems)
+            {
+                context.check(romfsHas("sprites/ribbons/" + ribbonSpriteStem + ".png"), "ribbon image missing from ROMFS", "ribbon=" + ribbonSpriteStem + " fix=\"python tools/gen_ribbons.py\"");
             }
         }
 

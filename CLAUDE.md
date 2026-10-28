@@ -61,7 +61,8 @@ Requires `DEVKITPRO` and a POSIX shell (Linux, or MSys2 on Windows):
 
 ```bash
 python tools/gen_fonts.py && python tools/gen_typeicons.py \
-  && python tools/gen_marks.py && python tools/gen_hdsprites.py   # once per checkout (romfs/)
+  && python tools/gen_marks.py && python tools/gen_ribbons.py \
+  && python tools/gen_hdsprites.py                                # once per checkout (romfs/)
 make                                   # -> PKSE.nro; refuses to start if a romfs asset is missing
 make BUILD_TYPE=development            # -> PKSE-dev.nro: the same app plus the on-console self test
 make all                               # -> both
