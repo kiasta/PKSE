@@ -397,8 +397,9 @@ namespace UI
             // the game hands friendship, affection and memories to whichever of OT/HT is active.
             //
             // READ-ONLY. The handler is written by the Trade Evolve action, which is where the choice between
-            // a real save and a generated trainer belongs -- a trade is something you DO to a Pokemon, not a
-            // field you type into.
+            // a real save and a generated trainer belongs, and by a transfer into another game, which makes
+            // the receiving player the handler -- both are something you DO to a Pokemon, not a field you
+            // type into.
             if (p->hasHandler())
             {
                 std::string handlingTrainerName = utf16ToUtf8(p->htName());

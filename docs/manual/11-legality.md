@@ -190,6 +190,7 @@ Helpers worth knowing before you touch this file:
 | `breedable(table, species)` | the per-game breedable bitset |
 | `canHatchAt(egg, loc, versionBit)` | an egg hatches wherever the player is walking, so this is a permitted **set** |
 | `levelMatches(row, metLevel)` | resolves `ENCOUNTER_FLAG_BOOST60` etc. |
+| `highestMetLevel(row)` | the row's top met level, one above `levelMax` for `ENCOUNTER_FLAG_CATCH_COMBO` (Let's Go). The level finding's "nearest is" band uses it too |
 | `encounterLocationMatches(rowLoc, metLoc)` | resolves the Wild Area and roamer region sentinels |
 | `getTimeCapsuleScope(group, hasMetData, chain, …)` | which Gen 1/2 games a record can come from, and whether the other generation is asked |
 | `mergeMatchState(state, other)` | folds a second sweep into the first, keeping the further explanation |

@@ -13,8 +13,10 @@
  * way tools/harness/roundtrip.cpp expects -- one folder per TITLE (FireRed/, Shield/, Violet/,
  * Legends Z-A/, Legends Arceus/), any filename inside; see tools/harness/SaveTree.h
  * and each present save becomes a target. Saves are opened READ-ONLY and never written -- the write
- * paths are the one thing here that still needs a console, along with ROMFS. The bank runs against
- * a scratch bank in the work directory.
+ * paths are the one thing here that still needs a console, along with ROMFS. The exception is the
+ * box block of a Switch save, which is re-encoded in memory so the save suite's occupied-slot rule
+ * runs against every save here (checkUnmodifiedBoxWrite); the file is still never touched. The bank
+ * runs against a scratch bank in the work directory.
  *
  * That gives two things: a way to know the framework works before it reaches hardware, and a fast
  * loop for the parts most likely to change. It does NOT replace the on-console run -- the save
@@ -35,6 +37,7 @@
 #include "SaveTree.h" // saves are found by their TITLE FOLDER, not by a guessed filename
 
 #include "Test/TestSuite.h"
+#include "Test/SCBlockRewrite.h"
 #include "Enums/GameVersion.h"
 #include "Encryption/Encryption.h"
 #include "Trainer/Trainer3FRLG.h"
@@ -163,6 +166,43 @@ namespace {
         return true;
     }
 
+    /// The box half of the save suite's unedited write, which is the one write this harness makes:
+    /// re-encode every box slot into the trainer's own blocks, and require each OCCUPIED slot back
+    /// byte for byte. Nothing reaches the file. The save suite runs the full check on the console,
+    /// through the same Test::countBoxSlotChanges, but only against the save on that console; this
+    /// runs it against every save here, and a save whose empty slots still hold the game's own blank
+    /// is what tells a wrong slot stride from a right one.
+    void checkUnmodifiedBoxWrite(Test::Report& report, const std::string& target, Enums::GameVersion group, Trainer::Trainer& trainer, const std::vector<Save::Block>& originalBlocks) {
+        Test::SCBlockLayout layout;
+        if (!Test::scBlockLayout(group, layout)) return;
+        Test::Context context;
+        context.report = &report;
+        context.suite = "boxwrite";
+        context.target = target;
+        context.group = group;
+        context.trainer = &trainer;
+        report.setScope(target, "boxwrite");
+        std::printf("  %-10s %s\n", "boxwrite", target.c_str());
+
+        trainer.updateBoxBlock();
+        const Save::Block* originalBoxBlock = nullptr;
+        for (const Save::Block& block : originalBlocks) {
+            if (block.key == layout.boxBlockKey) originalBoxBlock = &block;
+        }
+        const Save::Block* writtenBoxBlock = nullptr;
+        for (const Save::Block& block : trainer.getBlocks()) {
+            if (block.key == layout.boxBlockKey) writtenBoxBlock = &block;
+        }
+        if (!context.check(originalBoxBlock != nullptr && writtenBoxBlock != nullptr, "the save has no box block to write", Test::hexField("key", layout.boxBlockKey, 8))) return;
+
+        Test::BoxSlotChanges boxSlotChanges;
+        if (!context.check(Test::countBoxSlotChanges(trainer, originalBoxBlock->data, writtenBoxBlock->data, layout.boxSlotStride, boxSlotChanges), "the box block cannot be split into this format's slots", "size=" + std::to_string(originalBoxBlock->data.size()) + " stride=" + std::to_string(layout.boxSlotStride))) return;
+        context.check(boxSlotChanges.occupiedSlotByteCount == 0, "an unedited box write changed an OCCUPIED box slot", Test::numberField("bytes", (long long)boxSlotChanges.occupiedSlotByteCount) + " " + Test::slot((int)(boxSlotChanges.firstOccupiedSlotIndex / trainer.getSlotsPerBox()), (int)(boxSlotChanges.firstOccupiedSlotIndex % trainer.getSlotsPerBox())));
+        if (boxSlotChanges.emptySlotByteCount) {
+            context.note("an unedited box write normalised empty box slots to the canonical blank (documented)", Test::numberField("bytes", (long long)boxSlotChanges.emptySlotByteCount));
+        }
+    }
+
     /// An SCBlock game (SwSh / BDSP-less / LA / SV / Z-A): decrypt the file into blocks and hand
     /// them to that game's Trainer, exactly as Save::readTrainerInfo does on console.
     template <typename TrainerT>
@@ -176,12 +216,16 @@ namespace {
             std::printf("  !! %s: decrypt produced no blocks (%s)\n", label, path.c_str());
             return false;
         }
+        const std::vector<Save::Block> originalBlocks = blocks;
         TrainerT trainer(std::move(blocks));
         // Name the target by the title the SAVE says it is, not by the group: this file is one of
         // Sword or Shield, not both, and the report should say which. `label` is only the fallback
         // for a format that cannot tell (and the printed name if the save failed to parse).
         const Enums::GameVersion version = trainer.getGameVersion();
-        runTargetSuites(report, version == Enums::GameVersion::Invalid ? std::string(label) : Enums::getGameVersionName(version), group, trainer);
+        const std::string target = version == Enums::GameVersion::Invalid ? std::string(label) : Enums::getGameVersionName(version);
+        runTargetSuites(report, target, group, trainer);
+        // Last, because it rewrites the trainer's box block, which every suite above reads through.
+        checkUnmodifiedBoxWrite(report, target, group, trainer, originalBlocks);
         return true;
     }
 }

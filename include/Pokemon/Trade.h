@@ -59,6 +59,19 @@ namespace Pokemon
     bool applyTradeRoundTrip(Pokemon &pokemon, const TradePartner &partner);
 
     /**
+     * Makes `receiver` the active handler of a Pokemon arriving from another game: the outbound
+     * half of a trade, with no return leg.
+     *
+     * Every route into a game with a handler does this, the player's own Pokemon included.
+     * Transporter, Bank and HOME each make the receiving player the handler (PKHeX
+     * PK5.ConvertToPK6, PKH.UpdateHandler), and PKHeX reports a Pokemon from another game whose
+     * original trainer is still the active handler as invalid (TransferHandlerFlagRequired).
+     *
+     * Same refusals as applyTradeRoundTrip. Leaves the record checksummed.
+     */
+    bool applyReceivingTrainer(Pokemon &pokemon, const TradePartner &receiver);
+
+    /**
      * A trade partner PKSE invents, for when the user has no second save to point at.
      *
      * **THIS FABRICATES A PERSON, which nothing else in PKSE does** -- every other invented value

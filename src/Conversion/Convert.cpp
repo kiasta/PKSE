@@ -36,6 +36,7 @@
 #include "Encryption/Encryption3RSE.h"
 #include "Enums/Ball.h"            // maxBallForGroup -> the destination format's ball ceiling
 #include "Pokemon/EvolutionTable.h" // getPreEvolutionChain -- a Wartortle is a caught Squirtle
+#include "Pokemon/Trade.h"          // applyReceivingTrainer -- the receiving player becomes the handler
 #include "Legality/EncounterTable.h" // a Gen 3 landing spot comes from a REAL encounter
 #include "Names/ItemNames.h"       // itemG3ToModern / itemModernToG3 (Gen 3 <-> modern held item)
 #include "Names/ItemPresence.h"    // isHeldItemPresent -> sanitize the held item to the destination
@@ -2116,6 +2117,19 @@ namespace Conversion
         // or Let's Go therefore displayed a ribbon it does not own. The same 0 also rides across a
         // Gen 8 <-> Gen 9 hop unchanged, so a pokemon banked before the creator was fixed keeps it.
         normalizeAffixedRibbon(*out);
+
+        // THE RECEIVING PLAYER BECOMES THE HANDLER, whoever caught the Pokemon -- Transporter, Bank and
+        // HOME all do this, and PKHeX reports a Pokemon from another game still in its original trainer's
+        // hands as invalid. Carrying the source's handler state left a FireRed Pokemon in Violet with no
+        // handler at all. Sun/Moon <-> Ultra Sun/Ultra Moon is one record format, so a move between them
+        // is not a transfer and the record's own state stands. Last, so the Gen 6/7 Return/Frustration
+        // rule sees the moveset the Pokemon actually arrives with.
+        const bool sameRecordFormat = isG7(from) && isG7(destGroup);
+        if (receivingTrainer != nullptr && !sameRecordFormat)
+        {
+            const Pokemon::TradePartner receiver{receivingTrainer->name, receivingTrainer->gender, receivingTrainer->language};
+            Pokemon::applyReceivingTrainer(*out, receiver);
+        }
 
         out->refreshChecksum(); // stored bytes changed -> recompute the entity checksum
         result = Result::Ok;

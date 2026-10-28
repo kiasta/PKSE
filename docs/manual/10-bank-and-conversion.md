@@ -208,7 +208,7 @@ enum class Result {
     Blocked,      // destination refuses this species (BDSP Spinda / Nincada)
 };
 
-struct ReceivingTrainer { std::u16string name; uint8_t gender = 0; };
+struct ReceivingTrainer { std::u16string name; uint8_t gender = 0; uint8_t language = 0; };
 
 std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon& src, GameVersion destGroup,
                                           Result& result, uint8_t destOriginVersion = 0,
@@ -228,9 +228,42 @@ game *group* deliberately collapses a version pair into one value: `FRLG` cannot
 LeafGreen, and stamping a fixed member of the pair is wrong half the time. `0` falls back to the
 group's representative version.
 
-`receivingTrainer` is read by **one** route: the Gen 1/2 transfer, which has to stamp a handling
-trainer the source record cannot supply. Pass `nullptr` when there is no save behind the call — the
-Pokémon then arrives with no handler at all, which is a readable state; an invented name is not.
+`receivingTrainer` is the trainer whose save the Pokémon lands in, and it becomes the Pokémon's
+**active handler** on every conversion into a format with a handler (Gen 6 on). Pass `nullptr` when
+there is no save behind the call: the Pokémon then keeps the handler it had (none at all, for a
+Gen 1–3 source), which is a readable state. An invented name is not.
+
+### The receiving player becomes the handler
+
+Every real route into another game makes the receiving player the Pokémon's handler, **the player's
+own Pokémon included**. Poke Transporter does it (PKHeX `PK5.ConvertToPK6`), and so do Bank and HOME
+(`PKH.UpdateHandler`). PKHeX reports a Pokémon from another game whose original trainer is still the
+active handler as invalid (`TransferHandlerFlagRequired`). PKSE used to stamp a handler on the Gen
+1/2 route only and carry the source's handler state everywhere else, so a FireRed Venusaur reached
+Violet showing "(none)".
+
+`convert()` now ends with `Pokemon::applyReceivingTrainer` (`include/Pokemon/Trade.h`). That is the
+outbound half of the Trade Evolve round trip, so both write the same handler block in the same three
+ways (Gen 6/7, Let's Go, Gen 8+):
+
+| | What is written |
+|---|---|
+| Always | `CurrentHandler = 1` |
+| HT is someone else | HT name and gender = the receiver. Handler language = the receiving save's (Gen 8+). HT friendship = the species' base friendship, except Let's Go, which copies the friendship it had (its CP depends on it). Gen 6/7 keeps a memory it already has and otherwise writes the link-trade memory; Gen 8+ clears the old handler's memories. |
+| HT is already the receiver | nothing else: the block, memories and friendship included, is kept (PKHeX `PKH.IsHandlerSame` compares name and gender only) |
+
+**The one pairing left alone is Sun/Moon ↔ Ultra Sun/Ultra Moon.** They share one record format, so
+a move between them is not a transfer into another game.
+
+**A Gen 1/2 Pokémon going on into Gen 8+ keeps its Transporter block.** The handler was stamped in
+the Gen 7 step and is the same player, so the block rides on: no handler language and the Bank
+memory. That is also what HOME does (`GameDataPK8.CopyFrom(PK7)` writes no handler language), and
+PKHeX accepts it as a Bank memory. A Gen 3 Pokémon gets the Gen 8+ block instead (a language and no
+memory), which PKHeX accepts too.
+
+`SuiteConversion` checks this on every pairing of the matrix (`receivingHandlerRules`), and
+`receivingHandlerSynthetic` checks the exact fields in each era. The `uihost` journey
+`testWithdrawSetsHandler` carries a FireRed Pokémon out of the bank through the real Storage view.
 
 ### What is preserved and what is not
 
@@ -441,10 +474,10 @@ bool TrainerViewScreen::convertForPane(std::unique_ptr<Pokemon::Pokemon>& pk, in
     }
 
     Conversion::Result res;
-    // Only the Gen 1/2 route reads the receiving trainer -- it arrives through a trade, so the
-    // player opening this save becomes the handling trainer. Everything else carries its own OT/HT.
+    // Who is receiving it: the player opening this save becomes the Pokemon's handler, as a real
+    // transfer into another game makes them.
     const Conversion::ReceivingTrainer receiving{Utils::utf8ToUtf16(trainer.trainerName),
-                                                 trainer.trainerGender};
+                                                 trainer.trainerGender, trainer.language()};
     auto converted = Conversion::convert(*pk, trainer.getGameGroup(), res,
                                          saveOriginVersion(trainer, titleId), &receiving);
     if (converted) { pk = std::move(converted); return true; }   // convert IN PLACE

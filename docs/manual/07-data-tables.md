@@ -269,7 +269,7 @@ struct EncounterRow {
     uint8_t  fixedBall;     // 0 = the encounter does not fix the ball
     uint8_t  flawlessIVs;   // guaranteed count of 31 IVs
     uint8_t  nature;        // ENCOUNTER_NATURE_ANY unless forced
-    uint8_t  flags;         // FATEFUL / ALPHA / BOOST60 / EGG / MET_LEVEL_ZERO
+    uint8_t  flags;         // FATEFUL / ALPHA / BOOST60 / EGG / MET_LEVEL_ZERO / CATCH_COMBO
 };
 
 const EncounterTable* getEncounterTable(Enums::GameVersion versionOrGroup);   // nullptr if none

@@ -54,6 +54,7 @@
 #include "Pokemon/Experience.h"
 #include "Pokemon/LearnsetTable.h"
 #include "Pokemon/PersonalInfo7USUM.h"
+#include "Pokemon/PersonalRecord.h"
 #include "Enums/LanguageID.h"
 #include "Pokemon/Pokemon1RBY.h"
 #include "Pokemon/Pokemon2GSC.h"
@@ -396,6 +397,52 @@ namespace Test
                 }
             }
             context.check(justified, "a pokemon written into Gen 3 landed somewhere that game cannot produce it", landingLabel + " (neither an encounter for this species nor the first-town fallback)");
+        }
+
+        /// Who the matrix converts INTO. A name, gender and language no real save's handler shares,
+        /// so a handler block that was carried rather than written cannot pass for this one.
+        const Conversion::ReceivingTrainer MATRIX_RECEIVING_TRAINER{Utils::utf8ToUtf16("PKSE"), 1, static_cast<uint8_t>(Enums::LanguageID::French)};
+
+        /// Sun/Moon and Ultra Sun/Ultra Moon share one record format, so a move between them is not a
+        /// transfer into another game and the handler is left as the record had it.
+        bool isSameRecordFormat(Enums::GameVersion sourceGroup, Enums::GameVersion destination)
+        {
+            auto isGen7Record = [](Enums::GameVersion group) { return group == Enums::GameVersion::SM || group == Enums::GameVersion::USUM; };
+            return isGen7Record(sourceGroup) && isGen7Record(destination);
+        }
+
+        /// The receiving player is the active handler of anything that arrives from another game --
+        /// what Transporter, Bank and HOME do, and what PKHeX requires (TransferHandlerFlagRequired).
+        /// A FireRed Venusaur once reached Violet with no handler at all, because every route but
+        /// Gen 1/2 carried the source's handler state instead.
+        void receivingHandlerRules(Context &context, const Pokemon::Pokemon &source, const Pokemon::Pokemon &converted, Enums::GameVersion destination, const Conversion::ReceivingTrainer &receivingTrainer, bool viaTransporter, const std::string &whereLabel)
+        {
+            if (!converted.hasHandler()) return;
+            if (isSameRecordFormat(source.getGameGroup(), destination))
+            {
+                context.check(converted.currentHandler() == source.currentHandler() && converted.htName() == source.htName(), "a move between Sun/Moon and Ultra Sun/Ultra Moon rewrote the handler", whereLabel + " currentHandler " + std::to_string(source.currentHandler()) + "->" + std::to_string(converted.currentHandler()) + " ht=\"" + Utils::utf16ToUtf8(converted.htName()) + "\"");
+                return;
+            }
+            context.check(converted.currentHandler() == 1, "a Pokemon arriving from another game is not in the receiving player's hands", whereLabel + " currentHandler=" + std::to_string(converted.currentHandler()));
+            context.check(converted.htName() == receivingTrainer.name && converted.htGender() == receivingTrainer.gender, "a Pokemon arriving from another game does not name the receiving player as its handler", whereLabel + " ht=\"" + Utils::utf16ToUtf8(converted.htName()) + "\" gender=" + std::to_string(converted.htGender()));
+            // A GEN 1/2 POKEMON MET ITS HANDLER IN GEN 7, in Poke Transporter, and a Gen 7 handler block
+            // has no language and keeps a memory. Going on into Gen 8+ the handler is the same player, so
+            // the block rides on unchanged: HOME writes no handler language for a Gen 7 record
+            // (GameDataPK8.CopyFrom(PK7)) and keeps a same-named handler's block (PKH.UpdateHandler),
+            // which PKHeX accepts as a Bank memory.
+            if (converted.hasHandlerLanguage())
+            {
+                const uint8_t expectedLanguage = viaTransporter ? 0 : Enums::safeLanguageForGroup(destination, receivingTrainer.language);
+                context.check(converted.htLanguage() == expectedLanguage, "the handler's language is not the receiving save's", whereLabel + " htLanguage=" + std::to_string(converted.htLanguage()) + " expected=" + std::to_string(expectedLanguage));
+            }
+            // Gen 8 on clears the old handler's memories and leaves the new one's to the game; Gen 6/7
+            // keeps a memory it already has and writes the link-trade one otherwise. Either way a
+            // Gen 6/7 handler has a memory and a Gen 8+ one has none.
+            if (converted.hasHandlerMemories())
+            {
+                const bool memoryExpected = viaTransporter || !converted.hasHandlerLanguage();
+                context.check((converted.htMemory() != 0) == memoryExpected, memoryExpected ? "a Gen 6/7 Pokemon arrived with a new handler and no handler memory" : "a Gen 8+ Pokemon kept the previous handler's memory under a new handler", whereLabel + " htMemory=" + std::to_string(converted.htMemory()));
+            }
         }
 
         /// The Poke Transporter pass that needs NO SAVE.
@@ -1009,6 +1056,102 @@ namespace Test
         }
     }
 
+    // THE RECEIVING PLAYER BECOMES THE HANDLER, in each of the three ways the games write it. The
+    // matrix above proves it happens on every pairing; this proves WHAT is written, which needs
+    // fields set to known values first. A FireRed Venusaur is the reported case: it reached Violet
+    // with "(none)" for a handler. PKSE cannot build a PK3 from nothing, so it starts as a Gen 7
+    // record written down into FireRed with no receiver -- the state a banked FireRed Pokemon is in.
+    void receivingHandlerSynthetic(Context &context)
+    {
+        const uint8_t frenchLanguageId = static_cast<uint8_t>(Enums::LanguageID::French);
+        const Conversion::ReceivingTrainer receivingTrainer{Utils::utf8ToUtf16("Kiasta"), 1, frenchLanguageId};
+        const Conversion::ReceivingTrainer otherReceivingTrainer{Utils::utf8ToUtf16("Rival"), 0, frenchLanguageId};
+
+        auto convertInto = [&](const Pokemon::Pokemon &source, Enums::GameVersion destination, uint8_t destinationVersion, const Conversion::ReceivingTrainer *receiver, const std::string &whereLabel)-> std::unique_ptr<Pokemon::Pokemon>
+        {
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto converted = Conversion::convert(source, destination, conversionResult, destinationVersion, receiver);
+            if (!context.check(converted != nullptr && conversionResult == Conversion::Result::Ok, "a synthetic handler conversion was refused", whereLabel + " result=" + resultName(conversionResult)))
+            {
+                return nullptr;
+            }
+            return converted;
+        };
+
+        auto gen7Venusaur = std::make_unique<Pokemon::Pokemon7USUM>();
+        gen7Venusaur->setSpecies(3);
+        gen7Venusaur->setExp(117360); // level 50, medium-slow
+        gen7Venusaur->setTID16(24680);
+        gen7Venusaur->setOTName(Utils::utf8ToUtf16("KIASTA"));
+        gen7Venusaur->setOTFriendship(255);
+        gen7Venusaur->recalculateStats();
+        auto fireRedVenusaur = convertInto(*gen7Venusaur, Enums::GameVersion::FRLG, static_cast<uint8_t>(Enums::GameVersion::FR), nullptr, "synthetic Venusaur -> FireRed");
+        if (!fireRedVenusaur) return;
+
+        // 1. Every era's handler block, written onto a record that has no handler field at all.
+        //    Legends: Arceus has no Venusaur; the matrix covers it with the Pokemon it does have.
+        for (const Enums::GameVersion destination : {Enums::GameVersion::USUM, Enums::GameVersion::GG, Enums::GameVersion::SWSH, Enums::GameVersion::BDSP, Enums::GameVersion::SV, Enums::GameVersion::ZA})
+        {
+            const std::string whereLabel = "synthetic FireRed Venusaur -> " + Enums::getGameVersionName(destination);
+            auto converted = convertInto(*fireRedVenusaur, destination, 0, &receivingTrainer, whereLabel);
+            if (!converted) continue;
+            receivingHandlerRules(context, *fireRedVenusaur, *converted, destination, receivingTrainer, false, whereLabel);
+            // Let's Go copies the friendship it had, because its CP is computed from friendship; every
+            // other game starts a new handler at the species' base friendship. Let's Go is the one
+            // format with a handler and neither a handler language nor a geolocation history.
+            const bool copiesFriendship = !converted->hasHandlerLanguage() && !converted->hasGeolocation();
+            const uint8_t expectedFriendship = copiesFriendship ? converted->otFriendship() : Pokemon::getPersonalRecord(destination, converted->speciesID(), converted->form()).baseFriendship;
+            context.check(converted->htFriendship() == expectedFriendship, "a new handler did not start at the friendship the games give one", whereLabel + " htFriendship=" + std::to_string(converted->htFriendship()) + " expected=" + std::to_string(expectedFriendship));
+            for (const auto &issue : Legality::analyze(*converted, destination).issues)
+            {
+                context.check(issue.text.find("handling trainer") == std::string::npos, "the legality checker objects to the handler a transfer wrote", whereLabel + " issue=\"" + issue.text + "\"");
+            }
+        }
+
+        // 2. A handler who is already the receiver is KEPT, friendship and memories included; a
+        //    different receiver replaces the block, as a trade to them would.
+        auto swordVenusaur = convertInto(*fireRedVenusaur, Enums::GameVersion::SWSH, 0, &receivingTrainer, "synthetic FireRed Venusaur -> Sword/Shield");
+        if (swordVenusaur)
+        {
+            swordVenusaur->setHTFriendship(200);
+            swordVenusaur->setHTMemory(5);
+            swordVenusaur->refreshChecksum();
+            auto returning = convertInto(*swordVenusaur, Enums::GameVersion::BDSP, 0, &receivingTrainer, "synthetic Sword Venusaur -> BDSP, same receiver");
+            if (returning)
+            {
+                context.check(returning->currentHandler() == 1 && returning->htName() == receivingTrainer.name, "a Pokemon returning to its handler is not in their hands", "same receiver currentHandler=" + std::to_string(returning->currentHandler()));
+                context.check(returning->htFriendship() == 200 && returning->htMemory() == 5, "a Pokemon returning to its handler lost the friendship or memory it left with", "same receiver htFriendship=" + std::to_string(returning->htFriendship()) + " htMemory=" + std::to_string(returning->htMemory()));
+            }
+            auto traded = convertInto(*swordVenusaur, Enums::GameVersion::BDSP, 0, &otherReceivingTrainer, "synthetic Sword Venusaur -> BDSP, other receiver");
+            if (traded)
+            {
+                const uint8_t baseFriendship = Pokemon::getPersonalRecord(Enums::GameVersion::BDSP, traded->speciesID(), traded->form()).baseFriendship;
+                context.check(traded->htName() == otherReceivingTrainer.name && traded->htGender() == otherReceivingTrainer.gender, "a new receiver did not replace the previous handler", "other receiver ht=\"" + Utils::utf16ToUtf8(traded->htName()) + "\"");
+                context.check(traded->htFriendship() == baseFriendship && traded->htMemory() == 0, "a new handler inherited the previous handler's friendship or memory", "other receiver htFriendship=" + std::to_string(traded->htFriendship()) + " htMemory=" + std::to_string(traded->htMemory()));
+            }
+        }
+
+        // 3. No receiver -- a caller with no save behind it -- keeps the handler the source had, which
+        //    for a Gen 3 record is none, rather than inventing one.
+        auto unreceived = convertInto(*fireRedVenusaur, Enums::GameVersion::SV, 0, nullptr, "synthetic FireRed Venusaur -> Scarlet/Violet, no receiver");
+        if (unreceived)
+        {
+            context.check(unreceived->currentHandler() == 0 && unreceived->htName().empty(), "a conversion with no receiver invented a handler", "no receiver ht=\"" + Utils::utf16ToUtf8(unreceived->htName()) + "\"");
+        }
+
+        // 4. Sun/Moon <-> Ultra Sun/Ultra Moon is one record format: the receiver changes nothing.
+        auto sunVenusaur = convertInto(*fireRedVenusaur, Enums::GameVersion::SM, 0, nullptr, "synthetic FireRed Venusaur -> Sun/Moon");
+        if (sunVenusaur)
+        {
+            auto ultraSunVenusaur = convertInto(*sunVenusaur, Enums::GameVersion::USUM, 0, &receivingTrainer, "synthetic Sun Venusaur -> Ultra Sun/Ultra Moon");
+            if (ultraSunVenusaur)
+            {
+                receivingHandlerRules(context, *sunVenusaur, *ultraSunVenusaur, Enums::GameVersion::USUM, receivingTrainer, false, "synthetic Sun Venusaur -> Ultra Sun/Ultra Moon");
+                context.check(ultraSunVenusaur->currentHandler() == 0 && ultraSunVenusaur->htName().empty(), "a move between Sun/Moon and Ultra Sun/Ultra Moon stamped a handler", "ht=\"" + Utils::utf16ToUtf8(ultraSunVenusaur->htName()) + "\"");
+            }
+        }
+    }
+
     int conversionPlan(Context &context)
     {
         (void)context;
@@ -1042,6 +1185,7 @@ namespace Test
             }
             transporterSynthetic(context);
             gen3LanguageSynthetic(context);
+            receivingHandlerSynthetic(context);
             return;
         }
         if (chunk > (int)samples().size())
@@ -1066,7 +1210,7 @@ namespace Test
             const bool conversionAllowed = Conversion::canConvert(source, destination, gateResult);
 
             Conversion::Result conversionResult = Conversion::Result::Ok;
-            auto converted = Conversion::convert(source, destination, conversionResult);
+            auto converted = Conversion::convert(source, destination, conversionResult, 0, &MATRIX_RECEIVING_TRAINER);
 
             // The gate and the conversion are two entry points onto the same decision. A UI that
             // gates on one and acts on the other is a UI that offers drops it will then refuse.
@@ -1115,6 +1259,7 @@ namespace Test
                 continue;
             }
             checkConverted(context, source, *converted, destination, whereLabel, sourceIsVirtualConsole);
+            receivingHandlerRules(context, source, *converted, destination, MATRIX_RECEIVING_TRAINER, sourceIsVirtualConsole, whereLabel);
             if (sourceIsVirtualConsole)
             {
                 // The Transporter rules are stated in terms of the PK7 the transfer lands in, so
