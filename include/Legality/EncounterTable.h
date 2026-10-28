@@ -53,6 +53,10 @@ namespace Legality {
         /// instead. Gen 2's in-game trades: Crystal records them at LinkTrade2NPC and met level 0,
         /// and the received Pokemon is at least the level the template names (EncounterTrade2).
         ENCOUNTER_FLAG_MET_LEVEL_ZERO = 1 << 4,
+        /// The slot can be met ONE LEVEL above its range. Let's Go's catch combo spawns a slot's
+        /// Pokemon a level higher, so PKHeX matches every Let's Go wild slot up to LevelMax + 1
+        /// (EncounterSlot7b.CatchComboBonus).
+        ENCOUNTER_FLAG_CATCH_COMBO = 1 << 5,
     };
 
     constexpr uint8_t ENCOUNTER_FORM_ANY   = 0xFF;  // slot randomises the form

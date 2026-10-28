@@ -157,6 +157,7 @@ void analyzeOne(const ::Pokemon::Pokemon& pk, Enums::GameVersion group, Tally& t
 
 int g_biteOk = 0, g_biteMiss = 0;
 int g_wildOk = 0, g_wildMiss = 0, g_wildSkip = 0;
+int g_catchComboOk = 0, g_catchComboMiss = 0;
 int g_evoOk = 0, g_evoMiss = 0, g_evoSkip = 0;
 int g_evoElsewhereOk = 0, g_evoElsewhereMiss = 0, g_evoElsewhereSkip = 0;
 int g_seadraMiss = 0;
@@ -368,7 +369,8 @@ void wildBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersion
         // through a path this pose does not set up; an ordinary grass slot is the subject here.
         if (r.kind != Legality::ENCOUNTER_KIND_WILD) continue;
         if ((r.versions & donorVersionBit) == 0) continue;
-        if (r.location >= 0xFFF0 || r.flags != 0) continue;
+        // The catch-combo flag only widens the level band, which a pose at levelMin never reaches.
+        if (r.location >= 0xFFF0 || (r.flags & ~Legality::ENCOUNTER_FLAG_CATCH_COMBO) != 0) continue;
         if (r.form != 0) continue;
         want = &r;
         break;
@@ -419,6 +421,98 @@ void wildBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVersion
     std::printf("        WILD CHECK FAILED: %s -- species %u at location %u level %u did not match its own wild row (posed as species %u at %u level %u, origin %u)\n", label, want->species, want->location, want->levelMin, poseSpecies, poseLoc, poseMetLv, poseOrigin);
     for (const auto& is : rep.issues)
         std::printf("            said: %s\n", is.text.c_str());
+}
+
+// LET'S GO'S CATCH COMBO SPAWNS A SLOT ONE LEVEL ABOVE ITS RANGE, and PKHeX matches every Let's Go wild
+// slot up to LevelMax + 1 (EncounterSlot7b.CatchComboBonus). Read as a plain span, that level was
+// reported as "no encounter is met at level N" on ordinary catches. So pose the donor at a flagged
+// row's max + 1 and require a match, then at max + 2 and require the level finding -- quoting the
+// widened band -- so the allowance is exactly one level and not an open door.
+//
+// The row is chosen so that nothing ELSE can explain the max + 2 pose: its species has no
+// pre-evolution (an ancestor's row at the same place could match it), and no other row for that
+// species at that place reaches max + 2. A game whose table has no flagged rows is not counted.
+void catchComboCheck(const char* label, ::Pokemon::Pokemon& pokemon, Enums::GameVersion group) {
+    if (!pokemon.hasOriginGame() || !pokemon.hasMetData()) return;
+    const Enums::GameVersion donorVersion = static_cast<Enums::GameVersion>(pokemon.originGame());
+    const Legality::EncounterTable* table = Legality::getEncounterTable(donorVersion);
+    const uint8_t donorVersionBit = Legality::encounterVersionBit(donorVersion);
+    if (!table || donorVersionBit == 0) return;
+    const Enums::GameVersion donorGroup = Enums::getGameGroup(donorVersion);
+
+    auto highestLevelOf = [](const Legality::EncounterRow& row) {
+        return static_cast<int>(row.levelMax) + ((row.flags & Legality::ENCOUNTER_FLAG_CATCH_COMBO) != 0 ? 1 : 0);
+    };
+    const Legality::EncounterRow* comboRow = nullptr;
+    bool tableHasComboRows = false;
+    for (uint32_t rowIndex = 0; rowIndex < table->rowCount && !comboRow; ++rowIndex) {
+        const Legality::EncounterRow& row = table->rows[rowIndex];
+        if ((row.flags & Legality::ENCOUNTER_FLAG_CATCH_COMBO) == 0) continue;
+        tableHasComboRows = true;
+        if (row.kind != Legality::ENCOUNTER_KIND_WILD || (row.versions & donorVersionBit) == 0) continue;
+        if (row.location >= 0xFFF0 || row.form != 0 || row.levelMax + 2 > 100) continue;
+        uint16_t preEvolutionSpecies = 0;
+        uint8_t preEvolutionForm = 0;
+        if (::Pokemon::getPreEvolution(donorGroup, row.species, 0, preEvolutionSpecies, preEvolutionForm)) continue;
+        bool reachedElsewhere = false;
+        for (uint16_t otherIndex = table->speciesIndex[row.species]; otherIndex < table->speciesIndex[row.species + 1]; ++otherIndex) {
+            const Legality::EncounterRow& otherRow = table->rows[otherIndex];
+            if (&otherRow == &row || otherRow.location != row.location || (otherRow.versions & donorVersionBit) == 0) continue;
+            reachedElsewhere = reachedElsewhere || highestLevelOf(otherRow) >= row.levelMax + 2;
+        }
+        if (!reachedElsewhere) comboRow = &row;
+    }
+    if (!tableHasComboRows) return;
+    if (!comboRow) {
+        ++g_catchComboMiss;
+        std::printf("        CATCH COMBO CHECK FAILED: %s -- the table has catch-combo rows but none could be posed\n", label);
+        return;
+    }
+
+    const uint16_t originalSpecies = pokemon.speciesID();
+    const uint8_t originalForm = pokemon.form();
+    const uint16_t originalMetLocation = pokemon.metLocation();
+    const uint8_t originalMetLevel = pokemon.metLevel();
+    const uint16_t originalEggLocation = pokemon.eggLocation();
+    const bool originalIsEgg = pokemon.isEgg();
+    const bool originalFateful = pokemon.isFatefulEncounter();
+    const uint8_t originalLevel = pokemon.level();
+
+    auto analyzeAt = [&](uint8_t posedMetLevel) {
+        pokemon.setSpecies(comboRow->species);
+        pokemon.setForm(0);
+        pokemon.setMetLocation(comboRow->location);
+        pokemon.setMetLevel(posedMetLevel);
+        pokemon.setEggLocation(0);
+        pokemon.setEgg(false);
+        pokemon.setFatefulEncounter(false);
+        // A met level above the current one is its own finding, which is not the subject here.
+        if (pokemon.level() < posedMetLevel) pokemon.setLevel(posedMetLevel);
+        return Legality::analyze(pokemon, group);
+    };
+    const uint8_t comboLevel = static_cast<uint8_t>(comboRow->levelMax + 1);
+    const Legality::Report comboReport = analyzeAt(comboLevel);
+    const Legality::Report beyondReport = analyzeAt(static_cast<uint8_t>(comboRow->levelMax + 2));
+
+    pokemon.setSpecies(originalSpecies);
+    pokemon.setForm(originalForm);
+    pokemon.setMetLocation(originalMetLocation);
+    pokemon.setMetLevel(originalMetLevel);
+    pokemon.setEggLocation(originalEggLocation);
+    pokemon.setEgg(originalIsEgg);
+    pokemon.setFatefulEncounter(originalFateful);
+    if (pokemon.level() != originalLevel) pokemon.setLevel(originalLevel);
+
+    bool comboMatched = false;
+    for (const auto& issue : comboReport.issues) comboMatched = comboMatched || issue.text.rfind("Matches a", 0) == 0;
+    const std::string widenedBand = "(nearest is " + std::to_string(comboRow->levelMin) + "-" + std::to_string(comboLevel) + ")";
+    bool beyondFlagged = false;
+    for (const auto& issue : beyondReport.issues) beyondFlagged = beyondFlagged || (issue.text.find("is met at level") != std::string::npos && issue.text.find(widenedBand) != std::string::npos);
+    if (comboMatched && beyondFlagged) { ++g_catchComboOk; return; }
+    ++g_catchComboMiss;
+    std::printf("        CATCH COMBO CHECK FAILED: %s -- species %u at location %u, slot %u-%u: max+1 %s, max+2 %s\n", label, comboRow->species, comboRow->location, comboRow->levelMin, comboRow->levelMax, comboMatched ? "matched" : "DID NOT MATCH", beyondFlagged ? "flagged" : ("was NOT flagged with " + widenedBand).c_str());
+    for (const auto& issue : comboReport.issues) std::printf("            max+1 said: %s\n", issue.text.c_str());
+    for (const auto& issue : beyondReport.issues) std::printf("            max+2 said: %s\n", issue.text.c_str());
 }
 
 // THE REPORTED CASE, BUILT FROM NOTHING. A Horsea caught on Route 24 in FireRed, edited into a
@@ -549,7 +643,7 @@ void evolutionBiteCheck(const char* label, ::Pokemon::Pokemon& pk, Enums::GameVe
         const Legality::EncounterRow& row = table->rows[rowIndex];
         if (row.kind != Legality::ENCOUNTER_KIND_WILD) continue;
         if ((row.versions & donorVersionBit) == 0) continue;
-        if (row.location >= 0xFFF0 || row.flags != 0 || row.form != 0) continue;
+        if (row.location >= 0xFFF0 || (row.flags & ~Legality::ENCOUNTER_FLAG_CATCH_COMBO) != 0 || row.form != 0) continue;
         for (uint16_t candidate = 1; candidate + 1 < table->speciesIndexLength; ++candidate) {
             uint16_t fromSpecies = 0;
             uint8_t fromForm = 0;
@@ -699,6 +793,7 @@ void sweepTrainer(const char* label, TrainerT& trainer) {
         biteCheck(label, locationDonor != nullptr ? *locationDonor : *donor, group);
         eventBiteCheck(label, *donor, group);
         wildBiteCheck(label, *donor, group);
+        catchComboCheck(label, *donor, group);
         evolutionBiteCheck(label, *donor, group);
     }
 }
@@ -831,6 +926,8 @@ int main(int argc, char** argv) {
     std::printf("\nwild check:  %d game(s) matched a Pokemon posed at one of their own wild slots", g_wildOk);
     if (g_wildMiss) std::printf(", %d DID NOT", g_wildMiss);
     if (g_wildSkip) std::printf(" (%d had no plain wild row to pose at)", g_wildSkip);
+    std::printf("\ncatch combo: %d game(s) matched a Let's Go slot one level above its range and rejected two", g_catchComboOk);
+    if (g_catchComboMiss) std::printf(", %d DID NOT", g_catchComboMiss);
     std::printf("\nbite check:  %d game(s) correctly rejected a bogus met location", g_biteOk);
     if (g_biteMiss) std::printf(", %d DID NOT", g_biteMiss);
     if (g_biteSkip) std::printf(" (%d record no met location at all)", g_biteSkip);
@@ -846,6 +943,6 @@ int main(int argc, char** argv) {
     if (g_evoElsewhereMiss) std::printf(", %d BLAMED SOMETHING ELSE", g_evoElsewhereMiss);
     if (g_evoElsewhereSkip) std::printf(" (%d had no such pair to pose)", g_evoElsewhereSkip);
     std::printf("\nseadra check: the reported case -- a Seadra met where only Horsea is caught -- is %s", g_seadraMiss == 0 ? "explained as an evolution, both directions" : "WRONG");
-    std::printf("\n\nThe sweep reports; it does not pass or fail. Judgement is the point:\ndecide per shape whether the checker is right about these saves. The six\nbite checks DO fail, because a checker that never fires is not a clean result.\n");
-    return (g_biteMiss == 0 && g_eventMiss == 0 && g_wildMiss == 0 && g_evoMiss == 0 && g_evoElsewhereMiss == 0 && g_seadraMiss == 0) ? 0 : 1;
+    std::printf("\n\nThe sweep reports; it does not pass or fail. Judgement is the point:\ndecide per shape whether the checker is right about these saves. The seven\nbite checks DO fail, because a checker that never fires is not a clean result.\n");
+    return (g_biteMiss == 0 && g_eventMiss == 0 && g_wildMiss == 0 && g_catchComboMiss == 0 && g_evoMiss == 0 && g_evoElsewhereMiss == 0 && g_seadraMiss == 0) ? 0 : 1;
 }

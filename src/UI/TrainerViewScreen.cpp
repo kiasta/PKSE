@@ -986,10 +986,9 @@ namespace UI
         }
         Conversion::Result conversionResult;
         const std::string species = pokemon->species();
-        // Who is receiving it. Only the Gen 1/2 route reads this: a Poke Transporter transfer arrives
-        // through Bank, which is a trade, so the player opening this save becomes the handling
-        // trainer. Every other conversion carries the source's own OT/HT and ignores it.
-        const Conversion::ReceivingTrainer receiving{Utils::utf8ToUtf16(trainer.trainerName), trainer.trainerGender};
+        // Who is receiving it: the player opening this save becomes the Pokemon's handler, as a real
+        // transfer into another game makes them.
+        const Conversion::ReceivingTrainer receiving{Utils::utf8ToUtf16(trainer.trainerName), trainer.trainerGender, trainer.language()};
         // The exact destination game, not just its group: a pokemon transferred down into Gen 3 cannot keep a
         // modern origin (4-bit field) and gets restamped, and "FRLG" alone can't say which half it is.
         auto converted = Conversion::convert(*pokemon, trainer.getGameGroup(), conversionResult, saveOriginVersion(trainer, titleId), &receiving);

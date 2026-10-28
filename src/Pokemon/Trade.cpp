@@ -123,6 +123,80 @@ namespace Pokemon
             pokemon.setGeolocationCountry(0, country);
             pokemon.setGeolocationRegion(0, region);
         }
+
+        /// What the receiving trainer writes (PKHeX TradeHT): the trade out, and the start of a
+        /// transfer into another game, write the same handler block.
+        void writeHandlerBlock(Pokemon &pokemon, const TradePartner &partner)
+        {
+            const TradeEra era = tradeEraFor(pokemon);
+            const Enums::GameVersion gameGroup = pokemon.getGameGroup();
+
+            pokemon.setHTName(partner.trainerName);
+            pokemon.setHTGender(partner.gender);
+            if (pokemon.hasHandlerLanguage())
+            {
+                // A LANGUAGE ID IS NOT PORTABLE BACKWARDS, and a donor save can be from a generation
+                // that shipped in languages this one never did.
+                pokemon.setHTLanguage(Enums::safeLanguageForGroup(gameGroup, partner.language));
+            }
+
+            // THE NEW HANDLER STARTS AT THE SPECIES' BASE FRIENDSHIP -- except in Let's Go, which
+            // copies the current value instead, because its CP is computed from friendship and a reset
+            // would visibly change the Pokemon's CP (PKHeX PB7.TradeHT says so in as many words).
+            if (era == TradeEra::LetsGo)
+            {
+                pokemon.setHTFriendship(pokemon.friendship());
+            }
+            else
+            {
+                const PersonalRecord &personal = getPersonalRecord(gameGroup, pokemon.speciesID(), pokemon.form());
+                pokemon.setHTFriendship(personal.baseFriendship);
+            }
+
+            if (pokemon.hasHandlerAffection())
+            {
+                pokemon.setHTAffection(0);
+            }
+
+            if (pokemon.hasHandlerMemories())
+            {
+                if (era == TradeEra::Gen6Style)
+                {
+                    // ONLY WHEN THERE IS NONE ALREADY. A Pokemon that has been traded before carries a
+                    // memory its previous handler made, and overwriting it would erase something the
+                    // games keep (PKHeX: "I'd rather not overwrite existing memories").
+                    if (pokemon.htMemory() == 0)
+                    {
+                        writeLinkTradeMemory(pokemon);
+                    }
+                }
+                else
+                {
+                    // Gen 8 and 9 clear the old handler's memories and write none of their own --
+                    // "Memories are deferred to the game. SW/SH does not immediately set memories."
+                    clearHandlerMemory(pokemon);
+                }
+            }
+
+            // ONLY WHEN THE PARTNER ACTUALLY SUPPLIES A REGION. PKHeX pushes a geolocation entry only
+            // for a trainer that carries one (`if (tr is IRegionOriginReadOnly o)`), and pushing an
+            // empty one here would be worse than doing nothing: the history is read in order and a
+            // NON-EMPTY SLOT AFTER AN EMPTY ONE IS INVALID (IGeoTrack.GetValidity ->
+            // CountryAfterPreviousEmpty), so shifting real entries down behind a blank slot 0 would
+            // turn a legal record illegal. An all-zero history is legal; a gapped one is not.
+            if (pokemon.hasGeolocation() && partner.consoleCountry != 0)
+            {
+                pushGeolocation(pokemon, partner.consoleCountry, partner.consoleRegion);
+            }
+
+            // Return and Frustration read the ACTIVE handler's friendship, so Gen 6/7 carries the value
+            // across the switch rather than letting those moves change power on a trade. Gen 8 dropped
+            // the clause along with the moves themselves.
+            if (era == TradeEra::Gen6Style && knowsFriendshipPoweredMove(pokemon))
+            {
+                pokemon.setHTFriendship(pokemon.otFriendship());
+            }
+        }
     }
 
     TradePartner generateTradePartner(const Pokemon &pokemon)
@@ -154,80 +228,32 @@ namespace Pokemon
             return false;
         }
 
-        const TradeEra era = tradeEraFor(pokemon);
-        const Enums::GameVersion gameGroup = pokemon.getGameGroup();
-
-        // ---- the outbound leg: what the receiving trainer writes (PKHeX TradeHT) ----
-        pokemon.setHTName(partner.trainerName);
-        pokemon.setHTGender(partner.gender);
-        if (pokemon.hasHandlerLanguage())
-        {
-            // A LANGUAGE ID IS NOT PORTABLE BACKWARDS, and a donor save can be from a generation
-            // that shipped in languages this one never did.
-            pokemon.setHTLanguage(Enums::safeLanguageForGroup(gameGroup, partner.language));
-        }
-
-        // THE NEW HANDLER STARTS AT THE SPECIES' BASE FRIENDSHIP -- except in Let's Go, which
-        // copies the current value instead, because its CP is computed from friendship and a reset
-        // would visibly change the Pokemon's CP (PKHeX PB7.TradeHT says so in as many words).
-        if (era == TradeEra::LetsGo)
-        {
-            pokemon.setHTFriendship(pokemon.friendship());
-        }
-        else
-        {
-            const PersonalRecord &personal = getPersonalRecord(gameGroup, pokemon.speciesID(), pokemon.form());
-            pokemon.setHTFriendship(personal.baseFriendship);
-        }
-
-        if (pokemon.hasHandlerAffection())
-        {
-            pokemon.setHTAffection(0);
-        }
-
-        if (pokemon.hasHandlerMemories())
-        {
-            if (era == TradeEra::Gen6Style)
-            {
-                // ONLY WHEN THERE IS NONE ALREADY. A Pokemon that has been traded before carries a
-                // memory its previous handler made, and overwriting it would erase something the
-                // games keep (PKHeX: "I'd rather not overwrite existing memories").
-                if (pokemon.htMemory() == 0)
-                {
-                    writeLinkTradeMemory(pokemon);
-                }
-            }
-            else
-            {
-                // Gen 8 and 9 clear the old handler's memories and write none of their own --
-                // "Memories are deferred to the game. SW/SH does not immediately set memories."
-                clearHandlerMemory(pokemon);
-            }
-        }
-
-        // ONLY WHEN THE PARTNER ACTUALLY SUPPLIES A REGION. PKHeX pushes a geolocation entry only
-        // for a trainer that carries one (`if (tr is IRegionOriginReadOnly o)`), and pushing an
-        // empty one here would be worse than doing nothing: the history is read in order and a
-        // NON-EMPTY SLOT AFTER AN EMPTY ONE IS INVALID (IGeoTrack.GetValidity ->
-        // CountryAfterPreviousEmpty), so shifting real entries down behind a blank slot 0 would
-        // turn a legal record illegal. An all-zero history is legal; a gapped one is not.
-        if (pokemon.hasGeolocation() && partner.consoleCountry != 0)
-        {
-            pushGeolocation(pokemon, partner.consoleCountry, partner.consoleRegion);
-        }
-
-        // Return and Frustration read the ACTIVE handler's friendship, so Gen 6/7 carries the value
-        // across the switch rather than letting those moves change power on a trade. Gen 8 dropped
-        // the clause along with the moves themselves.
-        if (era == TradeEra::Gen6Style && knowsFriendshipPoweredMove(pokemon))
-        {
-            pokemon.setHTFriendship(pokemon.otFriendship());
-        }
+        writeHandlerBlock(pokemon, partner);
 
         // ---- the return leg: the ONLY thing trading back writes ----
         // The handler block above stays exactly as it is. That residue is what says a trade
         // happened, and clearing it here would undo the whole point of the round trip.
         pokemon.setCurrentHandler(0);
+
+        pokemon.refreshChecksum();
+        return true;
+    }
+
+    bool applyReceivingTrainer(Pokemon &pokemon, const TradePartner &receiver)
+    {
+        if (!pokemon.hasHandler() || receiver.trainerName.empty())
+        {
+            return false;
+        }
+
+        // A HANDLER WHO IS ALREADY THE RECEIVER IS KEPT, memories and friendship included. PKHeX
+        // compares the name and gender only (PKH.IsHandlerSame), so a Pokemon that has been in this
+        // trainer's hands before comes back to the history it left with.
+        if (pokemon.htName() != receiver.trainerName || pokemon.htGender() != receiver.gender)
+        {
+            writeHandlerBlock(pokemon, receiver);
+        }
+        pokemon.setCurrentHandler(1);
 
         pokemon.refreshChecksum();
         return true;

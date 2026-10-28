@@ -204,13 +204,21 @@ namespace Legality
             }
         }
 
+        /// The highest met level a row admits. Let's Go's catch combo spawns a slot's Pokemon one
+        /// level above its range (PKHeX EncounterSlot7b.CatchComboBonus), so a level past the table's
+        /// own maximum is still that slot's.
+        uint8_t highestMetLevel(const EncounterRow &row)
+        {
+            return (row.flags & ENCOUNTER_FLAG_CATCH_COMBO) != 0 ? static_cast<uint8_t>(row.levelMax + 1) : row.levelMax;
+        }
+
         /// Does the level a Pokemon was met at fall inside the template's span?
         /// SWSH's Wild Area is the one exception: after the post-game the
         /// whole area is boosted to exactly 60 regardless of the slot's own
         /// range (PKHeX EncounterArea8.BoostLevel).
         bool levelMatches(const EncounterRow &row, uint8_t metLevel)
         {
-            if (metLevel >= row.levelMin && metLevel <= row.levelMax)
+            if (metLevel >= row.levelMin && metLevel <= highestMetLevel(row))
                 return true;
             return (row.flags & ENCOUNTER_FLAG_BOOST60) != 0 && metLevel == 60;
         }
@@ -427,12 +435,12 @@ namespace Legality
                     {
                         if (state.stage <= STAGE_LEVEL)
                         {
-                            const int levelDistance = levelGap(metLevel, row.levelMin, row.levelMax);
+                            const int levelDistance = levelGap(metLevel, row.levelMin, highestMetLevel(row));
                             if (levelDistance < state.bestLevelGap)
                             {
                                 state.bestLevelGap = levelDistance;
                                 state.bestLevelMin = row.levelMin;
-                                state.bestLevelMax = row.levelMax;
+                                state.bestLevelMax = highestMetLevel(row);
                             }
                             state.stage = STAGE_LEVEL;
                         }

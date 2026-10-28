@@ -146,7 +146,7 @@ CSHARP_VERSION_ALIASES = {
 KIND = {"wild": 0, "static": 1, "gift": 2, "trade": 3, "raid": 4, "event": 5}
 SHINY = {"random": 0, "never": 1, "always": 2}
 FORM_ANY, GENDER_ANY, NATURE_ANY = 0xFF, 0xFF, 0xFF
-F_FATEFUL, F_ALPHA, F_BOOST60, F_EGG, F_MET_LEVEL_ZERO = 1, 2, 4, 8, 16
+F_FATEFUL, F_ALPHA, F_BOOST60, F_EGG, F_MET_LEVEL_ZERO, F_CATCH_COMBO = 1, 2, 4, 8, 16, 32
 
 # Location sentinels for templates whose met location is a whole region rather than one
 # id. SW/SH distribution raids are the only case: the den is anonymous, so any Wild Area
@@ -980,7 +980,8 @@ def wild_gg():
             for offset in range(0, len(body) - 3, 4):
                 species, _flags, level_min, level_max = struct.unpack_from("<BBBB", body, offset)
                 for location in locations:
-                    out.append(row(species, location, 0, level_min, level_max, version_bits, "wild"))
+                    out.append(row(species, location, 0, level_min, level_max, version_bits, "wild",
+                                   flags=F_CATCH_COMBO))
     return out
 
 
@@ -2312,6 +2313,10 @@ namespace Legality {
         /// instead. Gen 2's in-game trades: Crystal records them at LinkTrade2NPC and met level 0,
         /// and the received Pokemon is at least the level the template names (EncounterTrade2).
         ENCOUNTER_FLAG_MET_LEVEL_ZERO = 1 << 4,
+        /// The slot can be met ONE LEVEL above its range. Let's Go's catch combo spawns a slot's
+        /// Pokemon a level higher, so PKHeX matches every Let's Go wild slot up to LevelMax + 1
+        /// (EncounterSlot7b.CatchComboBonus).
+        ENCOUNTER_FLAG_CATCH_COMBO = 1 << 5,
     };
 
     constexpr uint8_t ENCOUNTER_FORM_ANY   = 0xFF;  // slot randomises the form

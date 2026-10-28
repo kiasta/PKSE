@@ -32,7 +32,10 @@
 #include "../SaveTree.h" // saves are found by their TITLE FOLDER, not by a guessed filename
 
 #include "Enums/GameVersion.h"
+#include "Conversion/Convert.h"
 #include "Encryption/Encryption.h"
+#include "Enums/LanguageID.h"
+#include "Pokemon/Pokemon7USUM.h"
 #include "Test/TestReport.h"
 #include "Test/TestSuite.h"
 #include "Trainer/Bank.h"
@@ -69,6 +72,7 @@
 #include "UI/Dialogs/StatEditDialog.h"
 #include "Globals.h"         // g_allowIllegalEdits -- the Hyper Training row gives way to it
 #include "Utils/Settings.h"
+#include "Utils/StringHelpers.h"
 #include "Save/RtcFooter.h"
 #include "Save/SaveFileName.h"
 #include "Save/SaveEnvelope.h"
@@ -929,6 +933,95 @@ namespace {
         if (d.expect(s.storageMenuActive, "A in Storage's Menu mode did not open the Pokemon menu"))
             d.notSee("Find…");
         d.press(Btn::B).frame();
+    }
+
+    /// A Pokemon carried from the bank into this save becomes the receiving player's. The withdraw
+    /// hands the open save's trainer to the conversion, which makes them the active handler; a
+    /// FireRed Venusaur once reached Violet showing "(none)" for its handler because only Gen 1/2
+    /// were handed one. Driven through the real Storage view so the call site is what is tested,
+    /// then put back: the save and the bank are shared with every later test.
+    void testWithdrawSetsHandler(Test::Context& context, TrainerViewScreen& screen, Trainer::Trainer& trainer) {
+        using Screen = TrainerViewScreen;
+        const std::unique_ptr<Pokemon::Pokemon> blankPokemon = trainer.createBlankPokemon();
+        if (!blankPokemon || !blankPokemon->hasHandler() || trainer.trainerName.empty() || !screen.bank) {
+            context.note("this format has no handler, or the save no trainer name, so the withdraw handler test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+
+        // A FireRed Pokemon, the reported case. PKSE cannot build a PK3 from nothing, so it starts as a
+        // Gen 7 record written down into FireRed with no receiver -- what a banked FireRed Pokemon is.
+        // The first species this game's dex has.
+        std::unique_ptr<Pokemon::Pokemon> fireRedPokemon;
+        for (const uint16_t speciesId : {3, 25, 133, 1}) {
+            Pokemon::Pokemon7USUM gen7Pokemon;
+            gen7Pokemon.setSpecies(speciesId);
+            gen7Pokemon.setExp(125000);
+            gen7Pokemon.setTID16(24680);
+            gen7Pokemon.setOTName(Utils::utf8ToUtf16("KIASTA"));
+            gen7Pokemon.recalculateStats();
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto candidate = Conversion::convert(gen7Pokemon, Enums::GameVersion::FRLG, conversionResult, static_cast<uint8_t>(Enums::GameVersion::FR));
+            if (candidate && Conversion::canConvert(*candidate, trainer.getGameGroup(), conversionResult) && conversionResult == Conversion::Result::Ok) {
+                fireRedPokemon = std::move(candidate);
+                break;
+            }
+        }
+        if (!fireRedPokemon) {
+            context.note("none of the probe species converts into this game, so the withdraw handler test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+
+        int saveBox = -1, saveSlot = -1;
+        for (int boxIndex = 0; boxIndex < static_cast<int>(trainer.getBoxCount()) && saveBox < 0; ++boxIndex)
+            for (int slotIndex = 0; slotIndex < static_cast<int>(trainer.getSlotsPerBox()); ++slotIndex) {
+                const auto& occupant = trainer.boxes[boxIndex][slotIndex];
+                if ((!occupant || occupant->speciesID() == 0) && !screen.storageSlotLocked(0, boxIndex, slotIndex)) { saveBox = boxIndex; saveSlot = slotIndex; break; }
+            }
+        int bankSlot = -1;
+        for (int slotIndex = 0; slotIndex < static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX) && bankSlot < 0; ++slotIndex)
+            if (!screen.bank->boxes[0][slotIndex]) bankSlot = slotIndex;
+        if (saveBox < 0 || bankSlot < 0) {
+            context.note("no free save or bank slot, so the withdraw handler test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        std::unique_ptr<Pokemon::Pokemon> originalSaveSlot = std::move(trainer.boxes[saveBox][saveSlot]);
+        screen.bank->boxes[0][bankSlot] = std::move(fireRedPokemon);
+
+        Driver driver(context, screen, "withdraw-handler");
+        driver.step("open the storage view");
+        gotoHome(driver, screen, 2);
+        driver.press(Btn::A).frame();
+        if (driver.expect(screen.detailViewActive && screen.selectedMode == Screen::ViewMode::Storage, "could not open the storage view")) {
+            screen.storageFocusPane = 1;
+            screen.bank->currentBox = 0;
+            screen.stBankBox = 0;
+            screen.stBankSlot = bankSlot;
+            driver.step("A opens the Pokemon menu on the banked FireRed Pokemon").press(Btn::A).frame();
+            if (driver.expect(screen.storageMenuActive, "A on a bank slot did not open the Pokemon menu")) {
+                screen.storageMenuIndex = Screen::STORAGE_MENU_ROW_MOVE;
+                driver.step("Move picks it up").press(Btn::A).frame();
+                if (driver.expect(screen.carrying(), "Move did not pick up the bank Pokemon")) {
+                    screen.storageFocusPane = 0;
+                    screen.selectedBoxIndex = saveBox;
+                    screen.stSaveSlot = saveSlot;
+                    driver.step("A puts it down in the save").press(Btn::A).frame();
+                    if (screen.moveConfirmActive()) driver.step("continue past the transfer notice").press(Btn::A).frame();
+                    const auto& placed = trainer.boxes[saveBox][saveSlot];
+                    if (driver.expect(placed && placed->getGameGroup() == trainer.getGameGroup(), "the withdrawn FireRed Pokemon did not land in the save, converted")) {
+                        const std::string where = "box=" + std::to_string(saveBox) + " slot=" + std::to_string(saveSlot);
+                        driver.expect(placed->currentHandler() == 1, "a Pokemon withdrawn from another game is not in this save's trainer's hands", where + " currentHandler=" + std::to_string(placed->currentHandler()));
+                        driver.expect(placed->htName() == Utils::utf8ToUtf16(trainer.trainerName) && placed->htGender() == trainer.trainerGender, "a Pokemon withdrawn from another game does not name this save's trainer as its handler", where + " ht=\"" + Utils::utf16ToUtf8(placed->htName()) + "\" trainer=\"" + trainer.trainerName + "\"");
+                        if (placed->hasHandlerLanguage()) {
+                            const uint8_t expectedLanguage = Enums::safeLanguageForGroup(trainer.getGameGroup(), trainer.language());
+                            driver.expect(placed->htLanguage() == expectedLanguage, "a withdrawn Pokemon's handler language is not this save's", where + " htLanguage=" + std::to_string(placed->htLanguage()) + " expected=" + std::to_string(expectedLanguage));
+                        }
+                    }
+                }
+            }
+        }
+
+        trainer.boxes[saveBox][saveSlot] = std::move(originalSaveSlot);
+        screen.bank->boxes[0][bankSlot].reset();
     }
 
     /// The cursor responds to the d-pad. A button that stopped doing anything is otherwise silent.
@@ -1923,6 +2016,7 @@ namespace {
         { auto s = fresh(); testHyperTrainingPartyMark(context, *s, tr); }
         { auto s = fresh(); testItemsKeys(context, *s, tr); }
         { auto s = fresh(); testBoxMenus(context, *s, tr); }
+        { auto s = fresh(); testWithdrawSetsHandler(context, *s, tr); }
         { auto s = fresh(); testTapIsSeenBeforeItActs(context, *s, tr); }
         // The save dialog, raised the way X raises it from the HOME menu: its keys go over its scrim.
         { auto s = fresh(); Driver d(context, *s, "save-dialog-bar"); d.step("raise the save dialog"); s->saveConfirmActive = true; d.frame(); expectOneNavBar(d, "save dialog open"); s->saveConfirmActive = false; }

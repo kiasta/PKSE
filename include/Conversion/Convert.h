@@ -58,17 +58,18 @@
 #include "Enums/GameVersion.h"
 
 namespace Conversion {
-    /// Who the Pokemon is being withdrawn INTO, for the one conversion that has to invent a
-    /// handling trainer rather than carry one: a Gen 1/2 Pokemon arrives through Poke Transporter
-    /// and Bank, which is a trade, so the receiving player takes charge of it. Every other
-    /// conversion carries the source's OT/HT verbatim and ignores this.
+    /// Who the Pokemon is being withdrawn INTO. Every real route into another game -- Poke
+    /// Transporter, Bank, HOME -- makes the receiving player its active handler, so a conversion
+    /// into a format with a handler stamps this trainer there (Pokemon::applyReceivingTrainer).
     ///
-    /// Pass nullptr (or an empty name) when the caller has no save behind it. The Pokemon then
-    /// arrives with NO handler, which is a readable state -- an invented name is not.
+    /// Pass nullptr (or an empty name) when the caller has no save behind it. The Pokemon then keeps
+    /// the handler it arrived with -- none at all for a Gen 1-3 source, which is a readable state --
+    /// because an invented name is not.
     struct ReceivingTrainer
     {
         std::u16string name;
-        uint8_t gender = 0; // 0 = male, 1 = female, as every format here stores it
+        uint8_t gender = 0;   // 0 = male, 1 = female, as every format here stores it
+        uint8_t language = 0; // Enums::LanguageID of the receiving save; Gen 8+ records the handler's
     };
 
     enum class Result {
@@ -90,10 +91,10 @@ namespace Conversion {
     /// and stamping a fixed member of the pair is wrong half the time. 0 = unknown, which falls back to
     /// the group's representative version.
     ///
-    /// `receivingTrainer` names the trainer whose save the Pokemon is landing in. It is used only
-    /// by the Gen 1/2 (Poke Transporter) route, which has to stamp a handling trainer the source
-    /// record cannot supply; nullptr means "not known" and leaves the pokemon unhandled. See
-    /// ReceivingTrainer above.
+    /// `receivingTrainer` names the trainer whose save the Pokemon is landing in, who becomes its
+    /// active handler. The one pairing that leaves the handler alone is Sun/Moon <-> Ultra Sun/Ultra
+    /// Moon: one record format, so the move is not a transfer into another game. nullptr means "not
+    /// known" and keeps the handler the source had. See ReceivingTrainer above.
     std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon& source, Enums::GameVersion destGroup, Result& result, uint8_t destOriginVersion = 0, const ReceivingTrainer* receivingTrainer = nullptr);
 
     /// True if `destGroup` can accept `source` (same group, or a supported+allowed conversion). Pure check
