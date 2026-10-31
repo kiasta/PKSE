@@ -265,6 +265,12 @@ namespace Trainer
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
+            // Unchanged since load: keep the bytes (a Bad Egg keeps its bad checksum, as in PKHeX).
+            if (slotHoldsLoadedRecord(party[partySlotIndex].get(), g + ofsParty() + written * Encryption::SIZE_PARTY4_DP, Encryption::SIZE_PARTY4_DP, Encryption::decryptArray4DP))
+            {
+                ++written;
+                continue;
+            }
             party[partySlotIndex]->refreshChecksum(); // BEFORE encrypting -- the checksum is the crypt key
             // Staged through a party-length buffer rather than encrypted in place. Every entity
             // that reaches the party should already be party size (makeEntity grows box records
@@ -294,6 +300,9 @@ namespace Trainer
             {
                 const size_t offset = ofsBox(boxIndex) + slotIndex * Encryption::SIZE_STORED4_DP;
                 auto &pokemon = boxes[boxIndex][slotIndex];
+                // Unchanged since load (an empty slot or a Bad Egg included): keep the file's bytes.
+                if (slotHoldsLoadedRecord(pokemon.get(), sourceBytes + offset, Encryption::SIZE_STORED4_DP, Encryption::decryptArray4DP))
+                    continue;
                 if (pokemon && pokemon->speciesID() != 0)
                 {
                     pokemon->refreshChecksum();

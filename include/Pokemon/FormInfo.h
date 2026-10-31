@@ -11,6 +11,8 @@
 
 #include <cstdint>
 
+#include "Enums/GameVersion.h"
+
 namespace Pokemon
 {
 
@@ -96,6 +98,19 @@ namespace Pokemon
     uint8_t genderLinkedForm(uint16_t species, uint8_t currentForm, uint8_t gender);
 
     /**
+     * The gender ratio (PersonalInfo::genderRatio's encoding: 0 male-only, 254 female-only, 255
+     * genderless) of (species, form) as the save-format `group` sees it.
+     *
+     * The personal table is one cross-game table, and a form index does not mean the same thing in
+     * every game. Pikachu forms 1-6 are the Gen 7+ caps there (male-only), but in Omega Ruby/Alpha
+     * Sapphire they are the Cosplay outfits, which are only ever handed out female (PKHeX
+     * Encounters6AO's Cosplay gift, Gender 1). Reading the cross-game ratio called every Cosplay
+     * Pikachu a "male-only species set to female". Ask this, not the table, wherever a gender is
+     * judged or offered.
+     */
+    uint8_t getGenderRatio(uint16_t species, uint8_t form, Enums::GameVersion group);
+
+    /**
      * True when the species can freely change form AFTER it was caught -- a held plate, a
      * memory disc, a barber's trim, the season, a form-change item. Ported from PKHeX
      * `FormInfo.IsFormChangeable`'s `FormChange` list.
@@ -106,9 +121,10 @@ namespace Pokemon
      * would report a mismatch that is not one.
      *
      * PKHeX's own version takes the old and new form plus both contexts, because Zygarde and
-     * Deerling changed rules between generations. Every game PKSE supports is Gen 8 or later
-     * (or Gen 3, which has none of these species bar Deoxys), and in that era both are freely
-     * changeable, so the extra arguments would only ever narrow to `true`.
+     * Deerling/Sawsbuck changed rules between generations: Zygarde cannot change form at all in
+     * Gen 6 and only towards its Power Construct forms in Gen 7, and Deerling changes with the
+     * season in Gen 5 and from the HOME era on but not in Gens 6 and 7. This answers `true` for
+     * all three in every game, which can only make Layer 3 quieter, never accuse a legal form.
      */
     bool isFormChangeable(uint16_t species);
 

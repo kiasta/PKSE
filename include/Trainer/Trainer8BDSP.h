@@ -21,6 +21,7 @@ namespace Trainer
     constexpr size_t BDSP_BOX_OFFSET = 0x14EF4;     // 40 boxes x 30 slots x SIZE_PARTY8_BDSP
     constexpr size_t BDSP_BOXNAME_OFFSET = 0x148AA; // 40 x 0x22 bytes (17 UTF-16 chars each)
     constexpr size_t BDSP_BOXNAME_LENGTH = 0x22;    // bytes per box name; last slot is the terminator
+    constexpr size_t BDSP_TEAM_POSITION_OFFSET = 0x14E7E; // BoxLayout8b.TeamPositionOffset (BOXNAME + 0x5D4)
     constexpr size_t BDSP_CURRENTBOX = 0x14EC8;     // u8 current box (BoxLayout8b.CurrentBox, = BOXNAME + 0x61E)
     constexpr size_t BDSP_MYSTATUS = 0x79BB4;       // MyStatus8b; OT name (0x1A bytes) starts here
     constexpr size_t BDSP_ID32 = 0x79BD0;           // TID16 @ 0x79BD0 / SID16 @ 0x79BD2
@@ -30,11 +31,26 @@ namespace Trainer
     constexpr size_t BDSP_ITEM_BASE = 0x0563C;      // MyItem8b: item i's 0x10 record at BASE + i*0x10
     constexpr size_t BDSP_BOX_COUNT = 40;
 
+    /// The four save revisions PKHeX accepts (SaveUtil.IsG8BDSP): each file size pairs with the
+    /// revision number in the file's first u32 (Gem8Version 1.0 / 1.1 / 1.2 / 1.3).
+    struct SaveRevision8BDSP
+    {
+        size_t fileSize;
+        uint32_t revisionId;
+    };
+    constexpr SaveRevision8BDSP SAVE_REVISIONS8_BDSP[] = {
+        {0xE9828, 0x25},
+        {0xEDC20, 0x2C},
+        {0xEED8C, 0x32},
+        {0xEF0A4, 0x34},
+    };
+
     class Trainer8BDSP : public Trainer
     {
     private:
         std::vector<uint8_t> saveData;   // the full flat save (BDSP has no SCBlocks)
         std::vector<uint8_t> boxBlank; // the game's encrypted blank box slot (for empty-slot writes)
+        bool valid = false;            // one of SAVE_REVISIONS8_BDSP; nothing is parsed otherwise
 
         void parseMyStatus();
         void parseParty();
@@ -47,14 +63,19 @@ namespace Trainer
 
     public:
         explicit Trainer8BDSP(std::vector<uint8_t> data);
+        bool isValid() const noexcept override { return valid; }
+        /// PKHeX's own test: a known file size whose first u32 names the matching revision.
+        static bool detect(const std::vector<uint8_t> &bytes) noexcept;
 
         void updatePartyBlock() override;
         void updateBoxBlock() override;
         void updateBoxNameBlock() override;
         void updateCurrentBoxBlock() override; // u8 at BDSP_CURRENTBOX (flat offset, no SCBlock)
         bool supportsBoxNames() const noexcept override { return true; }
+        /// A member of a battle team (PKHeX GetBoxSlotFlags: overwrite-protected).
+        bool isBoxSlotLocked(size_t boxIndex, size_t slotIndex) const noexcept override { return saveData.size() >= BDSP_TEAM_POSITION_OFFSET + 6 * 6 * 2 && battleTeamsHoldSlot(&saveData[BDSP_TEAM_POSITION_OFFSET], 6 * 6 * 2, boxIndex, slotIndex); }
         size_t getMaxBoxNameLength() const noexcept override { return BDSP_BOXNAME_LENGTH / 2 - 1; }
-        void updateItemBlock() override; // BDSP items deferred (no-op stub)
+        void updateItemBlock() override; // in place by item id; see the definition
         void updateTrainerInfoBlock() override;
         void updatePokedexBlock() override;                               // ZUKAN_WORK @ 0x7A328   // money / OT name
         uint32_t getMaxMoney() const noexcept override { return 999999; } // BDSP keeps the Gen-4 6-digit cap

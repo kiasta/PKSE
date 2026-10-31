@@ -9,8 +9,8 @@
  * FOUR THINGS DIFFER FROM PK4, and three of them are places a copied class quietly stays wrong:
  *
  *  1. NATURE IS STORED, at 0x41. Gen 3 and Gen 4 derive it from `PID % 25`; Gen 5 does not. So
- *     setNature() is a plain write -- no PID rebuild, no destructive-edit warning, and shininess
- *     is untouched by a nature change.
+ *     setNature() is a plain write for a Pokemon from Gen 5. One that came from Gens 3-4 still
+ *     has to keep `PID % 25` equal to it, so for those the PID is rebuilt as well.
  *  2. HIDDEN ABILITY IS A FLAG, at 0x42 bit 0 (bit 1 is N's Sparkle). Gen 5 introduced Dream World
  *     abilities, so abilityNumber() cannot be inferred from the PID the way Gen 4's is.
  *  3. ONE BALL FIELD (0x83). Gen 4's DP/Pt-vs-HGSS two-field split does not exist here.
@@ -99,27 +99,39 @@ namespace Pokemon
         {
             return (offset + 3 < dataSize) ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
+        // Every write into the checksummed blocks refreshes the checksum, so no setter leaves the
+        // entity holding a stale one until the next save. The bank stores the live bytes as they
+        // are, and its loader drops any record whose checksum fails.
         void wr8(size_t offset, uint8_t value) noexcept
         {
             if (offset < dataSize)
+            {
                 data[offset] = static_cast<std::byte>(value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr16(size_t offset, uint16_t value) noexcept
         {
             if (offset + 1 < dataSize)
+            {
                 Utils::writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr32(size_t offset, uint32_t value) noexcept
         {
             if (offset + 3 < dataSize)
+            {
                 Utils::writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
 
         bool isPartySize() const noexcept { return dataSize >= Encryption::SIZE_PARTY5_BW; }
 
         uint32_t pid() const noexcept override { return rd32(0x00); }
         void setPID(uint32_t value) noexcept override { wr32(0x00, value); }
-        /// Gen 4 has no separate EncryptionConstant; PKHeX aliases it to the PID.
+        /// Gen 5 has no separate EncryptionConstant; PKHeX aliases it to the PID.
         uint32_t encryptionConstant() const noexcept override { return pid(); }
         void setEncryptionConstant(uint32_t) noexcept override {}
         uint16_t sanity() const noexcept { return rd16(0x04); }
@@ -144,6 +156,10 @@ namespace Pokemon
         void setOTFriendship(uint8_t value) noexcept override { wr8(0x14, value); }
         uint16_t ability() const noexcept override { return rd8(0x15); }
         void setAbility(uint16_t value) noexcept override { wr8(0x15, static_cast<uint8_t>(value)); }
+        /// PKHeX PK5.AbilityNumber => HiddenAbility ? 4 : 1 << PIDAbility. 4 sets the hidden flag;
+        /// 1 or 2 clears it and rebuilds the PID to hold the slot bit (bit 16, or bit 0 for a
+        /// Pokemon from Gens 3-4).
+        void setAbilityNumber(uint8_t abilityNumber) noexcept override;
         uint8_t language() const noexcept override { return rd8(0x17); }
         void setLanguage(uint8_t value) noexcept override { wr8(0x17, value); }
 
@@ -295,16 +311,10 @@ namespace Pokemon
 
         uint8_t nature() const noexcept override { return rd8(0x41); }
         uint8_t statNature() const noexcept override { return nature(); }
-        /// A plain write. Gen 3/4 have to rebuild the PID for this and lose shininess doing it;
-        /// Gen 5 does not, so there is no destructive-edit warning to raise.
-        void setNature(uint8_t nature) noexcept override
-        {
-            if (nature > 24)
-                return;
-            wr8(0x41, nature);
-            recalculateStats();
-            refreshChecksum();
-        }
+        /// A plain write for a Pokemon from Gen 5. One from Gens 3-4 must keep `PID % 25` equal to
+        /// its nature (PKHeX GenderVerifier.VerifyNaturePID), so the PID is rebuilt for it too,
+        /// holding shininess, gender and the ability slot.
+        void setNature(uint8_t nature) noexcept override;
         void setStatNature(uint8_t) noexcept override {} // no mints before Gen 8
 
         /// Dream World ability flag (0x42 bit 0). Gen 5 is where hidden abilities start.
@@ -348,8 +358,20 @@ namespace Pokemon
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
 
     private:
-        // A new PID holding what the caller does not change (-1 = either); false when none can.
-        bool rerollPID(int wantShiny, int wantGender, uint32_t trainerID32) noexcept;
+        /// The checksum covers the four blocks: 0x08 up to the stored size.
+        static constexpr size_t CHECKSUM_START_OFFSET = 0x08;
+        void refreshChecksumAfterWrite(size_t offset) noexcept
+        {
+            if (offset >= CHECKSUM_START_OFFSET && offset < Encryption::SIZE_STORED5_BW)
+                refreshChecksum();
+        }
+        /// Gens 3-4 derive the nature from the PID and keep the ability slot in bit 0; Gen 5
+        /// stores the nature and keeps the slot in bit 16 (PKHeX PKM.PIDAbility).
+        bool pidHoldsNature() const noexcept;
+        int abilityBitIndex() const noexcept { return pidHoldsNature() ? 0 : 16; }
+        // A new PID holding what the caller does not change; false when none can. `wantNature` and
+        // `wantAbilityBit` of -1 hold the current ones.
+        bool rerollPID(int wantShiny, int wantGender, int wantNature, int wantAbilityBit, uint32_t trainerID32) noexcept;
         void writeStoredGender(uint8_t genderValue) noexcept
         {
             wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate include/Pokemon/LearnsetTable.h + src/Pokemon/LearnsetTable.cpp
-from PKHeX's binary learnset resources (all six supported games).
+from PKHeX's binary learnset resources (every supported game group).
 
 PKSE needs a fast set-membership query to highlight legal moves in
 the move picker and for legality Layer-2 (move learnability):
@@ -699,6 +699,105 @@ def _hatch_form_everstone(p, e, local_off, regflag_off, regidx_off):
     return regidx if (regf & 1) else local
 
 
+def load_max_move_ids():
+    """PKHeX Legality/Legal.cs MaxMoveID_* constants, resolving the ones defined as another
+    constant or as a (int)Move.X cast."""
+    with open(CORE("Legality/Legal.cs"), encoding="utf-8") as fh:
+        text = fh.read()
+    raw = dict(re.findall(r"const\s+\w+\s+(MaxMoveID_\w+)\s*=\s*([^;]+);", text))
+
+    def resolve(name, depth=0):
+        expr = raw[name].strip()
+        if expr.isdigit():
+            return int(expr)
+        cast = re.fullmatch(r"\((?:int|ushort)\)Move\.(\w+)", expr)
+        if cast:
+            return MOVE[cast.group(1)]
+        if expr in raw and depth < 8:
+            return resolve(expr, depth + 1)
+        raise SystemExit("Legal.cs: cannot resolve %s = %s" % (name, expr))
+
+    return {name: resolve(name) for name in raw}
+
+
+def parse_cs_move_names(relpath, array_name):
+    """The `(ushort)Move` entries of a `<array_name> => [...]` span in a C# file, skipping
+    commented-out entries."""
+    with open(CORE(relpath), encoding="utf-8") as fh:
+        text = fh.read()
+    match = re.search(array_name + r"\s*=>\s*\[(.*?)\];", text, re.DOTALL)
+    if not match:
+        raise SystemExit("Could not find %s in %s" % (array_name, relpath))
+    names = []
+    for line in match.group(1).splitlines():
+        names.extend(re.findall(r"\(\w+\)(\w+)", line.split("//", 1)[0]))
+    if not names:
+        raise SystemExit("%s in %s parsed empty" % (array_name, relpath))
+    return names
+
+
+# Sketch. Smeargle's move pool is not a learnset: it can know any move Sketch can copy in the game,
+# and modelling only its level-up list reported every sketched move as unlearnable (and let the
+# transfer sanitizer delete them). PKHeX MoveInfo.IsSketchValid: never Struggle or Chatter, never a
+# Z-move, Max move or torque move (IsMoveKnowable), and the per-context exclusions of
+# IsSketchPossible(move, context). Two deliberate departures, where the game wins over PKHeX's
+# context-wide bound (GetMaxMoveID): the bound is the GAME's own max move id -- X/Y has no move past
+# 617, Sun/Moon none past 719 and Sword/Shield none past 826, so nothing there can be sketched -- and
+# Sword/Shield's dummied moves are excluded as BD/SP's and S/V's are, since a move no battle can use
+# is not one Sketch can copy.
+SMEARGLE = 235
+SKETCH_CONTEXT = {
+    "RBY": ("MaxMoveID_1", "Gen1"), "GSC": ("MaxMoveID_2", "Gen2"),
+    "RSE": ("MaxMoveID_3", "Gen3"), "FRLG": ("MaxMoveID_3", "Gen3"),
+    "DP": ("MaxMoveID_4", "Gen4"), "PT": ("MaxMoveID_4", "Gen4"), "HGSS": ("MaxMoveID_4", "Gen4"),
+    "BW": ("MaxMoveID_5", "Gen5"), "B2W2": ("MaxMoveID_5", "Gen5"),
+    "XY": ("MaxMoveID_6_XY", "Gen6"), "ORAS": ("MaxMoveID_6_AO", "Gen6"),
+    "SM": ("MaxMoveID_7", "Gen7"), "USUM": ("MaxMoveID_7_USUM", "Gen7"),
+    "GG": ("MaxMoveID_7b", "Gen7b"), "SWSH": ("MaxMoveID_8", "Gen8"),
+    "PLA": ("MaxMoveID_8a", "Gen8a"), "BDSP": ("MaxMoveID_8b", "Gen8b"),
+    "SV": ("MaxMoveID_9", "Gen9"), "ZA": ("MaxMoveID_9a", "Gen9a"),
+}
+
+
+def _is_move_knowable(move):
+    """PKHeX MoveInfo.IsMoveKnowable: not a Z-move, Max move or torque move."""
+    unknowable_ranges = (("BreakneckBlitzP", "Catastropika"), ("SinisterArrowRaid", "GenesisSupernova"),
+                         ("TenMVoltThunderbolt", "TenMVoltThunderbolt"),
+                         ("LightThatBurnstheSky", "ClangorousSoulblaze"), ("MaxFlare", "MaxSteelspike"),
+                         ("BlazingTorque", "MagicalTorque"))
+    return not any(MOVE[first] <= move <= MOVE[last] for first, last in unknowable_ranges)
+
+
+_SKETCH_CACHE = {}
+
+
+def sketch_pool(key):
+    if key in _SKETCH_CACHE:
+        return _SKETCH_CACHE[key]
+    from gen_movepresence import dummied_set  # noqa: E402 -- same DummiedMoves parser
+    max_name, context = SKETCH_CONTEXT[key]
+    max_move = load_max_move_ids()[max_name]
+    excluded = {MOVE["Struggle"], MOVE["Chatter"]}
+    if context == "Gen2":
+        excluded |= {MOVE[name] for name in ("SelfDestruct", "Explosion", "Mimic", "Metronome",
+                                             "MirrorMove", "Transform", "SleepTalk")}
+    elif context == "Gen6":
+        excluded |= {MOVE["ThousandArrows"], MOVE["ThousandWaves"], MOVE["LightofRuin"]}
+    elif context == "Gen7":
+        excluded.add(MOVE["LightofRuin"])
+    elif context == "Gen8":
+        excluded.add(MOVE["LightofRuin"])
+        excluded |= dummied_set("MoveInfo8.cs")
+    elif context == "Gen8b":
+        excluded |= dummied_set("MoveInfo8b.cs")
+    elif context == "Gen9":
+        excluded |= dummied_set("MoveInfo9.cs")
+        excluded |= {MOVE[name] for name in parse_cs_move_names("Moves/MoveInfo.cs", "DisallowSketch9")}
+    pool = {move for move in range(1, max_move + 1) if move not in excluded and _is_move_knowable(move)}
+    _SKETCH_CACHE[key] = pool
+    return pool
+
+
 class Assembler:
     def __init__(self, key):
         self.p = Personal(key)
@@ -1305,8 +1404,9 @@ class Gen7Assembler(Assembler):
     """LearnSource7SM / 7USUM GetAllMoves: level-up U shared egg U TM(100) U type tutors(8)
     U the Battle Point tutors(67) U the enhanced tutors.
 
-    Gen 7's enhanced tutors are a longer list than Gen 5/6's: Rotom's form moves, Keldeo, Meloetta,
-    Zygarde's five signature moves, and Volt Tackle for the Pikachu line.
+    Gen 7's enhanced tutors are a longer list than Gen 5/6's: Rotom's form moves, Necrozma's fusion
+    moves (Dusk Mane form 1, Dawn Wings form 2), Keldeo, Meloetta, Zygarde's five signature moves,
+    and Volt Tackle for the Pikachu line.
     """
 
     TMHM = 0x28
@@ -1335,8 +1435,11 @@ class Gen7Assembler(Assembler):
         idx = p.form_index(sp, form)
         e = p.ent(idx)
         pool = set(self.lvl[idx])
-        if sp < len(self.egg):
-            pool.update(self.egg[sp])
+        # Gen 7 is the one generation whose egg-move binary is indexed by FORM index, not species
+        # (LearnSource7SM/7USUM.GetEggMoves go through Personal.GetFormIndex), so Alolan Vulpix
+        # has its own list. Reading it by species handed every regional form the base form's list.
+        if idx < len(self.egg):
+            pool.update(self.egg[idx])
         for i in range(self.COUNT_TM):
             if _tmbit(e, self.TMHM, i):
                 pool.add(self.machine[i])
@@ -1347,6 +1450,7 @@ class Gen7Assembler(Assembler):
             if _tmbit(e, self.TUTOR1, i):
                 pool.add(self.bp_tutor[i])
         _add_rotom(pool, sp, form)
+        _add_necrozma(pool, sp, form)
         if sp == KELDEO:
             pool.add(MOVE["SecretSword"])
         if sp == MELOETTA:
@@ -1418,7 +1522,7 @@ def build_rows(personals):
             for form in range(1, union_fc[sp]):
                 rows.append((sp, form))
             next_index += union_fc[sp] - 1
-    return rows, form_index
+    return rows, form_index, union_fc
 
 
 # ----------------------------------------------------------------------------
@@ -1432,10 +1536,11 @@ HDR_TMPL = '''/**
  * For a (species, form) present in a game, that game's bitset holds bit M set =>
  * the species+form can legally KNOW move M in that game (union of level-up / egg /
  * TM / TR / tutor / reminder, then unioned with its whole pre-evolution chain --
- * an evolved Pokemon keeps what it learned earlier). Rows mirror
- * PersonalInfoTable (base rows 0..{MAX}, then alt forms via formIndex). All six
- * supported games are carried: GG, SWSH, BDSP, PLA, SV, ZA. Bitsets share one
- * uniform width sized to hold move id {MAXMOVE} (ZA's NihilLight).
+ * an evolved Pokemon keeps what it learned earlier). Smeargle's row is every move
+ * Sketch can copy in that game. Rows mirror PersonalInfoTable (base rows 0..{MAX},
+ * then alt forms via formIndex). Every save-format group PKSE supports, Red/Blue/Yellow
+ * through Legends: Z-A, has its own bitsets. Bitsets share one uniform width sized to
+ * hold move id {MAXMOVE} (ZA's NihilLight).
  */
 #ifndef PKM_LEARNSET_TABLE_H
 #define PKM_LEARNSET_TABLE_H
@@ -1503,7 +1608,7 @@ def main():
     personals["RSE"] = Personal3("personal_rs")
     personals["RBY"] = Personal1()    # Gen 1 more so -- see Personal1
     personals["GSC"] = Personal2()    # Gen 2: no forms, species-indexed -- see Personal2
-    rows, form_index = build_rows(personals)
+    rows, form_index, form_count = build_rows(personals)
     print("union rows:", len(rows), "(base", BASE_ROWS, "+ alt", len(rows) - BASE_ROWS, ")")
 
     # Build every game's bitsets for its present species+forms.
@@ -1530,6 +1635,8 @@ def main():
             if not pers.present(sp, form):
                 continue
             pool = set(own_pool(sp, form))
+            if sp == SMEARGLE:
+                pool |= sketch_pool(g)
             own = len(pool)
             # Fold in every ancestor's pool. A Pokemon keeps the moves it knew before
             # evolving, so its legally-knowable set is the UNION over its evolution
@@ -1579,6 +1686,9 @@ def main():
     p.append("    constexpr uint16_t LEARN_ABSENT = 0xFFFF;\n\n")
     p.append("    // Row -> National Dex form redirection (0 = species has no alternate forms).\n")
     emit_u16_array(p, "LEARN_FORM_INDEX", form_index, 12, "LEARN_MAX_SPECIES + 1")
+    p.append("    // Forms per species (the most any game has). A form past it reads the base row, as\n")
+    p.append("    // PersonalInfoTable does -- without the bound it read the NEXT species' rows.\n")
+    emit_u16_array(p, "LEARN_FORM_COUNT", form_count, 12, "LEARN_MAX_SPECIES + 1")
 
     for g in GAMES_TO_EMIT:
         blocks = game_blocks[g]
@@ -1591,10 +1701,10 @@ def main():
     p.append("    static inline size_t learnRowIndex(uint16_t species, uint8_t form) {\n")
     p.append("        if (species > LEARN_MAX_SPECIES)\n")
     p.append("            return 0;\n")
-    p.append("        uint16_t fi = LEARN_FORM_INDEX[species];\n")
-    p.append("        if (form == 0 || fi == 0)\n")
+    p.append("        const uint16_t formIndex = LEARN_FORM_INDEX[species];\n")
+    p.append("        if (form == 0 || formIndex == 0 || form >= LEARN_FORM_COUNT[species])\n")
     p.append("            return species;\n")
-    p.append("        return static_cast<size_t>(fi) + form - 1;\n")
+    p.append("        return static_cast<size_t>(formIndex) + form - 1;\n")
     p.append("    }\n\n")
 
     p.append("    static inline const uint8_t* learnLookup(const uint16_t* rowBlock, "

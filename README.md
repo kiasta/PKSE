@@ -175,7 +175,7 @@ From the repository root, in a POSIX shell — the devkitPro MSys2 shell on Wind
 make                   # or: make -j$(nproc)
 ```
 
-This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output, and `make all` is an alias for `make`.
+This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output.
 
 `make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, and `make all` builds both. The development build is listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
 

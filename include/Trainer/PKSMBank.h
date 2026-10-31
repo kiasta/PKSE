@@ -50,11 +50,14 @@ namespace Trainer
         Gen3 = 6,
         Gen1 = 7,
         Gen2 = 8,
+        // PKSM-Core's Generation::NINE. PKSE reads no Gen 9 bank record, so it is counted as
+        // unsupported (payloadLengthFor() is 0) rather than damaged.
+        Gen9 = 9,
         Empty = 0xFFFFFFFFu, // an unused slot: the whole 336-byte entry is 0xFF-filled
     };
 
     /// Number of real (non-Empty) tag values, so a per-tag histogram can be a plain array.
-    inline constexpr int PKSM_GEN_COUNT = 9;
+    inline constexpr int PKSM_GEN_COUNT = 10;
 
     /// Human name for a tag value ("Gen 3", "Let's Go", ...). "Unknown" for anything unrecognised.
     const char *pksmGenName(uint32_t bankTag);
@@ -82,10 +85,8 @@ namespace Trainer
         /// boxes commit() will consume. Not derivable from `importable`: 30 Pokemon spread one per
         /// box need 30 boxes, not one, so the preview has to be told rather than guess.
         size_t sourceBoxesUsed = 0;
-        // Records of a generation PKSE has no format for. Every tag PKSM writes now maps to a
-        // PKSE entity, so this stays 0 for any real bank -- it is kept because it is the honest
-        // answer if PKSM ever adds a tag, and because a silently dropped record is the one
-        // outcome this importer must never produce.
+        // Records of a generation PKSE has no bank format for: PKSM's Gen 9 tag. A silently
+        // dropped record is the one outcome this importer must never produce, so they are counted.
         size_t unsupported = 0;
         size_t damaged = 0;     // unknown tag, or a record that failed to decode / checksum
         /// Of the Gen 3 imports, how many record an origin that is NOT FireRed or LeafGreen. PK3 is

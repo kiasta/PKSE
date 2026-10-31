@@ -80,15 +80,9 @@ namespace Trainer
     {
         /**
          * PARTY Block Structure (Pokemon Scarlet/Violet):
-         * Pokemon stored with gaps between slots:
-         * - Slot 0: offset 0 (SIZE_PARTY9_SV bytes of data + GAP_BOX_SLOT9_SV gap)
-         * - Slot 1: offset PARTY_SLOT_SIZE9_SV (480 bytes)
-         * - Slot 2: offset 2 * PARTY_SLOT_SIZE9_SV
-         * - ... up to 6 slots
-         *
-         * Each slot spans PARTY_SLOT_SIZE9_SV bytes (480 bytes), but only the first
-         * SIZE_PARTY9_SV bytes (344 bytes) contain Pokemon data. The remaining gap
-         * (GAP_BOX_SLOT9_SV = 0x88 bytes) is unused/padding.
+         * Six slots of `partySlotStride` bytes each, slot N at N * partySlotStride. Only the first
+         * SIZE_PARTY9_SV bytes of a slot are the Pokemon; whatever the stride adds past that is
+         * the slot's gap (see Encryption9SV.h for the geometry).
          */
         const std::span<const std::byte> blockSpan(reinterpret_cast<const std::byte *>(block.data.data()), block.data.size());
 
@@ -378,6 +372,8 @@ namespace Trainer
                 {
                     // Calculate offset (packed for S/V, gapped for Z-A)
                     const size_t offset = partySlotIndex * partySlotStride;
+                    if (slotHoldsLoadedRecord(party[partySlotIndex].get(), &block.data[offset], SIZE_PARTY9_SV, decryptArray9SV))
+                        continue;
 
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
@@ -442,9 +438,12 @@ namespace Trainer
          * Process similar to updatePartyBlock, but for all boxes:
          * 1. Find the BOX block
          * 2. Ensure block is large enough (32 boxes * 30 slots * BOX_SLOT_SIZE9_SV)
-         * 3. For each box and slot:
-         *    a. If Pokemon exists, encrypt and write
-         *    b. If slot is empty, write zeros
+         * 3. Each slot is decided from its POSITION in the file, as PKHeX writes only the slot it
+         *    sets: bytes that still hold this slot's in-memory record, or an empty slot whose bytes
+         *    already read as empty, are left alone; an occupied slot is written; anything else (a
+         *    Pokemon moved or removed from here, a zeroed slot) gets a synthesized blank. Never
+         *    zeros (a Bad Egg in-game), and never one slot's bytes harvested as "the" blank: after
+         *    a Move the first empty slot in memory can still hold the moved Pokemon in the file.
          */
         for (auto &block : blocks)
         {
@@ -456,33 +455,12 @@ namespace Trainer
                     block.data.resize(requiredSize, 0);
                 }
 
-                // Empty box slots in the real save are an ENCRYPTED blank that DECRYPTS to species 0 —
-                // NOT literal zeros. The game decrypts every box slot and checks species; a zeroed slot
-                // decrypts to garbage and renders a BAD EGG. So reuse the game's own blank: copy the raw
-                // bytes of an existing empty (species-0) slot. If every box is full (no blank to copy),
-                // synthesize one from an all-zero PK9 encrypted with EC 0 (decrypts back to species 0).
+                // An all-zero PK9 encrypted with EC 0 (== PKHeX's BlankPKM).
                 std::vector<uint8_t> blankSlot;
-                for (size_t boxIndex = 0; boxIndex < BOX_COUNT9_SV && blankSlot.empty(); ++boxIndex)
-                {
-                    for (size_t slotIndex = 0; slotIndex < BOX_SLOTS; ++slotIndex)
-                    {
-                        if (boxes[boxIndex][slotIndex] && boxes[boxIndex][slotIndex]->speciesID() == 0)
-                        {
-                            const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * boxSlotStride;
-                            if (byteOffset + boxSlotStride <= block.data.size())
-                            {
-                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + boxSlotStride);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (blankSlot.empty())
                 {
                     std::vector<std::byte> zero(SIZE_PARTY9_SV, std::byte{0});
                     std::byte *encryptedRecord = encryptArray9SV(std::span<const std::byte>(zero.data(), SIZE_PARTY9_SV), 0);
                     blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_SV);
-                    blankSlot.resize(boxSlotStride, 0); // pad the Z-A slot gap with zeros
                     delete[] encryptedRecord;
                 }
 
@@ -490,35 +468,22 @@ namespace Trainer
                 {
                     for (size_t slot = 0; slot < BOX_SLOTS; ++slot)
                     {
-                        // Calculate offset (packed for S/V, gapped for Z-A)
                         const size_t offset = (boxIndex * BOX_SLOTS + slot) * boxSlotStride;
+                        const auto &pokemon = boxes[boxIndex][slot];
+                        if (slotHoldsLoadedRecord(pokemon.get(), &block.data[offset], SIZE_PARTY9_SV, decryptArray9SV))
+                            continue;
 
-                        // Gate on species, not just the pointer (matches updatePartyBlock). A slot left
-                        // holding a non-null but blank/species-0 pokemon (e.g. after a bank move) must be
-                        // zeroed to read as EMPTY in-game — re-encrypting a blank writes a bad egg.
-                        if (boxes[boxIndex][slot] && boxes[boxIndex][slot]->speciesID() != 0)
+                        if (pokemon && pokemon->speciesID() != 0)
                         {
-                            const auto &pokemon = boxes[boxIndex][slot];
-
                             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
-
                             std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
-
                             std::byte *encryptedData = encryptArray9SV(decryptedSpan, encryptionConstant);
-
-                            // Write encrypted data to block (only SIZE_PARTY9_SV bytes)
-                            std::memcpy(&block.data[offset], encryptedData, pokemon->getDataSize());
-
-                            // Zero out the gap after the Pokemon data (0 bytes for S/V's packed layout)
-                            std::memset(&block.data[offset + SIZE_PARTY9_SV], 0, slotGapZero);
-
+                            std::memcpy(&block.data[offset], encryptedData, SIZE_PARTY9_SV);
                             delete[] encryptedData;
                         }
-                        else
+                        else if (!slotHoldsGameBlank(&block.data[offset], SIZE_PARTY9_SV, RECORD_SPECIES_OFFSET, decryptArray9SV))
                         {
-                            // Empty/cleared slot: write the game's encrypted blank, NOT zeros. Zeros
-                            // decrypt to garbage in-game and show as a BAD EGG in every empty slot.
-                            std::memcpy(&block.data[offset], blankSlot.data(), boxSlotStride);
+                            std::memcpy(&block.data[offset], blankSlot.data(), SIZE_PARTY9_SV);
                         }
                     }
                 }
@@ -649,6 +614,12 @@ namespace Trainer
             const int lang = svLangSlot(pokemon->language());
             const uint32_t formBit = 1u << form;
 
+            // Whether the species was already obtained BEFORE this specimen: the displayed variant is
+            // chosen once, on first registration, and kept after that -- the player's own choice
+            // included. Testing the display bytes for "nothing shown" cannot work, because form 0,
+            // male, not shiny IS all zeros, so every specimen in party/box order used to re-pick it.
+            const bool alreadyObtained = useKitakami ? rdU32(*dex, base + 0x00) != 0 : rdU32(*dex, base + 0x00) >= 3;
+
             if (useKitakami)
             {
                 wrU32(*dex, base + 0x00, rdU32(*dex, base + 0x00) | formBit); // obtained
@@ -661,7 +632,8 @@ namespace Trainer
                 // Displayed variant, one slot per regional dex (Paldea / Kitakami / Blueberry). A slot
                 // is written only for a dex this species+FORM is actually listed in, and only where
                 // nothing is displayed yet -- so a species first obtained as an alternate form shows
-                // that form, and an entry the player already has keeps what it was showing.
+                // that form, and an entry the player already has keeps what it was showing (and a
+                // regional slot already set for an earlier form is left alone).
                 //
                 // Membership is per form, not per species: Kantonian Diglett is a Paldea entry while
                 // Alolan Diglett is a Blueberry one, and Alolan Meowth is in NO S/V dex at all. Writing
@@ -674,8 +646,7 @@ namespace Trainer
                 {
                     // not in that regional dex
                     if (listedIn[index] == 0) continue;
-                    // already showing something
-                    if ((*dex)[base + slotAt[index]] != 0) continue;
+                    if (alreadyObtained) continue;
                     (*dex)[base + slotAt[index]] = form;
                     (*dex)[base + slotAt[index] + 1] = gender;
                     (*dex)[base + slotAt[index] + 2] = shiny ? 1 : 0;
@@ -691,7 +662,7 @@ namespace Trainer
                     wrU16(*dex, base + 0x0A, static_cast<uint16_t>(rdU16(*dex, base + 0x0A) | (1u << lang)));
                 if (shiny)
                     (*dex)[base + 0x0C] = 1;
-                if (rdU16(*dex, base + 0x10) == 0 && (*dex)[base + 0x14] == 0)
+                if (!alreadyObtained)
                 {
                     wrU16(*dex, base + 0x10, form);
                     (*dex)[base + 0x14] = gender;

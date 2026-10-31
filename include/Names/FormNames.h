@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <string>
 
+#include "Enums/GameVersion.h"
+
 namespace Names
 {
     /**
@@ -51,6 +53,17 @@ namespace Names
      * @param baseName  the game-appropriate base species string (e.g. Pokemon::species())
      */
     std::string getDisplayName(uint16_t speciesId, uint8_t formId, const std::string &baseName);
+
+    /**
+     * getFormName as the save-format `group` numbers its forms. The plain overload is the Gen 7+
+     * numbering, which two species do not share: ORAS's Pikachu forms 1-6 are the Cosplay outfits
+     * (the caps there), and Gen 4's Arceus has the ???-type at form 9, moving Fire to Dark to
+     * 10-17 with no Fairy. Every other (species, form) answers as the plain overload does.
+     */
+    const char *getFormName(uint16_t speciesId, uint8_t formId, Enums::GameVersion group);
+
+    /// getDisplayName with the form named as `group` numbers it -- see the overload above.
+    std::string getDisplayName(uint16_t speciesId, uint8_t formId, const std::string &baseName, Enums::GameVersion group);
 }
 
 #endif

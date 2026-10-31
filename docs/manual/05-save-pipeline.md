@@ -143,6 +143,12 @@ std::vector<uint8_t> serializeAllBlocks(const std::vector<Block>& blocks);
 > user's save on the next write**. `outConsumed` reports how many bytes were covered; compare it
 > against `data_size` to find out whether the parse reached the end.
 
+**`Encryption::decrypt()` refuses a damaged file instead of half-reading it.** It returns no blocks
+unless the file is longer than the 32-byte SHA-256 tail, the stored hash matches the payload (PKHeX
+`SwishCrypto.GetIsHashValid`), and `parseAllBlocks` consumed the whole payload. A trainer built from
+no blocks reports `isValid() == false`, and `saveTrainerInfo` refuses to write it -- before this, a
+truncated file parsed to a prefix and the next save wrote that prefix as the entire file.
+
 Block keys are named constants at the top of each `Trainer*.h`:
 
 ```cpp
@@ -237,58 +243,49 @@ FireRed/LeafGreen scans the directory for the 128 KiB `*.sav` on read (so a Chec
 opened from the browser is a loose save instead, written by `saveExternalSave`; both writers call
 `Trainer3FRLG::serialize()`.
 
-### The encrypted blank
+### Writing a box slot: only the slots that changed
 
-`updateBoxBlock()` for the SwishCrypto games has a subtlety that is easy to get wrong:
+Every box and party writer follows one per-position rule, modelled on PKHeX, which writes only the
+slot it sets (`Trainer::slotHoldsLoadedRecord` / `Trainer::slotHoldsGameBlank`, `include/Trainer/Trainer.h`):
 
-```cpp
-// Empty box slots in the real save are an ENCRYPTED blank that DECRYPTS to species 0 -- NOT
-// literal zeros. The game decrypts every box slot and checks species; a zeroed slot decrypts
-// to garbage and renders a BAD EGG. Reuse the game's own blank: copy the raw bytes of an
-// existing empty (species-0) slot; synthesize one if every box is full.
-std::vector<uint8_t> blankSlot;
-for (size_t bi = 0; bi < BOX_COUNT8_SWSH && blankSlot.empty(); ++bi)
-    for (size_t s = 0; s < BOX_SLOTS; ++s)
-        if (boxes[bi][s] && boxes[bi][s]->speciesID() == 0) { /* harvest those bytes */ }
+1. **The file's record already decrypts to the Pokemon in memory** -- leave the bytes alone. This is
+   what keeps an unedited save byte for byte, and what keeps a Bad Egg's invalid checksum invalid
+   instead of "repairing" it into a different Pokemon.
+2. **An occupied slot** -- encrypt the Pokemon and write it.
+3. **An empty slot whose bytes are already a game blank** (non-zero, decrypting to species 0) --
+   leave it alone. Empty box slots in a real save are an ENCRYPTED blank, not zeros: the game
+   decrypts every slot and checks the species, so a zeroed slot decrypts to garbage and shows a
+   Bad Egg.
+4. **Any other empty slot** -- write a synthesized blank (a zeroed record encrypted with EC 0).
 
-if (blankSlot.empty()) {
-    std::vector<std::byte> zero(SIZE_PARTY8_SWSH, std::byte{0});
-    std::byte* enc = encryptArray8SWSH({zero.data(), SIZE_PARTY8_SWSH}, 0);
-    const uint8_t* encBytes = reinterpret_cast<const uint8_t*>(enc);
-    blankSlot.assign(encBytes, encBytes + SIZE_PARTY8_SWSH);   // assign, NOT resize — see ch. 02
-    delete[] enc;
-}
-```
+The SwishCrypto writers used to copy ONE harvested blank into every empty slot, so a move into an
+empty slot rewrote hundreds of slots (and, when the harvested "blank" was the moved Pokemon's old
+slot, cloned that Pokemon into every one of them). The harness's `moveIntoEmptySlotTouchesTwoSlots`
+check holds Sword, Shield, Legends: Arceus, Violet and Legends: Z-A to exactly two changed slots.
 
-and the write gates on **species**, not on the pointer:
+Legends: Z-A adds a slot footer: in a Mega Dimension save (`SaveRevision != 0`) every written box
+or party slot gets byte `+0x158 = 1`, and a party slot `+0x1A0 = 1` (PKHeX `SAV9ZA.WriteSlotBox`,
+`Party9a`); the rest of the slot gap is kept as the file had it.
 
-```cpp
-if (boxes[boxIndex][slot] && boxes[boxIndex][slot]->speciesID() != 0) {
-    // encrypt with the mon's own EC as seed, memcpy into the block
-} else {
-    std::memcpy(&block.data[offset], blankSlot.data(), SIZE_PARTY8_SWSH);
-}
-```
+## Loose files: back up first, then replace whole
 
-## Gen 1 is the odd one out
-
-`saveTrainerInfoRBY(trainer, savePath)` takes a **file path**, not a backup directory, and ignores
-`titleId` / `userUid` / `injectToTitle` entirely. There is no installed title to inject into.
-
-It backs up the **original bytes before writing**, through the same `Save::backupOriginalFile` every
-loose save uses, and a backup failure is logged but the write continues:
+Every loose save -- Gen 1 included; the old Gen 1-only `saveTrainerInfoRBY` is gone -- is written
+by `saveExternalSave`, which takes a **file path**, not a backup directory, and ignores `titleId` /
+`userUid` / `injectToTitle`: there is no installed title to inject into.
 
 ```cpp
-// The user pointed at their own save, quite possibly the only copy of it -- so the backup has to
-// be of what is on disk NOW, taken before the write.
-backupOriginalFile(savePath);   // -> sdmc:/PKSE/FileBackups/<YYYYMMDD_HHMMSS>_<basename>
-
-const std::vector<uint8_t>& raw = trainer.serialize();   // applies blocks + the 1-byte checksum last
-FILE* f = fopen(savePath, "wb");
+// The user pointed at their own save, quite possibly the only copy of it.
+if (!backupOriginalFile(savePath))      // -> sdmc:/PKSE/FileBackups/<YYYYMMDD_HHMMSS>_<basename>
+    return false;                       // no backup, no write
+...
+replaceFileContents(savePath, fileBytes);   // <path>.tmp, checked fwrite + fclose, then rename
 ```
 
-Gen 1 was the first loose format; every other one is written by `saveExternalSave`, covered under
-[Loose save files](#rules-loose-save-files-gens-1-2-3-gba-4-5-6-7-3ds).
+**A failed backup stops the write.** It used to be logged and the write went ahead, so a full SD card
+could take the user's only copy with it. **The file is replaced whole**: the bytes go to a `.tmp`
+sibling, `fwrite` and `fclose` are both checked (an SD card that fills reports the failure at
+`fclose`), and only then is the original swapped out. Every other writer -- title saves, settings,
+the backup copies -- checks `fclose` the same way.
 
 ## Backups, destinations and injection
 
@@ -550,7 +547,7 @@ byte, so the bytes cannot tell them apart and PKSE reports the first of the pair
 
 **A non-null box slot is not an occupied box slot.** Several games keep a live entity in *every*
 slot rather than a null pointer — SwSh's box writer stamps one canonical encrypted blank over each
-unoccupied slot (see [The encrypted blank](#the-encrypted-blank)), because a slot holding leftover
+unoccupied slot (see [Writing a box slot](#writing-a-box-slot-only-the-slots-that-changed)), because a slot holding leftover
 bytes that decrypt to species 0 re-encrypts into a Bad Egg. So "empty" is
 `!pk || pk->speciesID() == 0` everywhere in the UI; code testing the pointer alone finds a Pokemon in
 all thirty slots of an empty box.

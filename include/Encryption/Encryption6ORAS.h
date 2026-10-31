@@ -6,7 +6,8 @@
  * The checksum is NOT the key here, unlike Gen 4/5, so the familiar order applies:
  * recalculateStats() -> refreshChecksum() -> encrypt.
  *
- * The shuffle value is (PID >> 13) & 31 and there are four blocks of 0x38.
+ * The shuffle value is (EC >> 13) & 31 -- the encryption constant at 0x00, not the PID -- and there
+ * are four blocks of 0x38.
  */
 #ifndef ENCRYPTION_ENCRYPTION6_ORAS_H
 #define ENCRYPTION_ENCRYPTION6_ORAS_H

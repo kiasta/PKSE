@@ -22,6 +22,7 @@
 | **Game group** | A `GameVersion` value naming a save-format family (`SWSH`, `SV`, `RBY`), as opposed to an individual game. There are nineteen; each has its own class in every layer, suffixed with the group's name (`Trainer8SWSH`, `Pokemon3RSE`). |
 | **Pane** | Storage view: `0` = the save's boxes, `1` = the bank. |
 | **The carried block** | `moveMon` — the rectangle of Pokémon currently in hand. A single pick-up is a 1×1 block. |
+| **Unmapped entry** | `UnmappedListEntry` — a counted Gen 1/2 list entry PKSE cannot read (MissingNo., an out-of-range Gen 2 species), kept as raw bytes and written back at its position. Its slot reads as null but is occupied: `isBoxSlotUnmapped`, `getUnmappedPartySlots` (chapter 06). |
 
 ## Naming
 

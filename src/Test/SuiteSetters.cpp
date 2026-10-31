@@ -33,6 +33,7 @@
  * The field is restored afterwards so each test starts from the same entity.
  */
 #include <cstddef>
+#include <cstring>
 #include <span>
 #include <string>
 #include <vector>
@@ -42,6 +43,9 @@
 #include "Pokemon/Experience.h"
 #include "Pokemon/Pokemon8LA.h"
 #include "Pokemon/PersonalInfoTable.h"
+#include "Pokemon/PIDSearch.h"
+#include "Pokemon/Pokemon7LGPE.h"
+#include "Enums/LanguageID.h"
 #include "Utils/StringHelpers.h"
 
 namespace Test
@@ -100,8 +104,9 @@ namespace Test
             // Gens 3-5 use the PID as the encryption constant; Gens 4 and 5 store no separate one.
             // (Gen 3's setter writes the PID itself, so it round trips there.)
             if (fieldName == "encryptionConstant") return isGeneration4Or5;
-            // PK4 and PK5 store the ability id; the slot is derived from the PID, not stored.
-            if (fieldName == "abilityNumber") return isGeneration4Or5;
+            // PK4 and PK5 have no slot field, but the slot is still stored: it is the PID's ability
+            // bit (bit 0, or bit 16 for a Gen 5 origin), and setAbilityNumber rerolls the PID for it
+            // and writes the slot's ability id, as PKHeX's RefreshAbility does. So no row here.
             // Relearn moves are Gen 6 onward.
             if (fieldName.rfind("relearn", 0) == 0) return isGeneration1 || isGeneration2 || isGeneration3 || isGeneration4Or5;
             // The HP DV is derived from the other four in Gens 1 and 2.
@@ -112,6 +117,14 @@ namespace Test
             // No eggs in Gen 1 or in Let's Go.
             if (fieldName == "egg") return isGeneration1 || isLetsGo;
             return false;
+        }
+
+        /// Gens 4-7 outside Let's Go: the formats whose every setter refreshes the checksum itself.
+        /// An edit path that forgot refreshChecksum() once left these records reading as Bad Eggs.
+        bool settersKeepChecksumFresh(Enums::GameVersion group)
+        {
+            using Enums::GameVersion;
+            return group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS || group == GameVersion::BW || group == GameVersion::B2W2 || group == GameVersion::XY || group == GameVersion::ORAS || group == GameVersion::SM || group == GameVersion::USUM;
         }
 
         /// Whether a format's item and move ids go past 255. Gens 1 and 2 keep both in one byte (and
@@ -146,6 +159,263 @@ namespace Test
         }
     }
 
+    namespace
+    {
+        /// One raw byte of the record, for the rules that live in a byte no accessor exposes.
+        uint8_t recordByte(Pokemon::Pokemon &pokemon, size_t recordOffset)
+        {
+            return std::to_integer<uint8_t>(pokemon.getData()[recordOffset]);
+        }
+
+        /// The format-specific rules a plain round trip cannot see: each one is a value the game or
+        /// PKHeX derives from another field, checked against its source rather than against PKSE.
+        void entityRulesRun(Context &context, Pokemon::Pokemon &pokemon, const std::string &whereLabel)
+        {
+            using Enums::GameVersion;
+            const GameVersion group = context.group;
+            const bool isGeneration4 = group == GameVersion::DP || group == GameVersion::PT || group == GameVersion::HGSS;
+            const bool isGeneration5 = group == GameVersion::BW || group == GameVersion::B2W2;
+            const bool isGeneration6Or7 = group == GameVersion::XY || group == GameVersion::ORAS || group == GameVersion::SM || group == GameVersion::USUM;
+            const uint32_t id32 = pokemon.id32();
+            constexpr uint8_t fireRedVersion = 4;
+            constexpr uint8_t heartGoldVersion = 7;
+            constexpr uint8_t diamondVersion = 10;
+            constexpr uint8_t whiteVersion = 20;
+
+            // The nature rule: raised stat = nature / 5, lowered = nature % 5, in the order Attack,
+            // Defense, Speed, Sp. Atk, Sp. Def. Docile (6) is neutral; one Gen 5 table once had it
+            // lowering Speed.
+            context.check(Pokemon::Pokemon::natureStatPercent(3, 0) == 110 && Pokemon::Pokemon::natureStatPercent(3, 3) == 90 && Pokemon::Pokemon::natureStatPercent(3, 1) == 100, "Adamant does not raise Attack and lower Sp. Atk", whereLabel);
+            bool docileNeutral = true;
+            for (int statIndex = 0; statIndex < 5; ++statIndex)
+            {
+                docileNeutral = docileNeutral && Pokemon::Pokemon::natureStatPercent(6, statIndex) == 100;
+            }
+            context.check(docileNeutral, "Docile is not neutral", whereLabel);
+
+            // The same rule through recalculateStats: a level 50 Pikachu, IVs 31, Adamant.
+            const bool usesOtherStatFormula = group == GameVersion::RBY || group == GameVersion::GSC || group == GameVersion::GG || group == GameVersion::PLA || group == GameVersion::ZA;
+            if (!usesOtherStatFormula)
+            {
+                pokemon.setSpecies(25);
+                pokemon.setNature(3);
+                pokemon.setStatNature(3);
+                pokemon.recalculateStats();
+                context.check(pokemon.statATK() == 82 && pokemon.statSPA() == 63 && pokemon.statSPE() == 110, "an Adamant level 50 Pikachu's stats do not follow the nature", whereLabel + " atk=" + std::to_string(pokemon.statATK()) + " spa=" + std::to_string(pokemon.statSPA()) + " spe=" + std::to_string(pokemon.statSPE()));
+                pokemon.setNature(0);
+                pokemon.setStatNature(0);
+            }
+
+            // Shedinja always has 1 HP, whatever the formula gives.
+            constexpr uint16_t shedinjaSpecies = 292;
+            pokemon.setSpecies(shedinjaSpecies);
+            if (!usesOtherStatFormula && pokemon.speciesID() == shedinjaSpecies && pokemon.baseHP() == 1)
+            {
+                pokemon.recalculateStats();
+                context.check(pokemon.statHPMax() == 1, "Shedinja's HP is not 1", whereLabel + " hp=" + std::to_string(pokemon.statHPMax()));
+            }
+
+            // Wurmple's evolution comes from the PID: a PID touch-up must not turn a Silcoon-line
+            // Wurmple into a Cascoon-line one (PKHeX WurmpleUtil).
+            constexpr uint16_t wurmpleSpecies = 265;
+            if (pidDecidesGenderIn(group))
+            {
+                pokemon.setSpecies(wurmpleSpecies);
+                const int evolutionBefore = Pokemon::wurmpleEvolutionFromPID(pokemon.pid());
+                int evolutionChangedCount = 0;
+                for (int passIndex = 0; passIndex < 10; ++passIndex)
+                {
+                    pokemon.setShiny(passIndex % 2 == 0, id32);
+                    pokemon.setNature(static_cast<uint8_t>(passIndex * 7 % 25));
+                    pokemon.setGender(static_cast<uint8_t>(passIndex % 2));
+                    if (Pokemon::wurmpleEvolutionFromPID(pokemon.pid()) != evolutionBefore)
+                    {
+                        ++evolutionChangedCount;
+                    }
+                }
+                context.check(evolutionChangedCount == 0, "a PID reroll changed which line a Wurmple evolves into", whereLabel + " times=" + std::to_string(evolutionChangedCount));
+                pokemon.setShiny(false, id32);
+            }
+
+            // Gens 4 and 5: the ability slot is the PID's ability bit (bit 0; bit 16 for a Gen 5
+            // origin in Gen 5), and the hidden ability is the Gen 5 flag at 0x42 bit 0.
+            if (isGeneration4 || isGeneration5)
+            {
+                constexpr uint16_t rattataSpecies = 19;
+                pokemon.setSpecies(rattataSpecies);
+                pokemon.setOriginGame(isGeneration5 ? whiteVersion : diamondVersion);
+                const int abilityBitIndex = isGeneration5 ? 16 : 0;
+                const Pokemon::PersonalInfo &rattataInfo = Pokemon::getPersonalInfo(rattataSpecies, 0);
+                for (uint8_t abilityNumber = 1; abilityNumber <= 2; ++abilityNumber)
+                {
+                    pokemon.setAbilityNumber(abilityNumber);
+                    context.check(((pokemon.pid() >> abilityBitIndex) & 1) == static_cast<uint32_t>(abilityNumber - 1), "setAbilityNumber did not set the PID's ability bit", whereLabel + " slot=" + std::to_string(abilityNumber) + " " + hexField("pid", pokemon.pid(), 8));
+                    context.check(pokemon.ability() == (abilityNumber == 1 ? rattataInfo.ability1 : rattataInfo.ability2), "setAbilityNumber did not write the slot's ability", whereLabel + " slot=" + std::to_string(abilityNumber));
+                }
+                if (isGeneration5)
+                {
+                    pokemon.setAbilityNumber(4);
+                    context.check((recordByte(pokemon, 0x42) & 1) == 1 && pokemon.abilityNumber() == 4, "setAbilityNumber(4) did not set the hidden-ability flag", whereLabel);
+                    pokemon.setAbilityNumber(1);
+                    context.check((recordByte(pokemon, 0x42) & 1) == 0, "setAbilityNumber(1) left the hidden-ability flag set", whereLabel);
+                }
+            }
+
+            // Gen 4 ball bytes (PKHeX G4PKM.Ball): 0x83 holds balls up to Cherish, else Poke; 0x86
+            // holds balls up to Sport, and only for a Pokemon created in HeartGold/SoulSilver.
+            if (isGeneration4)
+            {
+                constexpr uint8_t pokeBall = 4;
+                constexpr uint8_t cherishBall = 16;
+                constexpr uint8_t sportBall = 24;
+                constexpr uint8_t fastBall = 17;
+                pokemon.setEggLocation(0);
+                pokemon.setFatefulEncounter(false);
+                pokemon.setOriginGame(diamondVersion);
+                pokemon.setBall(sportBall);
+                context.check(recordByte(pokemon, 0x83) == pokeBall && recordByte(pokemon, 0x86) == 0, "a Diamond-origin Sport Ball was not written as Poke Ball with no HeartGold/SoulSilver ball", whereLabel + " 0x83=" + std::to_string(recordByte(pokemon, 0x83)) + " 0x86=" + std::to_string(recordByte(pokemon, 0x86)));
+                pokemon.setOriginGame(heartGoldVersion);
+                pokemon.setBall(fastBall);
+                context.check(recordByte(pokemon, 0x83) == pokeBall && recordByte(pokemon, 0x86) == fastBall, "a HeartGold-origin Fast Ball was not split into Poke Ball and Fast Ball", whereLabel + " 0x83=" + std::to_string(recordByte(pokemon, 0x83)) + " 0x86=" + std::to_string(recordByte(pokemon, 0x86)));
+                pokemon.setBall(cherishBall);
+                context.check(recordByte(pokemon, 0x83) == cherishBall && recordByte(pokemon, 0x86) == cherishBall, "a HeartGold-origin Cherish Ball was not written to both ball bytes", whereLabel);
+                pokemon.setBall(pokeBall);
+            }
+
+            // Gens 5-7: a Gen 3 or 4 origin's nature is PID % 25 (and in Gens 6 and 7 the
+            // encryption constant is the PID), so setNature and setShiny must move the PID.
+            if (isGeneration5 || isGeneration6Or7)
+            {
+                pokemon.setSpecies(25);
+                pokemon.setOriginGame(fireRedVersion);
+                pokemon.setPID(0x0BADF00D); // not shiny for the 0x5678/0x1234 trainer the probes above leave
+                pokemon.setEncryptionConstant(0x0BADF00D);
+                pokemon.setNature(11);
+                context.check(pokemon.nature() == 11 && pokemon.pid() % 25 == 11, "a Gen 3-origin nature change did not move the PID to match", whereLabel + " " + hexField("pid", pokemon.pid(), 8));
+                if (isGeneration6Or7)
+                {
+                    context.check(pokemon.encryptionConstant() == pokemon.pid(), "a Gen 3-origin nature change left the encryption constant behind the PID", whereLabel);
+                    pokemon.setShiny(true, id32);
+                    context.check(pokemon.encryptionConstant() == pokemon.pid() && pokemon.nature() == 11 && shinyByFormula(pokemon, group, id32), "a Gen 3-origin setShiny did not keep EC = PID and the nature", whereLabel + " " + hexField("pid", pokemon.pid(), 8) + " " + hexField("ec", pokemon.encryptionConstant(), 8));
+                    pokemon.setShiny(false, id32);
+                }
+            }
+
+            // Gens 6 and 7: friendship is the current handler's (PKHeX G6PKM.CurrentFriendship).
+            if (isGeneration6Or7)
+            {
+                pokemon.setCurrentHandler(0);
+                pokemon.setFriendship(77);
+                context.check(recordByte(pokemon, 0xCA) == 77, "the original trainer's friendship was not written while the OT holds the Pokemon", whereLabel);
+                pokemon.setCurrentHandler(1);
+                pokemon.setFriendship(99);
+                context.check(recordByte(pokemon, 0xA2) == 99 && recordByte(pokemon, 0xCA) == 77 && pokemon.friendship() == 99, "friendship did not follow the current handler after a trade", whereLabel);
+                pokemon.setCurrentHandler(0);
+            }
+
+            // Gens 4-7: the half-width gender signs the games store come back as the sign and go
+            // back out as the half-width code (PKHeX StringConverter4/5/6 Normalize/UnNormalize).
+            if (isGeneration4 || isGeneration5 || isGeneration6Or7)
+            {
+                pokemon.setLanguage(static_cast<uint8_t>(Enums::LanguageID::English));
+                const std::u16string signedName = u"Nido\u2642";
+                pokemon.setNickname(signedName);
+                context.check(pokemon.nickname() == signedName, "a nickname with a gender sign does not round trip", whereLabel);
+                const size_t nicknameOffset = isGeneration6Or7 ? 0x40 : 0x48;
+                const uint16_t storedSign = static_cast<uint16_t>(recordByte(pokemon, nicknameOffset + 8) | (recordByte(pokemon, nicknameOffset + 9) << 8));
+                const uint16_t expectedSign = isGeneration4 ? 0x01BB : isGeneration5 ? 0x246D : 0xE08E;
+                context.check(storedSign == expectedSign, "a gender sign was not stored as the game's half-width code", whereLabel + " " + hexField("stored", storedSign, 4));
+            }
+
+            // Gen 1: both level bytes follow the experience (PKHeX PK1.Stat_Level).
+            if (group == GameVersion::RBY)
+            {
+                pokemon.setSpecies(25);
+                pokemon.setExp(Pokemon::getExpForLevel(37, Pokemon::getGrowthRate(25)));
+                constexpr size_t listHeaderSize = 3; // a Gen 1 record is a one-entry list: count, species, terminator, then the body
+                const uint8_t boxLevel = recordByte(pokemon, listHeaderSize + 0x03);
+                const uint8_t partyLevel = recordByte(pokemon, listHeaderSize + 0x21);
+                context.check(boxLevel == 37 && partyLevel == 37, "setExp left a Gen 1 level byte stale", whereLabel + " box=" + std::to_string(boxLevel) + " party=" + std::to_string(partyLevel));
+            }
+
+            // Gen 2: one 0x50 always ends a name, even in a zero-padded field.
+            if (group == GameVersion::GSC)
+            {
+                pokemon.setNickname(u"PKS");
+                const std::span<std::byte> recordBytes = pokemon.getData();
+                size_t nameOffset = 0;
+                for (size_t byteIndex = 0; byteIndex + 5 < recordBytes.size(); ++byteIndex)
+                {
+                    if (recordByte(pokemon, byteIndex) == 0x8F && recordByte(pokemon, byteIndex + 1) == 0x8A && recordByte(pokemon, byteIndex + 2) == 0x92)
+                    {
+                        nameOffset = byteIndex;
+                        break;
+                    }
+                }
+                if (context.check(nameOffset != 0, "the Gen 2 nickname probe was not found in the record", whereLabel))
+                {
+                    // A zero-padded field, which a save may hold and writeName keeps. Five bytes fit
+                    // even a Japanese name field (six bytes).
+                    for (size_t byteIndex = 0; byteIndex < 5; ++byteIndex)
+                    {
+                        recordBytes[nameOffset + byteIndex] = std::byte{0};
+                    }
+                    pokemon.setNickname(u"PKS");
+                    context.check(recordByte(pokemon, nameOffset + 3) == 0x50 && recordByte(pokemon, nameOffset + 4) == 0x00, "a Gen 2 nickname in a zero-padded field was written without its 0x50 terminator", whereLabel + " " + hexField("after", recordByte(pokemon, nameOffset + 3), 2));
+                }
+            }
+
+            // Gen 3: refreshChecksum clears the bad-egg flag, and the has-species flag follows the
+            // species (PKHeX PK3.RefreshChecksum, PK3.Species).
+            if (Enums::isGen3Group(group))
+            {
+                pokemon.getData()[0x13] |= std::byte{0x01};
+                pokemon.refreshChecksum();
+                context.check((recordByte(pokemon, 0x13) & 0x01) == 0, "refreshChecksum left the Gen 3 bad-egg flag set", whereLabel);
+                pokemon.setSpecies(25);
+                context.check((recordByte(pokemon, 0x13) & 0x02) != 0, "setSpecies did not set the Gen 3 has-species flag", whereLabel);
+                pokemon.setSpecies(0);
+                context.check((recordByte(pokemon, 0x13) & 0x02) == 0, "setSpecies(0) left the Gen 3 has-species flag set", whereLabel);
+            }
+
+            // Scarlet/Violet and Z-A: the obedience level is the met level while the OT holds the
+            // Pokemon (PKHeX IsObedienceLevelValid).
+            if (group == GameVersion::SV || group == GameVersion::ZA)
+            {
+                pokemon.setHTName(u"");
+                pokemon.setMetLevel(31);
+                context.check(recordByte(pokemon, 0x11F) == 31, "the obedience level did not follow the met level", whereLabel + " obedience=" + std::to_string(recordByte(pokemon, 0x11F)));
+            }
+
+            // Z-A: an empty move slot carries 35 PP and no PP Ups (PKHeX PA9.FixMoves).
+            if (group == GameVersion::ZA)
+            {
+                pokemon.setMovePPUps(3, 2);
+                pokemon.setMove(3, 0);
+                context.check(pokemon.movePP(3) == 35 && pokemon.movePPUps(3) == 0, "an emptied Z-A move slot does not carry 35 PP and no PP Ups", whereLabel);
+            }
+
+            // Let's Go: the size floats follow the species and form (PKHeX PB7 GetHeightAbsolute /
+            // GetWeightAbsolute, unfused).
+            if (group == GameVersion::GG)
+            {
+                constexpr uint16_t exeggutorSpecies = 103;
+                pokemon.setSpecies(exeggutorSpecies);
+                pokemon.setForm(1);
+                float storedHeight = 0;
+                float storedWeight = 0;
+                std::memcpy(&storedHeight, pokemon.getData().data() + 0x2C, sizeof(storedHeight));
+                std::memcpy(&storedWeight, pokemon.getData().data() + 0xE4, sizeof(storedWeight));
+                const uint8_t heightScalarValue = recordByte(pokemon, 0x3A);
+                const uint8_t weightScalarValue = recordByte(pokemon, 0x3B);
+                context.check(storedHeight == Pokemon::Pokemon7LGPE::heightAbsoluteFor(exeggutorSpecies, 1, heightScalarValue) && storedWeight == Pokemon::Pokemon7LGPE::weightAbsoluteFor(exeggutorSpecies, 1, heightScalarValue, weightScalarValue), "Let's Go height/weight were not recomputed for the new form", whereLabel + " height=" + std::to_string(storedHeight) + " weight=" + std::to_string(storedWeight));
+            }
+
+            pokemon.setSpecies(PROBE_SPECIES);
+            pokemon.setForm(0);
+        }
+    }
+
     int settersPlan(Context &context)
     {
         return context.trainer ? 1 : 0;
@@ -162,6 +432,12 @@ namespace Test
 
         const std::string whereLabel = "blank " + Enums::getGameVersionName(context.group) + " entity";
         std::string notStoredFields;
+        const bool keepsChecksumFresh = settersKeepChecksumFresh(context.group);
+        // Start from a valid checksum, so a stale one below can only be a setter's doing.
+        if (keepsChecksumFresh)
+        {
+            pokemon.refreshChecksum();
+        }
 
         // The generic field probe. `readField`/`writeField` are lambdas over the entity so every
         // field reads the same way here regardless of its width. `expectation` is what the format
@@ -172,6 +448,7 @@ namespace Test
             int probeCount = 0;
             int stuckCount = 0;
             int wrongCount = 0;
+            int staleChecksumCount = 0;
             std::string firstWrongDetail;
             for (uint32_t newValue : probeValues)
             {
@@ -183,6 +460,10 @@ namespace Test
                 }
                 ++probeCount;
                 writeField(newValue);
+                if (keepsChecksumFresh && !pokemon.checksumValid())
+                {
+                    ++staleChecksumCount;
+                }
                 const uint32_t readBack = (uint32_t)readField();
                 if (readBack == newValue)
                 {
@@ -200,6 +481,7 @@ namespace Test
                 }
             }
             const std::string fieldLabel = whereLabel + std::string(" field=") + fieldName;
+            context.check(staleChecksumCount == 0, "a setter left the checksum stale in a format whose setters keep it fresh", fieldLabel);
             if (probeCount == 0)
             {
                 context.skip("every probe value for this field was the value it already held, so it could not be tested", fieldLabel);
@@ -299,6 +581,9 @@ namespace Test
             // would fail correct code on five of the seven formats.
             pokemon.setSpecies(PROBE_SPECIES);
         }
+        // Every class must store EXP: a missing override falls back to the base no-op, and the
+        // details page's EXP field then silently does nothing (Gen 3 had no setExp).
+        roundTripField("exp", [&] { return pokemon.exp(); }, [&](uint32_t newValue) { pokemon.setExp(newValue); }, {1000u, 125000u}, Expect::Stored);
         roundTripField("heldItem", [&] { return pokemon.heldItem(); }, [&](uint32_t newValue) { pokemon.setHeldItem((uint16_t)newValue); }, {17u, wideIds ? 275u : 200u}, expectedIf(pokemon.hasHeldItem()));
         roundTripField("friendship", [&] { return pokemon.friendship(); }, [&](uint32_t newValue) { pokemon.setFriendship((uint8_t)newValue); }, {70u, 255u}, expectedIf(pokemon.hasFriendship()));
         roundTripField("ball", [&] { return pokemon.ball(); }, [&](uint32_t newValue) { pokemon.setBall((uint8_t)newValue); }, {4u, 1u}, expectedIf(pokemon.hasBall()));
@@ -733,20 +1018,34 @@ namespace Test
             // every cartridge, and PKHeX writes the same pair in PK3.IsEgg -- so a record carrying
             // only the bit is one no save holds, and one the legality rule (which compares the
             // nickname against the egg name in the record's OWN language) reads as wrong.
-            if (pokemon.eggTextIsPlaceholder())
+            const bool stampsPlaceholder = pokemon.eggTextIsPlaceholder();
+            if (stampsPlaceholder)
             {
                 context.check(pokemon.language() == static_cast<uint8_t>(Enums::LanguageID::Japanese), "an egg was written without the language its games stamp beside the flag", whereLabel);
                 context.check(pokemon.nickname() == std::u16string(u"\u30bf\u30de\u30b4"), "an egg was written without the placeholder nickname its games stamp", whereLabel);
             }
             pokemon.setEgg(false);
             context.check(!pokemon.isEgg(), "the egg flag could not be cleared", whereLabel);
+            // Hatching undoes the stamp: the game writes the species name in the save's language. A
+            // hatched Pokemon left named "egg" in Japanese is one no cartridge produces.
+            if (stampsPlaceholder)
+            {
+                context.check(pokemon.nickname() != std::u16string(u"\u30bf\u30de\u30b4"), "clearing the egg flag kept the egg placeholder nickname", whereLabel);
+            }
         }
 
-        // A record must be self-consistent after being written to. Setters are not required to keep
-        // the checksum fresh -- the caller refreshes it, as every edit path does -- so this refreshes
-        // and then asks the record to validate. That fails when refreshChecksum() writes the
-        // checksum somewhere checksumValid() does not read it, or when a setter above left a field
-        // out of the range the record accepts.
+        // Every setter above (shininess, gender and the egg flag included) ran without a refresh
+        // in between, so in the formats whose setters keep the checksum fresh it must hold here.
+        if (keepsChecksumFresh)
+        {
+            context.check(pokemon.checksumValid(), "the checksum is stale after the shiny, gender and egg setters", whereLabel);
+        }
+
+        // A record must be self-consistent after being written to. Gens 1-3, Let's Go and Gen 8 on
+        // leave the checksum to the caller, as every edit path does, so this refreshes and then
+        // asks the record to validate. That fails when refreshChecksum() writes the checksum
+        // somewhere checksumValid() does not read it, or when a setter above left a field out of
+        // the range the record accepts.
         pokemon.refreshChecksum();
         context.check(pokemon.isStructurallyValid(), "entity does not validate after every setter has been exercised and the checksum refreshed", whereLabel);
 
@@ -794,6 +1093,8 @@ namespace Test
                 context.check(statsMatch && pokemon.nature() == 0, "recalculated stats do not match the game's formula for a known Pokemon", whereLabel + " got=" + calculatedStatsDetail + " nature=" + std::to_string(pokemon.nature()));
             }
         }
+
+        entityRulesRun(context, pokemon, whereLabel);
 
         if (!notStoredFields.empty())
         {

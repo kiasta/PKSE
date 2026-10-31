@@ -6,10 +6,11 @@
  * For a (species, form) present in a game, that game's bitset holds bit M set =>
  * the species+form can legally KNOW move M in that game (union of level-up / egg /
  * TM / TR / tutor / reminder, then unioned with its whole pre-evolution chain --
- * an evolved Pokemon keeps what it learned earlier). Rows mirror
- * PersonalInfoTable (base rows 0..1025, then alt forms via formIndex). All six
- * supported games are carried: GG, SWSH, BDSP, PLA, SV, ZA. Bitsets share one
- * uniform width sized to hold move id 920 (ZA's NihilLight).
+ * an evolved Pokemon keeps what it learned earlier). Smeargle's row is every move
+ * Sketch can copy in that game. Rows mirror PersonalInfoTable (base rows 0..1025,
+ * then alt forms via formIndex). Every save-format group PKSE supports, Red/Blue/Yellow
+ * through Legends: Z-A, has its own bitsets. Bitsets share one uniform width sized to
+ * hold move id 920 (ZA's NihilLight).
  */
 #ifndef PKM_LEARNSET_TABLE_H
 #define PKM_LEARNSET_TABLE_H

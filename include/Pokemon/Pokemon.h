@@ -295,6 +295,57 @@ namespace Pokemon
         }
 
         /**
+         * The percentage a nature applies to one stat (90, 100 or 110), with `statIndex` in
+         * STAT-WRITE order: 0 ATK, 1 DEF, 2 SPE, 3 SPA, 4 SPD. Nature n raises stat n / 5 and lowers
+         * stat n % 5; the five where those coincide (Hardy, Docile, Serious, Bashful, Quirky) are
+         * neutral. Computed rather than tabled: ten hand-copied tables once disagreed (Docile lowered
+         * Speed in Gen 5 alone). PKHeX NatureAmp.
+         */
+        static int natureStatPercent(uint8_t natureId, int statIndex) noexcept
+        {
+            constexpr uint8_t natureCount = 25;
+            constexpr int statsPerRow = 5;
+            if (natureId >= natureCount || statIndex < 0 || statIndex >= statsPerRow)
+                return 100;
+            const int raisedStatIndex = natureId / statsPerRow;
+            const int loweredStatIndex = natureId % statsPerRow;
+            if (raisedStatIndex == loweredStatIndex)
+                return 100;
+            if (statIndex == raisedStatIndex)
+                return 110;
+            if (statIndex == loweredStatIndex)
+                return 90;
+            return 100;
+        }
+
+        /// Shedinja's rule (base HP 1): its maximum HP is always 1, whatever the formula says.
+        /// PKHeX PKM.GetStats: `p.HP == 1 ? 1 : ...`.
+        static int hitPointsForBase(uint8_t baseHitPoints, int formulaHitPoints) noexcept
+        {
+            return baseHitPoints == 1 ? 1 : formulaHitPoints;
+        }
+
+        /**
+         * PKHeX StringConverter.GetIsFullWidthString: true when any character is outside the
+         * half-width ranges (U+0xxx and the U+Exxx private-use glyphs) other than the two gender
+         * signs. Gens 4-7 store a gender sign in a half-width name as the game's own half-width
+         * glyph, and in a full-width name as the ordinary sign.
+         */
+        static bool isFullWidthText(const std::u16string &text) noexcept
+        {
+            for (const char16_t character : text)
+            {
+                const uint16_t codeUnit = static_cast<uint16_t>(character);
+                if ((codeUnit >> 12) == 0 || (codeUnit >> 12) == 0xE)
+                    continue;
+                if (codeUnit == 0x2640 || codeUnit == 0x2642)
+                    continue;
+                return true;
+            }
+            return false;
+        }
+
+        /**
          * Awakening Values (AVs) are unique to Pokemon Let's Go Pikachu/Eevee.
          * They provide additional stat points similar to EVs but earned differently.
          * Max 200 per stat, earned by using candies or catching Pokemon.

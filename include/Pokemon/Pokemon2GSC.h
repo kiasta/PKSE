@@ -313,13 +313,11 @@ namespace Pokemon
         bool hasHeldItem() const noexcept override { return true; }
         bool hasFriendship() const noexcept override { return true; }
 
-        /// Which language a PK2 is written in is not stored -- it is inferred from the RECORD
-        /// WIDTH, exactly as in Gen 1: a Japanese list has 6-byte name fields where an
-        /// international one has 11. Reported as PKHeX's language ids (1 = Japanese, 2 = English)
-        /// with English standing for "some international language", because the format cannot say
-        /// which. It has to answer something real: 0 is not a language any later format accepts,
-        /// and a Poke Transporter transfer writes this straight into the Gen 7 record.
-        uint8_t language() const noexcept override { return japanese() ? 1 : 2; }
+        // Language is not stored either. The RECORD WIDTH says Japanese or not (a 59-byte list is
+        // Japanese); an international record's language is inferred from its names as PKHeX
+        // GBPKM.Language does, falling back to English. Always a real PKHeX language id: 0 is not
+        // one any later format accepts, and Poke Transporter writes this into the Gen 7 record.
+        uint8_t language() const noexcept override;
 
         uint8_t gender() const noexcept override;
         const char *genderSymbol() const noexcept override;

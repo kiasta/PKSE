@@ -39,17 +39,70 @@ namespace Pokemon
             return languageId != static_cast<uint8_t>(Enums::LanguageID::Japanese) && languageId != static_cast<uint8_t>(Enums::LanguageID::Korean);
         }
 
-        /** A species name as the record's own game and language would have stored it. */
-        std::u16string speciesNameAsStored(uint16_t speciesId, Enums::GameVersion gameGroup, uint8_t languageId)
+    }
+
+    std::u16string speciesNameAsStored(uint16_t speciesId, Enums::GameVersion gameGroup, uint8_t languageId)
+    {
+        const size_t languageIndex = Names::languageIndexFor(static_cast<Enums::LanguageID>(languageId));
+        const std::u16string speciesName = Utils::utf8ToUtf16(std::string(Names::getSpeciesNameLocalized(speciesId, languageIndex)));
+        if (!storesUpperCaseSpeciesNames(gameGroup, languageId))
         {
-            const size_t languageIndex = Names::languageIndexFor(static_cast<Enums::LanguageID>(languageId));
-            const std::u16string speciesName = Utils::utf8ToUtf16(std::string(Names::getSpeciesNameLocalized(speciesId, languageIndex)));
-            if (storesUpperCaseSpeciesNames(gameGroup, languageId))
-            {
-                return Utils::upperCaseLatinLetters(speciesName);
-            }
             return speciesName;
         }
+        // PKHeX upper-cases invariantly, so an accented letter is upper-cased too, and then French
+        // strips the accent off E and I (StringConverter4Util.StripDiacriticsFR4).
+        constexpr char16_t latinSmallAGrave = u'\u00E0';
+        constexpr char16_t latinSmallThorn = u'\u00FE';
+        constexpr char16_t divisionSign = u'\u00F7';
+        constexpr char16_t latinCapitalEGrave = u'\u00C8';
+        constexpr char16_t latinCapitalIDiaeresis = u'\u00CF';
+        std::u16string storedName = Utils::upperCaseLatinLetters(speciesName);
+        const bool isFrench = languageId == static_cast<uint8_t>(Enums::LanguageID::French);
+        for (char16_t &character : storedName)
+        {
+            if (character >= latinSmallAGrave && character <= latinSmallThorn && character != divisionSign)
+            {
+                character = static_cast<char16_t>(character - (latinSmallAGrave - u'\u00C0'));
+            }
+            const int frenchAccentOffset = character - latinCapitalEGrave;
+            if (isFrench && frenchAccentOffset >= 0 && frenchAccentOffset < 3)
+            {
+                character = u'E';
+            }
+            else if (isFrench && character == latinCapitalIDiaeresis)
+            {
+                character = u'I';
+            }
+        }
+        const int generation = Enums::getVersionGeneration(Enums::getGroupRepVersion(gameGroup));
+        if (generation >= 3)
+        {
+            // The DS and GBA games spell Farfetch'd with a straight apostrophe.
+            for (char16_t &character : storedName)
+            {
+                if (character == u'\u2019')
+                {
+                    character = u'\'';
+                }
+            }
+            return storedName;
+        }
+        // Gen 1/2 store MR.MIME with no space and the one-dot leader, not the full stop a user types.
+        constexpr uint16_t mrMimeSpecies = 122;
+        if (speciesId == mrMimeSpecies)
+        {
+            const size_t spaceIndex = storedName.find(u' ');
+            if (spaceIndex != std::u16string::npos && spaceIndex > 0)
+            {
+                storedName[spaceIndex - 1] = u'\u2024';
+                storedName.erase(spaceIndex, 1);
+            }
+        }
+        return storedName;
+    }
+
+    namespace
+    {
 
         /**
          * True when the nickname field is holding the species' own name rather than a name the

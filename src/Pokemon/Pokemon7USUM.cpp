@@ -4,12 +4,40 @@
 #include "Pokemon/Pokemon7USUM.h"
 #include "Pokemon/PIDSearch.h"
 #include "Enums/GameVersion.h"
+#include "Enums/LanguageID.h"
 #include "Pokemon/Experience.h"
 #include "Trainer/Trainer.h" // Trainer::getSpeciesName
 #include "Utils/HelperUtilities.h"
 
 namespace Pokemon
 {
+
+    namespace
+    {
+        /// The game's own half-width gender glyphs (PKHeX StringConverter.HGM / HGF).
+        constexpr uint16_t HALF_WIDTH_MALE = 0xE08E;
+        constexpr uint16_t HALF_WIDTH_FEMALE = 0xE08F;
+        constexpr uint16_t MALE_SIGN = 0x2642;
+        constexpr uint16_t FEMALE_SIGN = 0x2640;
+
+        uint16_t normalizeGenderSymbol(uint16_t codeUnit)
+        {
+            if (codeUnit == HALF_WIDTH_MALE)
+                return MALE_SIGN;
+            if (codeUnit == HALF_WIDTH_FEMALE)
+                return FEMALE_SIGN;
+            return codeUnit;
+        }
+
+        uint16_t unNormalizeGenderSymbol(uint16_t codeUnit)
+        {
+            if (codeUnit == MALE_SIGN)
+                return HALF_WIDTH_MALE;
+            if (codeUnit == FEMALE_SIGN)
+                return HALF_WIDTH_FEMALE;
+            return codeUnit;
+        }
+    }
 
     const char *Pokemon7USUM::species() const noexcept
     {
@@ -25,18 +53,24 @@ namespace Pokemon
             const uint16_t codeUnit = rd16(offset + index * 2);
             if (codeUnit == 0 || codeUnit == 0xFFFF)
                 break;
-            out.push_back(static_cast<char16_t>(codeUnit));
+            out.push_back(static_cast<char16_t>(normalizeGenderSymbol(codeUnit)));
         }
         return out;
     }
 
     void Pokemon7USUM::writeString(size_t offset, size_t units, const std::u16string &value) noexcept
     {
+        // PKHeX StringConverter6.SetString: a half-width name stores its gender signs as the
+        // game's half-width glyphs, a full-width one as the ordinary signs.
+        const bool halfWidthText = language() == static_cast<uint8_t>(Enums::LanguageID::Korean) || !isFullWidthText(value);
         size_t writeIndex = 0;
         for (; writeIndex < units && writeIndex < value.size(); ++writeIndex)
-            wr16(offset + writeIndex * 2, static_cast<uint16_t>(value[writeIndex]));
-        // Zero-fill the remainder. Gen 6/7 name fields are cleared rather than left trailing, and
-        // the terminator is 0x0000 (PKHeX StringConverterOption.ClearZero on these fields).
+        {
+            const uint16_t character = static_cast<uint16_t>(value[writeIndex]);
+            wr16(offset + writeIndex * 2, halfWidthText ? unNormalizeGenderSymbol(character) : character);
+        }
+        // Zero-fill the remainder; the terminator is 0x0000. PKHeX's PK6/PK7 name setters use
+        // StringConverterOption.None and leave the bytes after the terminator as they were.
         for (; writeIndex < units; ++writeIndex)
             wr16(offset + writeIndex * 2, 0);
     }
@@ -56,45 +90,7 @@ namespace Pokemon
 
     int Pokemon7USUM::natureModifier(int statIndex) const noexcept
     {
-        static const int8_t natureStatModifiers[25][5] = {
-            {1, 1, 1, 1, 1},
-            {2, 0, 1, 1, 1},
-            {2, 1, 0, 1, 1},
-            {2, 1, 1, 0, 1},
-            {2, 1, 1, 1, 0},
-            {0, 2, 1, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 2, 0, 1, 1},
-            {1, 2, 1, 0, 1},
-            {1, 2, 1, 1, 0},
-            {0, 1, 2, 1, 1},
-            {1, 0, 2, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 2, 0, 1},
-            {1, 1, 2, 1, 0},
-            {0, 1, 1, 2, 1},
-            {1, 0, 1, 2, 1},
-            {1, 1, 0, 2, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 1, 2, 0},
-            {0, 1, 1, 1, 2},
-            {1, 0, 1, 1, 2},
-            {1, 1, 0, 1, 2},
-            {1, 1, 1, 0, 2},
-            {1, 1, 1, 1, 1},
-        };
-        const uint8_t count = statNature();
-        if (count > 24 || statIndex < 0 || statIndex > 4)
-            return 100;
-        switch (natureStatModifiers[count][statIndex])
-        {
-        case 0:
-            return 90;
-        case 2:
-            return 110;
-        default:
-            return 100;
-        }
+        return natureStatPercent(statNature(), statIndex);
     }
 
     uint16_t Pokemon7USUM::calculateChecksum() const noexcept
@@ -121,9 +117,8 @@ namespace Pokemon
             return; // no data -- do NOT write zeroed stats into the save
 
         // effectiveIV(), not ivXXX(): a hyper-trained stat is PLAYED at maxIV while the stored IV
-        // stays put. Gen 6 has no hyper training so the two agree here -- but Pokemon7SM inherits
-        // this function, and there they do not.
-        const int hitPoints = ((2 * p.hp + effectiveIV(HT_HP) + (evHP() / 4)) * levelValue) / 100 + levelValue + 10;
+        // stays put, so recomputing from the raw IV writes stats below what the game shows.
+        const int hitPoints = hitPointsForBase(p.hp, ((2 * p.hp + effectiveIV(HT_HP) + (evHP() / 4)) * levelValue) / 100 + levelValue + 10);
         const uint16_t oldMax = rd16(0xF2);
         wr16(0xF2, static_cast<uint16_t>(hitPoints));
         if (oldMax != static_cast<uint16_t>(hitPoints))
@@ -177,8 +172,7 @@ namespace Pokemon
         // Gen 6 stores nature, gender and the ability slot as their own fields, but the PID still
         // decides shininess, so the new PID holds it. A Pokemon from Gens 3-5 keeps its PID: there it
         // also decides gender, nature and the ability slot, and its encryption constant is the PID.
-        const int originGeneration = Enums::getVersionGeneration(originGame());
-        if (originGeneration >= 3 && originGeneration <= 5)
+        if (isFromGenerations3To5())
             return;
         PIDRequirements requirements;
         requirements.trainerID32 = trainerID32;
@@ -191,10 +185,58 @@ namespace Pokemon
         refreshChecksum();
     }
 
+    bool Pokemon7USUM::isFromGenerations3To5() const noexcept
+    {
+        const int originGeneration = Enums::getVersionGeneration(originGame());
+        return originGeneration >= 3 && originGeneration <= 5;
+    }
+
+    bool Pokemon7USUM::rerollTransferredPID(int wantShiny, int wantNature, uint32_t trainerID32) noexcept
+    {
+        const bool fromGeneration5 = Enums::getVersionGeneration(originGame()) == 5;
+        PIDRequirements requirements;
+        requirements.trainerID32 = trainerID32;
+        requirements.shinyThreshold = 16; // Gen 6 on, whatever the origin
+        requirements.wantShiny = wantShiny;
+        requirements.genderRatio = personal().genderRatio;
+        requirements.wantGender = gender();
+        if (!fromGeneration5)
+            requirements.wantNature = wantNature >= 0 ? wantNature : static_cast<int>(pid() % 25);
+        requirements.abilityBitIndex = fromGeneration5 ? 16 : 0;
+        requirements.wantAbilityBit = static_cast<int>((pid() >> requirements.abilityBitIndex) & 1);
+        requirements.wantWurmpleEvolution = wurmpleEvolutionToHold(speciesID(), encryptionConstant());
+        uint32_t pidValue = 0;
+        if (!findPID(requirements, pidValue))
+        {
+            Utils::logErrorToFile("Pokemon7USUM::rerollTransferredPID: no PID holds shiny=" + std::to_string(wantShiny) + " nature=" + std::to_string(requirements.wantNature) + "; the Pokemon is unchanged");
+            return false;
+        }
+        wr32(0x18, pidValue);
+        setEncryptionConstant(pidValue);
+        return true;
+    }
+
+    void Pokemon7USUM::setNature(uint8_t natureValue) noexcept
+    {
+        if (natureValue > 24)
+            return;
+        const int originGeneration = Enums::getVersionGeneration(originGame());
+        const bool natureFromPID = originGeneration == 3 || originGeneration == 4;
+        if (natureFromPID && static_cast<int>(pid() % 25) != natureValue && !rerollTransferredPID(isShiny(id32(), "") ? 1 : 0, natureValue, id32()))
+            return;
+        wr8(0x1C, natureValue);
+        recalculateStats();
+    }
+
     void Pokemon7USUM::setShiny(bool makeShiny, uint32_t trainerID32) noexcept
     {
         if (isShiny(trainerID32, "") == makeShiny)
             return;
+        if (isFromGenerations3To5())
+        {
+            rerollTransferredPID(makeShiny ? 1 : 0, -1, trainerID32);
+            return;
+        }
         for (int index = 0; index < 1000000; ++index)
         {
             const uint32_t candidate = Utils::rand32();

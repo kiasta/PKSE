@@ -355,6 +355,7 @@ Maintained here. When you coin a term that will appear in more than one file, ad
 | Party collection | `party` | `partyList`, `team`, `activeParty` |
 | Storage box | `box`, `boxIndex`, `boxName` | `pcBox`, `storageBox` |
 | Slot inside a box or party | `slotIndex` | `pos`, `cell`, `spot` |
+| A counted Gen 1/2 list entry PKSE cannot read, kept and written back | `unmapped` (`UnmappedListEntry`, `isBoxSlotUnmapped`, `getUnmappedPartySlots`) | `glitch`, `invalid`, `unknown` in identifiers |
 | Cross-game persistent storage | `bank` | `vault`, `home`, `depot` |
 | Species identifier | `speciesId` | `dexId`, `natDex`, `species` (bare) |
 | Species display name | `speciesName` | `name` (bare) |

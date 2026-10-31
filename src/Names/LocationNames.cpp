@@ -1720,9 +1720,9 @@ namespace Names {
         "",  // 250
         "",  // 251
         "",  // 252
-        "(gift egg)",  // 253
-        "(in-game trade)",  // 254
-        "(fateful encounter)",  // 255
+        "(Gift Egg)",  // 253
+        "(In-game Trade)",  // 254
+        "(Fateful Encounter)",  // 255
     };
     static const char* const G3_LOC_NAMES_FR[] = {
         "Bourg-en-Vol",  // 0
@@ -1979,8 +1979,8 @@ namespace Names {
         "",  // 251
         "",  // 252
         "(Œuf reçu en cadeau)",  // 253
-        "(échange in-game)",  // 254
-        "(rencontré par hasard)",  // 255
+        "(Échange in-game)",  // 254
+        "(Évenèment spécial)",  // 255
     };
     static const char* const G3_LOC_NAMES_IT[] = {
         "Albanova",  // 0
@@ -2237,8 +2237,8 @@ namespace Names {
         "",  // 251
         "",  // 252
         "(Uovo donato)",  // 253
-        "(scambio in gioco)",  // 254
-        "(occasione speciale)",  // 255
+        "(Scambio in gioco)",  // 254
+        "(Occasione speciale)",  // 255
     };
     static const char* const G3_LOC_NAMES_DE[] = {
         "Wurzelheim",  // 0
@@ -2495,7 +2495,7 @@ namespace Names {
         "",  // 251
         "",  // 252
         "(Ei Geschenk)",  // 253
-        "(In-Game Tausch)",  // 254
+        "(In-game Tausch)",  // 254
         "(Schicksalhafte Begegnung)",  // 255
     };
     static const char* const G3_LOC_NAMES_ES[] = {
@@ -2753,8 +2753,8 @@ namespace Names {
         "",  // 251
         "",  // 252
         "(Huevo regalado)",  // 253
-        "(intercambio del juego)",  // 254
-        "(encuentro fatídico)",  // 255
+        "(Intercambio del juego)",  // 254
+        "(Obtenido de forma curiosa)",  // 255
     };
     static const char* const G3_LOC_NAMES_KO[] = {
         "미로마을",  // 0
@@ -6978,7 +6978,7 @@ namespace Names {
         "矢車森林",  // 33
         "荒野名勝區",  // 34
         "古代城堡",  // 35
-        "PWT",  // 36
+        "寶可夢世界錦標賽",  // 36
         "電氣石洞穴",  // 37
         "羅斯山",  // 38
         "龍螺旋之塔",  // 39

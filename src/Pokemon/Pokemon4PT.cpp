@@ -2,6 +2,8 @@
 #include <cstring>
 
 #include "Pokemon/Pokemon4PT.h"
+#include "Enums/GameVersion.h"
+#include "Enums/LanguageID.h"
 #include "Pokemon/PIDSearch.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PokemonTypes.h"
@@ -11,6 +13,20 @@
 
 namespace Pokemon
 {
+
+    namespace
+    {
+        /// Where HeartGold/SoulSilver hatch eggs: PKHeX EggHatchLocation4.IsValidMet4HGSS, whose
+        /// table marks exactly these met locations for HGSS.
+        bool isHatchLocationHGSS(uint16_t metLocation)
+        {
+            constexpr uint16_t firstJohtoLocation = 126;
+            constexpr uint16_t lastHatchLocation = 234;
+            if (metLocation == 80 || (metLocation >= 112 && metLocation <= 116) || metLocation == 118 || metLocation == 121)
+                return true;
+            return metLocation >= firstJohtoLocation && metLocation <= lastHatchLocation && metLocation != 171 && metLocation != 233;
+        }
+    }
 
     const char *Pokemon4PT::species() const noexcept
     {
@@ -29,17 +45,21 @@ namespace Pokemon
             const uint16_t decodedChar = Utils::gen4ToChar(raw);
             if (decodedChar == 0)
                 break; // unmapped value: corrupt data, not a glyph -- stop rather than guess
-            out.push_back(static_cast<char16_t>(decodedChar));
+            out.push_back(static_cast<char16_t>(Utils::gen4NormalizeGenderSymbol(decodedChar)));
         }
         return out;
     }
 
     void Pokemon4PT::writeString(size_t offset, size_t units, const std::u16string &newValue) noexcept
     {
+        // PKHeX StringConverter4.SetString: a half-width name stores its gender signs as the
+        // half-width glyphs, a full-width one as the ordinary signs.
+        const bool halfWidthText = language() == static_cast<uint8_t>(Enums::LanguageID::Korean) || !isFullWidthText(newValue);
         size_t writeIndex = 0;
         for (; writeIndex < units && writeIndex < newValue.size(); ++writeIndex)
         {
-            const uint16_t encodedByte = Utils::charToGen4(static_cast<uint16_t>(newValue[writeIndex]));
+            const uint16_t character = static_cast<uint16_t>(newValue[writeIndex]);
+            const uint16_t encodedByte = Utils::charToGen4(halfWidthText ? Utils::gen4UnNormalizeGenderSymbol(character) : character);
             // An unencodable character ends the name here rather than writing a terminator value
             // as if it were a glyph. canStoreNickname() is what stops this being reached.
             if (encodedByte == Utils::GEN4_TERMINATOR)
@@ -90,46 +110,7 @@ namespace Pokemon
 
     int Pokemon4PT::natureModifier(int statIndex) const noexcept
     {
-        // statIndex is in STAT-WRITE order: 0 ATK, 1 DEF, 2 SPE, 3 SPA, 4 SPD.
-        static const int8_t natureStatModifiers[25][5] = {
-            {1, 1, 1, 1, 1},
-            {2, 0, 1, 1, 1},
-            {2, 1, 0, 1, 1},
-            {2, 1, 1, 0, 1},
-            {2, 1, 1, 1, 0},
-            {0, 2, 1, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 2, 0, 1, 1},
-            {1, 2, 1, 0, 1},
-            {1, 2, 1, 1, 0},
-            {0, 1, 2, 1, 1},
-            {1, 0, 2, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 2, 0, 1},
-            {1, 1, 2, 1, 0},
-            {0, 1, 1, 2, 1},
-            {1, 0, 1, 2, 1},
-            {1, 1, 0, 2, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 1, 2, 0},
-            {0, 1, 1, 1, 2},
-            {1, 0, 1, 1, 2},
-            {1, 1, 0, 1, 2},
-            {1, 1, 1, 0, 2},
-            {1, 1, 1, 1, 1},
-        };
-        const uint8_t count = nature();
-        if (count > 24 || statIndex < 0 || statIndex > 4)
-            return 100;
-        switch (natureStatModifiers[count][statIndex])
-        {
-        case 0:
-            return 90;
-        case 2:
-            return 110;
-        default:
-            return 100;
-        }
+        return natureStatPercent(nature(), statIndex);
     }
 
     uint16_t Pokemon4PT::calculateChecksum() const noexcept
@@ -155,7 +136,7 @@ namespace Pokemon
         if (p.hp == 0)
             return; // no data for this species -- do NOT write zeroed stats
 
-        const int hitPoints = ((2 * p.hp + ivHP() + (evHP() / 4)) * levelValue) / 100 + levelValue + 10;
+        const int hitPoints = hitPointsForBase(p.hp, ((2 * p.hp + ivHP() + (evHP() / 4)) * levelValue) / 100 + levelValue + 10);
         const uint16_t oldMax = rd16(0x90);
         wr16(0x90, static_cast<uint16_t>(hitPoints));
         // Only re-top current HP when max HP actually moved; blindly setting current = max heals
@@ -205,7 +186,7 @@ namespace Pokemon
     // Gen 4 builds shininess, gender, nature (PID % 25) and the ability slot (bit 0) from the PID, and
     // also stores the gender at 0x40, which PKHeX requires to agree with the PID's. Each caller names
     // what it changes and holds the rest; the stored gender is written to match the new PID.
-    bool Pokemon4PT::rerollPID(int wantShiny, int wantGender, int wantNature, uint32_t trainerID32) noexcept
+    bool Pokemon4PT::rerollPID(int wantShiny, int wantGender, int wantNature, int wantAbilityBit, uint32_t trainerID32) noexcept
     {
         PIDRequirements requirements;
         requirements.trainerID32 = trainerID32;
@@ -215,11 +196,12 @@ namespace Pokemon
         requirements.wantGender = wantGender;
         requirements.wantNature = wantNature;
         requirements.abilityBitIndex = 0;
-        requirements.wantAbilityBit = static_cast<int>(pid() & 1);
+        requirements.wantAbilityBit = wantAbilityBit;
+        requirements.wantWurmpleEvolution = wurmpleEvolutionToHold(speciesID(), pid());
         uint32_t pidValue = 0;
         if (!findPID(requirements, pidValue))
         {
-            Utils::logErrorToFile("Pokemon4PT::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(wantNature) + "; the Pokemon is unchanged");
+            Utils::logErrorToFile("Pokemon4PT::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(wantNature) + " abilityBit=" + std::to_string(wantAbilityBit) + "; the Pokemon is unchanged");
             return false;
         }
         wr32(0x00, pidValue);
@@ -232,14 +214,14 @@ namespace Pokemon
     // A legality touch-up asked for nothing to change, so it holds everything the PID decides.
     void Pokemon4PT::regeneratePID(uint32_t trainerID32) noexcept
     {
-        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), nature(), trainerID32);
+        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), nature(), static_cast<int>(pid() & 1), trainerID32);
     }
 
     void Pokemon4PT::setShiny(bool makeShiny, uint32_t trainerID32) noexcept
     {
         if (isShiny(trainerID32, "") == makeShiny)
             return;
-        rerollPID(makeShiny ? 1 : 0, gender(), nature(), trainerID32);
+        rerollPID(makeShiny ? 1 : 0, gender(), nature(), static_cast<int>(pid() & 1), trainerID32);
     }
 
     void Pokemon4PT::setNature(uint8_t natureValue) noexcept
@@ -248,7 +230,46 @@ namespace Pokemon
             return;
         // Gen 4 stores no nature: it IS `PID % 25`, so changing it means a new PID. Shininess, gender
         // and the ability slot are held, so the nature is the only thing that changes.
-        rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), natureValue, id32());
+        rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), natureValue, static_cast<int>(pid() & 1), id32());
+    }
+
+    void Pokemon4PT::setAbilityNumber(uint8_t abilityNumber) noexcept
+    {
+        if (abilityNumber != 1 && abilityNumber != 2)
+            return;
+        const int wantAbilityBit = abilityNumber == 2 ? 1 : 0;
+        if (static_cast<int>(pid() & 1) != wantAbilityBit && !rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), nature(), wantAbilityBit, id32()))
+            return;
+        // The ability id follows the slot, as in PKHeX's PKM.RefreshAbility.
+        const PersonalRecord &personalRecord = personal();
+        setAbility(abilityNumber == 2 ? personalRecord.ability2 : personalRecord.ability1);
+    }
+
+    bool Pokemon4PT::wasCreatedInHGSS() const noexcept
+    {
+        constexpr uint16_t linkTradeEggLocation = 2002; // PKHeX Locations.LinkTrade4
+        const uint8_t originVersion = originGame();
+        if (Enums::getVersionGeneration(originVersion) == 3)
+            return rd16(0x46) != 0; // PKHeX PossiblyPalParkHGSS
+        const bool tradedEgg = eggLocation() == linkTradeEggLocation;
+        if (originVersion == static_cast<uint8_t>(Enums::GameVersion::HG) || originVersion == static_cast<uint8_t>(Enums::GameVersion::SS))
+        {
+            // An egg traded in and hatched outside HeartGold/SoulSilver keeps 0x86 empty.
+            if (rd8(0x86) == 0 && tradedEgg && !isHatchLocationHGSS(rd16(0x46)))
+                return false;
+            return !isFatefulEncounter() || eggLocation() != 0; // Ranger Manaphy was the one egg ever distributed
+        }
+        // D/P/Pt: only an egg traded in and hatched in HeartGold/SoulSilver keeps one.
+        return rd8(0x86) != 0 && tradedEgg && isHatchLocationHGSS(rd16(0x46));
+    }
+
+    void Pokemon4PT::setBall(uint8_t value) noexcept
+    {
+        constexpr uint8_t pokeBall = 4;
+        constexpr uint8_t sportBall = 24;
+        constexpr uint8_t cherishBall = 16;
+        wr8(0x83, value <= cherishBall ? value : pokeBall);
+        wr8(0x86, wasCreatedInHGSS() ? (value <= sportBall ? value : pokeBall) : 0);
     }
 
     void Pokemon4PT::setGender(uint8_t genderValue) noexcept
@@ -262,6 +283,6 @@ namespace Pokemon
             refreshChecksum();
             return;
         }
-        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, nature(), id32());
+        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, nature(), static_cast<int>(pid() & 1), id32());
     }
 }

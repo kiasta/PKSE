@@ -2,7 +2,7 @@
 // Regenerate with tools/gen_formnames.py (needs a PKHeX checkout + .NET SDK).
 // Sources: PokeAPI where it has the games' own wording -- form_names first, then
 // names reduced to a label by removing the species -- else PKHeX's own label, from
-// FormConverter.GetFormList unioned across EntityContexts, PKHeX commit fd213a27db65d6223bcf47935e36c7d375e04b7b.
+// FormConverter.GetFormList unioned across EntityContexts, PKHeX commit 8e3eb3d47bb496746c3eaa9d160329d295a5e2e5.
 //
 // PKHeX IS TERSE ONLY IN THE LATIN LANGUAGES. It drops the head noun there -- "Alola"
 // for the games' "Forme d'Alola" / "Alola-Form" -- which is why PokeAPI is preferred.

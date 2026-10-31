@@ -214,6 +214,8 @@ namespace Utils
             fprintf(f, "lastImportFolder=%s\n", g_lastImportFolder.c_str());
         for (const std::string &favoriteFolder : g_favoriteFolders)
             fprintf(f, "favoriteFolder=%s\n", favoriteFolder.c_str());
-        fclose(f);
+        // The final flush happens in fclose; on a full SD card it is the call that fails.
+        if (fclose(f) != 0)
+            logErrorToFile("Failed to finish writing settings file", settingsPath().c_str());
     }
 }

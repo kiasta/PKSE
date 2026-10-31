@@ -139,23 +139,19 @@ namespace Save
     /** Saves an FRLG save: re-encrypt party/boxes/items in place + recompute all 14 sector checksums. */
     bool saveTrainerInfoFRLG(Trainer3FRLG &trainer, const char *backupDir, u64 titleId, AccountUid userUid, bool injectToTitle);
 
-    /**
-     * Writes a Gen 1 save back to the file it was opened from.
-     *
-     * The odd one out, because a Gen 1 save is not an installed title's save: `savePath` is the
-     * FILE, not a backup directory, and there is no title to inject into afterwards. A timestamped
-     * copy of the ORIGINAL bytes is written under sdmc:/PKSE/Gen1Backups first -- the user pointed
-     * PKSE at a file that is very likely their only copy, so it is backed up before it is touched,
-     * not merely alongside.
-     */
-    bool saveTrainerInfoRBY(Trainer::Trainer1RBY &trainer, const char *savePath);
-
     /// A display name for the title bar. Most groups just name themselves; Gen 1 and Gen 2 know
     /// more about their own file than the group does (locale, and for Gen 2 the actual version).
     std::string externalSaveLabel(const Trainer::Trainer &trainer);
 
-    /// Copies a file's CURRENT bytes to sdmc:/PKSE/FileBackups before it is overwritten.
-    void backupOriginalFile(const char *savePath);
+    /// Copies a file's CURRENT bytes to sdmc:/PKSE/FileBackups before it is overwritten. False
+    /// (logged) when the backup could not be read, written or closed in full -- and then the caller
+    /// must not overwrite the file, which may be the user's only copy.
+    bool backupOriginalFile(const char *savePath);
+
+    /// Writes `fileBytes` over `filePath` without ever leaving it half-written: the bytes go to a
+    /// sibling ".tmp" file, which replaces the original only once it is complete and closed. False
+    /// (logged) on any failure, with the original untouched unless the final rename failed.
+    bool replaceFileContents(const char *filePath, const std::vector<uint8_t> &fileBytes);
 
     /// Identifies `bytes` and constructs the matching trainer, or returns nullptr if the file is
     /// not a save PKSE opens.
@@ -190,8 +186,8 @@ namespace Save
     bool groupOpensFromFile(Enums::GameVersion group) noexcept;
 
     /// Writes a loose save back to the file it came from, backing up the ORIGINAL bytes first, and
-    /// puts back any envelope the file had. Same contract as saveTrainerInfoRBY, which it now
-    /// subsumes for every generation.
+    /// puts back any envelope the file had. A backup that fails refuses the write, and the file is
+    /// replaced only once the new bytes are completely written (replaceFileContents).
     ///
     /// `backupOriginal` is false ONLY for a caller writing to a throwaway copy it made itself and
     /// must leave nothing behind -- the same reason such a caller passes `injectToTitle`

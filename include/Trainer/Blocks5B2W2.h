@@ -3,10 +3,11 @@
  *
  * Regenerate with `python tools/gen_blocktables.py`. Source: PKHeX SaveBlockAccessor5*.
  *
- * ONE GROUP, ONE TABLE. Black 2/White 2 is not Black 2/White 2 and does not borrow its geometry: the two
- * block orders agree only up to #27 and diverge at #32, so a shared table would read one game's
- * save with the other's offsets past that point. The named indices below are looked up in THIS
- * table by block name, so they cannot drift from the rows above them.
+ * ONE GROUP, ONE TABLE. Black 2/White 2 does not borrow a sibling group's geometry, even where the two
+ * block orders agree for a while (Black/White and Black 2/White 2 agree up to #27 and diverge at
+ * #32): a shared table would read one game's save with the other's offsets past that point. The
+ * named indices below are looked up in THIS table by block name, so they cannot drift from the
+ * rows above them.
  *
  * See BlockTable.h for the row type, and for why only six groups have a table at all.
  */

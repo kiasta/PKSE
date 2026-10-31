@@ -1,8 +1,16 @@
 /**
  * When a banked Pokemon is withdrawn into a save of a DIFFERENT game, its native bytes must be
  * re-formatted into the destination game's entity format. Following PKHeX/HOME: the origin identity
- * (Version, OT, ID, met/egg, HOME tracker, EC/PID/IVs/nature/gender/language/ribbons) is preserved
- * verbatim; only game-specific container fields are rewritten, and the checksum is refreshed.
+ * (Version, OT, ID, met/egg, HOME tracker, EC/PID/IVs/nature/gender/language) is preserved; ribbons
+ * are carried wherever the destination has the same ribbon (a Gen 3 record keeps only the ones later
+ * games still have, as Pal Park did). Only game-specific container fields are rewritten, and the
+ * checksum is refreshed.
+ *
+ * GROUPS THAT SHARE A FORMAT ARE NOT CONVERTED. Ruby/Sapphire/Emerald and FireRed/LeafGreen, the Gen 4
+ * trio, both Gen 5 pairs, both Gen 6 pairs and both Gen 7 3DS pairs each store one entity format (the
+ * bank tag names it). Moving between two of them re-wraps the same bytes as the destination's own
+ * class, checked against the destination's dex, forms, moves and items where it is the narrower one.
+ * Nothing else changes: it is the same record, so there is no handler to stamp.
  *
  * PKSE preserves origin identity + ability but SANITIZES the moveset for the destination: any move (or
  * relearn move) the destination species can't legally learn -- illegal for the species, OR not present in
@@ -32,11 +40,13 @@
  * and an un-nicknamed Pokemon arrives holding its own language's species name (Gen 3 has no is-nicknamed
  * flag, so that string is the only way to say "not nicknamed"). The OT name is the one field with no
  * fallback: it is carried when the destination's alphabet can spell it and left BLANK when it cannot --
- * see canStoreOriginalTrainerName, which is what the confirm dialog warns from. Sun/Moon and Ultra
- * Sun/Ultra Moon (PK7, the 232/260-byte 3DS record) are siblings of each other and reach the hub by a
- * remap that is the PB7 one plus everything Let's Go dropped -- held item, EVs, contest stats, both
- * trainers' memories -- while the Gen-7-only regions (Super Training, Poke Pelago, the 3DS geolocation
- * block, affection) have nowhere to go in Gen 8 and are dropped. Every conversion is thus a PK8-layout
+ * see canStoreOriginalTrainerName, which is what the confirm dialog warns from. Coming FROM Gen 3 follows
+ * Pal Park (PKHeX PK3.ConvertToPK4 onward): the met location becomes Poke Transfer, the met level the
+ * current level, an egg hatches, and the PID gains bit 31 where Gen 6's wider shiny window would
+ * otherwise make it shiny. Sun/Moon and Ultra Sun/Ultra Moon (PK7, the 232/260-byte 3DS record) reach
+ * the hub by a remap that is the PB7 one plus everything Let's Go dropped -- held item, EVs, contest
+ * stats, ribbons, both trainers' memories -- while the Gen-7-only regions (Super Training, Poke Pelago,
+ * the 3DS geolocation block, affection) have nowhere to go in Gen 8 and are dropped. Every conversion is thus a PK8-layout
  * hub: any game <-> any other (full two-way, beyond HOME's one-way Let's Go limit), bounded only by
  * destination dex-presence.
  *
@@ -45,8 +55,8 @@
  * a PK7 -- and the result then travels the ordinary hub. That step INVENTS most of a modern record,
  * because a PK1 has no nature, ability, PID, ball, met data or origin game to carry: see the block
  * comment above transportVirtualConsoleToPK7() in Convert.cpp for the full recipe and for the three
- * things PKSE cannot reproduce (the origin title is a guess; names are written in English; the 3DS
- * locale block stays blank). Nothing converts BACK: a PK1 has no room for what it would be handed.
+ * things PKSE cannot reproduce (the origin title is a guess; the language is inferred from the names, as
+ * PKHeX infers it; the 3DS locale block stays blank). Nothing converts BACK: a PK1 has no room for what it would be handed.
  */
 #ifndef CONVERSION_CONVERT_H
 #define CONVERSION_CONVERT_H
@@ -75,7 +85,7 @@ namespace Conversion {
     enum class Result {
         Ok,           // converted successfully
         SameGroup,    // no conversion needed -- the caller should move the original as-is
-        Unsupported,  // not one of the seven supported mainline games (all of which now interconvert)
+        Unsupported,  // a group with no conversion path to the destination (e.g. back into Gen 1/2)
         NotInDex,     // species/form does not exist in the destination game's dex
         Blocked,      // destination refuses this species (e.g. BDSP Spinda / Nincada)
     };
@@ -92,9 +102,9 @@ namespace Conversion {
     /// the group's representative version.
     ///
     /// `receivingTrainer` names the trainer whose save the Pokemon is landing in, who becomes its
-    /// active handler. The one pairing that leaves the handler alone is Sun/Moon <-> Ultra Sun/Ultra
-    /// Moon: one record format, so the move is not a transfer into another game. nullptr means "not
-    /// known" and keeps the handler the source had. See ReceivingTrainer above.
+    /// active handler. Groups that share a format leave it alone: the move re-wraps the same record
+    /// (see the file comment) and is not a transfer into another game. nullptr means "not known" and
+    /// keeps the handler the source had. See ReceivingTrainer above.
     std::unique_ptr<Pokemon::Pokemon> convert(const Pokemon::Pokemon& source, Enums::GameVersion destGroup, Result& result, uint8_t destOriginVersion = 0, const ReceivingTrainer* receivingTrainer = nullptr);
 
     /// True if `destGroup` can accept `source` (same group, or a supported+allowed conversion). Pure check

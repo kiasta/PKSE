@@ -64,45 +64,7 @@ namespace Pokemon
 
     int Pokemon8LA::getNatureModifier(int statIndex) const noexcept
     {
-
-        uint8_t nature = statNature();
-
-        // Stats: 0=ATK, 1=DEF, 2=SPE, 3=SPA, 4=SPD
-        static const int8_t natureTable[25][5] = {
-            {1, 1, 1, 1, 1}, // 0: Hardy (neutral)
-            {2, 0, 1, 1, 1}, // 1: Lonely (+Atk, -Def)
-            {2, 1, 0, 1, 1}, // 2: Brave (+Atk, -Spe)
-            {2, 1, 1, 0, 1}, // 3: Adamant (+Atk, -SpA)
-            {2, 1, 1, 1, 0}, // 4: Naughty (+Atk, -SpD)
-            {0, 2, 1, 1, 1}, // 5: Bold (-Atk, +Def)
-            {1, 1, 1, 1, 1}, // 6: Docile (neutral)
-            {1, 2, 0, 1, 1}, // 7: Relaxed (+Def, -Spe)
-            {1, 2, 1, 0, 1}, // 8: Impish (+Def, -SpA)
-            {1, 2, 1, 1, 0}, // 9: Lax (+Def, -SpD)
-            {0, 1, 2, 1, 1}, // 10: Timid (-Atk, +Spe)
-            {1, 0, 2, 1, 1}, // 11: Hasty (-Def, +Spe)
-            {1, 1, 1, 1, 1}, // 12: Serious (neutral)
-            {1, 1, 2, 0, 1}, // 13: Jolly (+Spe, -SpA)
-            {1, 1, 2, 1, 0}, // 14: Naive (+Spe, -SpD)
-            {0, 1, 1, 2, 1}, // 15: Modest (-Atk, +SpA)
-            {1, 0, 1, 2, 1}, // 16: Mild (-Def, +SpA)
-            {1, 1, 0, 2, 1}, // 17: Quiet (+SpA, -Spe)
-            {1, 1, 1, 1, 1}, // 18: Bashful (neutral)
-            {1, 1, 1, 2, 0}, // 19: Rash (+SpA, -SpD)
-            {0, 1, 1, 1, 2}, // 20: Calm (-Atk, +SpD)
-            {1, 0, 1, 1, 2}, // 21: Gentle (-Def, +SpD)
-            {1, 1, 0, 1, 2}, // 22: Sassy (+SpD, -Spe)
-            {1, 1, 1, 0, 2}, // 23: Careful (+SpD, -SpA)
-            {1, 1, 1, 1, 1}, // 24: Quirky (neutral)
-        };
-
-        if (nature >= 25 || statIndex < 0 || statIndex >= 5)
-        {
-            return 100;
-        }
-
-        int modifier = natureTable[nature][statIndex];
-        return modifier == 0 ? 90 : (modifier == 2 ? 110 : 100);
+        return natureStatPercent(statNature(), statIndex);
     }
 
     namespace
@@ -162,6 +124,10 @@ namespace Pokemon
         if (levelValue == 0 || levelValue > 100)
         {
             return;
+        }
+        if (baseHP() == 0)
+        {
+            return; // no personal data for this species -- do NOT write zeroed stats
         }
 
         // HP. effectiveIV, not ivXXX: a Hyper Trained stat is PLAYED at a maximal IV while the

@@ -4,6 +4,7 @@
 #include <span>
 #include <vector>
 #include <bit>
+#include <algorithm>
 #include <ctime> // std::time / std::localtime -> HOME-style transfer date for Gen 3 (no met date)
 
 #include "Pokemon/Pokemon8SWSH.h"
@@ -37,6 +38,8 @@
 #include "Enums/Ball.h"            // maxBallForGroup -> the destination format's ball ceiling
 #include "Pokemon/EvolutionTable.h" // getPreEvolutionChain -- a Wartortle is a caught Squirtle
 #include "Pokemon/Trade.h"          // applyReceivingTrainer -- the receiving player becomes the handler
+#include "Pokemon/PersonalRecord.h" // personalMaxSpecies / formCount -- the narrower sibling's dex
+#include "Trainer/Bank.h"           // groupAsBanked / makePokemon / encryptRecord -- one entity format, many groups
 #include "Legality/EncounterTable.h" // a Gen 3 landing spot comes from a REAL encounter
 #include "Names/ItemNames.h"       // itemG3ToModern / itemModernToG3 (Gen 3 <-> modern held item)
 #include "Names/ItemPresence.h"    // isHeldItemPresent -> sanitize the held item to the destination
@@ -192,12 +195,170 @@ namespace Conversion
         // to a Gen 8/9 entity must be this long, not the stored size.
         constexpr size_t PARTY_SIZE_G89 = 0x158;
 
+        // TWO GROUPS THAT STORE ONE ENTITY FORMAT. All five GBA games store a PK3, DP/Pt/HGSS a PK4,
+        // BW/B2W2 a PK5, XY/ORAS a PK6 and SM/USUM a PK7, so a move between them is not a conversion:
+        // the cartridges trade those records byte for byte. The bank is what makes this common rather
+        // than rare -- a banked record has no game of origin, so it reads back as its format's
+        // representative group, and a Diamond Pokemon withdrawn into Diamond arrives as HeartGold's.
+        // The bank owns that mapping, so it is asked rather than copied.
+        bool sharesEntityFormat(GameVersion sourceGroup, GameVersion destinationGroup)
+        {
+            const GameVersion bankedGroup = Trainer::Bank::groupAsBanked(sourceGroup);
+            return bankedGroup != GameVersion::Invalid && bankedGroup == Trainer::Bank::groupAsBanked(destinationGroup);
+        }
+
+        // The highest move and item id a Gen 4-7 game has, for the one sibling that is narrower than
+        // the other. PKHeX Legal.MaxMoveID_* / MaxItemID_*. 0 = no limit known, which filters nothing:
+        // Gen 3 answers through its presence tables instead, and the Gen 4/5 move spaces do not differ.
+        uint16_t siblingHighestMoveId(GameVersion group)
+        {
+            switch (group)
+            {
+            case GameVersion::XY:
+                return 617;
+            case GameVersion::ORAS:
+                return 621;
+            case GameVersion::SM:
+                return 719;
+            case GameVersion::USUM:
+                return 728;
+            default:
+                return 0;
+            }
+        }
+        uint16_t siblingHighestItemId(GameVersion group)
+        {
+            switch (group)
+            {
+            case GameVersion::DP:
+                return 464;
+            case GameVersion::PT:
+                return 467;
+            case GameVersion::HGSS:
+                return 536;
+            case GameVersion::BW:
+                return 632;
+            case GameVersion::B2W2:
+                return 638;
+            case GameVersion::XY:
+                return 717;
+            case GameVersion::ORAS:
+                return 775;
+            case GameVersion::SM:
+                return 920;
+            case GameVersion::USUM:
+                return 959;
+            default:
+                return 0;
+            }
+        }
+
+        bool siblingHasMove(uint16_t moveId, GameVersion destination)
+        {
+            if (isGen3Group(destination))
+                return Names::isMovePresent(moveId, destination);
+            const uint16_t highestMoveId = siblingHighestMoveId(destination);
+            return highestMoveId == 0 || moveId <= highestMoveId;
+        }
+
+        // The held-item tables cover Gen 3 and the Switch games only, and a group they lack answers
+        // false -- which is "no data", not "cannot hold". Gens 4-7 are judged by their id range.
+        bool destinationHasHeldItem(uint16_t itemId, GameVersion destination)
+        {
+            const uint16_t highestItemId = siblingHighestItemId(destination);
+            if (highestItemId != 0)
+                return itemId <= highestItemId;
+            return Names::isHeldItemPresent(itemId, destination);
+        }
+
+        // Whether `destination` has a dex entry for what `source` is. Only the narrower sibling can
+        // answer no: Diamond/Pearl predates Platinum's Origin Giratina, Sky Shaymin and Rotom's
+        // appliance forms, Black/White the Therian forms, Sun/Moon Ultra Sun's six new species. A form
+        // is refused only where the destination defines FEWER forms than the source -- Gen 3's tables
+        // carry no form rows at all, and Unown's letter there rides in the PID.
+        Result siblingGate(const Pokemon::Pokemon &source, GameVersion destination)
+        {
+            const uint16_t speciesId = source.speciesID();
+            const uint16_t destinationMaxSpecies = Pokemon::personalMaxSpecies(destination);
+            if (speciesId == 0 || (destinationMaxSpecies != 0 && speciesId > destinationMaxSpecies))
+                return Result::NotInDex;
+            const uint8_t formId = source.form();
+            if (formId != 0)
+            {
+                const uint8_t destinationFormCount = Pokemon::getPersonalRecord(destination, speciesId, 0).formCount;
+                const uint8_t sourceFormCount = Pokemon::getPersonalRecord(source.getGameGroup(), speciesId, 0).formCount;
+                if (formId >= destinationFormCount && destinationFormCount < sourceFormCount)
+                    return Result::NotInDex;
+            }
+            return Result::Ok;
+        }
+
+        // Moves a record between two groups that share its format: the same bytes, re-wrapped as the
+        // destination's own entity class. The only thing that can change is what the narrower sibling
+        // has no id for -- a move or held item past its range is cleared, and the moves left are
+        // packed up so no gap is left mid-moveset. Nothing else is touched: no handler is stamped (a
+        // trade between siblings is the record's own history, and the bank is not a trade), no PID
+        // is rerolled, no origin is restamped, and the nickname, ribbons and markings ride along.
+        std::unique_ptr<Pokemon::Pokemon> rewrapForSibling(const Pokemon::Pokemon &source, GameVersion destination)
+        {
+            const std::span<const std::byte> decryptedBytes = source.getData();
+            std::byte *encryptedRecord = Trainer::Bank::encryptRecord(destination, decryptedBytes, source.encryptionConstant());
+            if (!encryptedRecord)
+                return nullptr;
+            auto rewrapped = Trainer::Bank::makePokemon(destination, std::span<const std::byte>(encryptedRecord, decryptedBytes.size()));
+            delete[] encryptedRecord;
+            if (!rewrapped)
+                return nullptr;
+
+            bool changed = false;
+            for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
+            {
+                if (rewrapped->move(moveIndex) != 0 && !siblingHasMove(rewrapped->move(moveIndex), destination))
+                {
+                    rewrapped->setMove(moveIndex, 0);
+                    rewrapped->setMovePP(moveIndex, 0);
+                    rewrapped->setMovePPUps(moveIndex, 0);
+                    changed = true;
+                }
+                if (rewrapped->relearnMove(moveIndex) != 0 && !siblingHasMove(rewrapped->relearnMove(moveIndex), destination))
+                {
+                    rewrapped->setRelearnMove(moveIndex, 0);
+                    changed = true;
+                }
+            }
+            for (int destinationSlot = 0, sourceSlot = 0; changed && sourceSlot < 4; ++sourceSlot)
+            {
+                if (rewrapped->move(sourceSlot) == 0)
+                    continue;
+                if (destinationSlot != sourceSlot)
+                {
+                    rewrapped->setMove(destinationSlot, rewrapped->move(sourceSlot));
+                    rewrapped->setMovePP(destinationSlot, rewrapped->movePP(sourceSlot));
+                    rewrapped->setMovePPUps(destinationSlot, rewrapped->movePPUps(sourceSlot));
+                    rewrapped->setMove(sourceSlot, 0);
+                    rewrapped->setMovePP(sourceSlot, 0);
+                    rewrapped->setMovePPUps(sourceSlot, 0);
+                }
+                ++destinationSlot;
+            }
+            if (rewrapped->heldItem() != 0 && !destinationHasHeldItem(rewrapped->heldItem(), destination))
+            {
+                rewrapped->setHeldItem(0);
+                changed = true;
+            }
+            if (changed)
+                rewrapped->refreshChecksum();
+            return rewrapped;
+        }
+
         // Whether a supported+allowed conversion from source -> destination exists (no allocation).
         Result gate(const Pokemon::Pokemon &source, GameVersion destination)
         {
             const GameVersion from = source.getGameGroup();
             if (from == destination)
                 return Result::SameGroup;
+            if (sharesEntityFormat(from, destination))
+                return siblingGate(source, destination);
 
             // Every mainline pairing PKSE can express. All conversions normalize through the PK8
             // layout: same-generation siblings (SwSh<->BDSP, S/V<->Z-A, SM<->USUM) share it; PK9 reaches it
@@ -773,12 +934,8 @@ namespace Conversion
             {
                 const uint16_t species = static_cast<uint16_t>(rd8(destinationBytes, 0x08)) | (static_cast<uint16_t>(rd8(destinationBytes, 0x09)) << 8);
                 const uint8_t form = static_cast<uint8_t>(rd8(destinationBytes, 0x1D) >> 3); // PB7 packs form in 0x1D bits 3+
-                const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(species, form);
-                const float heightRatio = (rd8(destinationBytes, 0x3A) / 255.0f) * 0.79999995f + 0.6f; // height ratio (+40% / -20%)
-                const float weightRatio = (rd8(destinationBytes, 0x3B) / 255.0f) * 0.40000004f + 0.8f; // weight ratio (+/- 20%)
-                wrf32(destinationBytes, 0x2C, heightRatio * static_cast<float>(pi.height));            // HeightAbsolute
-                // WeightAbsolute
-                wrf32(destinationBytes, 0xE4, heightRatio * weightRatio * static_cast<float>(pi.weight));
+                wrf32(destinationBytes, 0x2C, Pokemon::Pokemon7LGPE::heightAbsoluteFor(species, form, rd8(destinationBytes, 0x3A)));
+                wrf32(destinationBytes, 0xE4, Pokemon::Pokemon7LGPE::weightAbsoluteFor(species, form, rd8(destinationBytes, 0x3A), rd8(destinationBytes, 0x3B)));
             }
             return destinationBytes;
         }
@@ -888,6 +1045,39 @@ namespace Conversion
             }
         }
 
+        std::u16string gen3SpeciesName(uint16_t national, uint8_t languageId);
+
+        // The language a Game Boy record arrives in (PKHeX GBPKM.TransferLanguage). The record does
+        // not store one, so the receiving save's language wins wherever the record cannot rule it
+        // out: when the stored name is that language's species name, or when nothing in the record
+        // named a language at all (a nickname, no German-only letter). Japanese is the record
+        // width's own answer, and a receiving language no Game Boy cart shipped in never wins.
+        uint8_t virtualConsoleTransferLanguage(const Pokemon::Pokemon &source, const ReceivingTrainer *receivingTrainer)
+        {
+            const uint8_t recordLanguage = source.language();
+            if (!receivingTrainer || recordLanguage == static_cast<uint8_t>(Enums::LanguageID::Japanese))
+                return recordLanguage;
+            const uint8_t receivingLanguage = receivingTrainer->language;
+            switch (static_cast<Enums::LanguageID>(receivingLanguage))
+            {
+            case Enums::LanguageID::English:
+            case Enums::LanguageID::French:
+            case Enums::LanguageID::Italian:
+            case Enums::LanguageID::German:
+            case Enums::LanguageID::Spanish:
+                break;
+            default:
+                return recordLanguage;
+            }
+            const std::u16string stored = Utils::normalizeGameBoyName(source.nickname());
+            if (stored == Utils::normalizeGameBoyName(gen3SpeciesName(source.speciesID(), receivingLanguage)))
+                return receivingLanguage;
+            // language() answers English both for an English species name and when nothing matched.
+            if (recordLanguage != static_cast<uint8_t>(Enums::LanguageID::English) || stored == Utils::normalizeGameBoyName(gen3SpeciesName(source.speciesID(), recordLanguage)))
+                return recordLanguage;
+            return receivingLanguage;
+        }
+
         // Builds the PK7 a Transporter run would produce. Returns a 260-byte PARTY record; the caller
         // fills its stat tail with recalculateStats(). `originVersion` is the Gen 1/2 title to stamp
         // (see virtualConsoleOriginVersion, and note 1 above).
@@ -993,10 +1183,9 @@ namespace Conversion
                 wr8(destinationBytes, 0x62 + slot, moveId == 0 ? 0 : Names::getMoveMaxPP(moveId, powerPointUps, GameVersion::SM));
             }
 
-            // The record's own language, which both name fields below are written in. A Game Boy
-            // save states it by its LAYOUT rather than a field -- a Japanese one has narrower name
-            // fields -- and the entity reports what that layout said.
-            const uint8_t language = source.language();
+            // The record's language, which both name fields below are written in. A Game Boy save
+            // does not store one: see virtualConsoleTransferLanguage.
+            const uint8_t language = virtualConsoleTransferLanguage(source, receivingTrainer);
 
             // Nicknames. An un-nicknamed Pokemon arrives with its species name, and the event pair
             // arrives with theirs whatever they were called -- PKHeX takes the fateful branch INSTEAD
@@ -1064,9 +1253,10 @@ namespace Conversion
                 writeUtf16Field(destinationBytes, 0x78, 13, receivingTrainer->name);
                 wr8(destinationBytes, 0x92, receivingTrainer->gender & 1); // HT gender
                 wr8(destinationBytes, 0x93, 1);                           // CurrentHandler: the HT is in charge
+                constexpr uint8_t bankTransferFeelingLimit = 10; // PKHeX SetTradeMemoryHT6(bank: true) draws below 10
                 wr8(destinationBytes, 0xA4, 1);                           // HT memory intensity
                 wr8(destinationBytes, 0xA5, 4);                           // "Link trade to [general location]"
-                wr8(destinationBytes, 0xA6, static_cast<uint8_t>(random.below(10))); // feeling, 0-9 for a Bank trade
+                wr8(destinationBytes, 0xA6, Pokemon::linkTradeMemoryFeeling(random.next(), bankTransferFeelingLimit)); // feeling
                 wr16(destinationBytes, 0xA8, 0);                          // memory variable: "somewhere" (Bank)
             }
             return destinationBytes;
@@ -1075,22 +1265,36 @@ namespace Conversion
         // PK7 is the 3DS record: 232 stored / 260 party, four 0x38 blocks, Gen 6/7 crypto (the ctor
         // and encryptFor handle that). It is the shape Let's Go's PB7 was cut down from, so most of
         // this reads like the PB7 remap above -- but PK7 is the FULL record and carries everything
-        // PB7 dropped: the held item, EVs, contest stats, both trainers' memories, and the ribbon
-        // memory counts.
+        // PB7 dropped: the held item, EVs, contest stats, both trainers' memories, and the ribbons.
+        // The ribbons ARE a byte copy: Gen 8 keeps the fifty Gen 6/7 ribbon bits in the same order,
+        // four bytes later (PK7 0x30 bit 0 and PK8 0x34 bit 0 are both the Kalos Champion ribbon), and
+        // only appends its own ribbons and marks from 0x3A bit 2 on -- so the way down masks those off.
         //
-        // Four regions are Gen-7-only and are DROPPED rather than guessed at:
+        // Three regions are Gen-7-only and are DROPPED rather than guessed at:
         //   - Super Training (0x2C-0x2F, 0x72) and the Poke Pelago resort state (0x2A). Gen 8 has
         //     neither mechanic.
         //   - Geolocation (0x94-0x9D) plus Country/Region/ConsoleRegion (0xE0-0xE2). Gen 8 removed
         //     the whole 3DS locale block; there is nowhere to put it.
         //   - Affection (OT 0xCB, HT 0xA3). Gen 8 dropped affection into the LGPE-style friendship.
-        //   - Ribbons (0x30-0x37). Gen 8 REORDERED the ribbon bits and added marks, so the two
-        //     blocks are not a byte copy and a wrong one would hand out ribbons nobody earned. The
-        //     PB7 remap drops them for the same reason.
         //
         // Height/weight scalars (PK8 0x50/0x51) stay 0: Gen 8 introduced them and a PK7 has no such
         // field, so there is nothing to carry. That matches what the Gen 3 remap already does.
         // Offsets: PKHeX PK7.cs / G8PKM.cs.
+
+        // PK8 keeps a "has a memory ribbon" flag beside each memory count (0x38 bits 5 and 6), and
+        // PKHeX's count setters keep the two in step: a non-zero count without its flag shows no
+        // ribbon. Set from the counts already written at 0x3C / 0x3D.
+        void setRibbonMemoryFlagsG8(std::vector<std::byte> &recordBytes)
+        {
+            constexpr uint8_t contestMemoryFlag = 1u << 5;
+            constexpr uint8_t battleMemoryFlag = 1u << 6;
+            uint8_t flagsByte = rd8(recordBytes, 0x38) & static_cast<uint8_t>(~(contestMemoryFlag | battleMemoryFlag));
+            if (rd8(recordBytes, 0x3C) != 0)
+                flagsByte |= contestMemoryFlag;
+            if (rd8(recordBytes, 0x3D) != 0)
+                flagsByte |= battleMemoryFlag;
+            wr8(recordBytes, 0x38, flagsByte);
+        }
 
         // PK7 -> PK8 layout (SwSh/BDSP), returns a 0x148 stored buffer.
         std::vector<std::byte> remapPK7toPK8(const std::vector<std::byte> &sourceBytes)
@@ -1116,8 +1320,10 @@ namespace Conversion
             copyBytes(destinationBytes, 0x26, sourceBytes, 0x1E, 0x06); // EVs (HP,ATK,DEF,SPE,SPA,SPD -- same order)
             copyBytes(destinationBytes, 0x2C, sourceBytes, 0x24, 0x06); // Contest stats (Cool..Sheen)
             wr8(destinationBytes, 0x32, rd8(sourceBytes, 0x2B));        // PokerusState
+            copyBytes(destinationBytes, 0x34, sourceBytes, 0x30, 0x07); // Ribbons: Gen 8 keeps Gen 6/7's bits in order, 4 bytes on
             wr8(destinationBytes, 0x3C, rd8(sourceBytes, 0x38));        // RibbonCountMemoryContest
             wr8(destinationBytes, 0x3D, rd8(sourceBytes, 0x39));        // RibbonCountMemoryBattle
+            setRibbonMemoryFlagsG8(destinationBytes);
             copyBytes(destinationBytes, 0xE4, sourceBytes, 0x3C, 0x04); // FormArgument
             copyBytes(destinationBytes, 0x58, sourceBytes, 0x40, 0x1A); // Nickname
             copyBytes(destinationBytes, 0x72, sourceBytes, 0x5A, 0x08); // Moves
@@ -1177,6 +1383,8 @@ namespace Conversion
             copyBytes(destinationBytes, 0x1E, sourceBytes, 0x26, 0x06); // EVs
             copyBytes(destinationBytes, 0x24, sourceBytes, 0x2C, 0x06); // Contest stats
             wr8(destinationBytes, 0x2B, rd8(sourceBytes, 0x32));        // PokerusState
+            copyBytes(destinationBytes, 0x30, sourceBytes, 0x34, 0x07); // Ribbons, back 4 bytes
+            wr8(destinationBytes, 0x36, rd8(destinationBytes, 0x36) & 0x03); // Battle Tree only: Gen 8's own ribbons and marks start at bit 2
             wr8(destinationBytes, 0x38, rd8(sourceBytes, 0x3C));        // RibbonCountMemoryContest
             wr8(destinationBytes, 0x39, rd8(sourceBytes, 0x3D));        // RibbonCountMemoryBattle
             copyBytes(destinationBytes, 0x3C, sourceBytes, 0xE4, 0x04); // FormArgument
@@ -1213,8 +1421,80 @@ namespace Conversion
         // Gen 3 is the most divergent format: no EC (EC := PID), nature/gender/shiny all PID-derived,
         // ability = a slot BIT (IV32 bit31) resolved through the personal table, INTERNAL species ids,
         // Gen 3 item ids, Gen 3 text (not UTF-16), IVs packed with the ability bit at 31, and no relearn
-        // moves / HT / memories / marks. We map identity + stats + moves + origin and drop the rest;
+        // moves / HT / memories. We map identity + stats + moves + origin and drop the rest;
         // held item + moveset are remapped/sanitized to the true destination in convert().
+        //
+        // THE ROUTE IT FOLLOWS IS PAL PARK, then Poke Transfer -- the one chain every Gen 3 Pokemon
+        // (Ruby, Sapphire, Emerald, Colosseum and XD as well as FireRed/LeafGreen) could take, and
+        // PKHeX's PK3.ConvertToPK4 -> PK4.ConvertToPK5 -> PK5.ConvertToPK6. So the origin game is
+        // kept, the met location becomes Poke Transfer's and the met level the level it left at, the
+        // PID is flipped where Gen 6's wider shiny window would otherwise make it shiny, and an egg is
+        // hatched (neither Pal Park nor HOME takes one).
+
+        /// The name a Gen 3 game writes for an un-nicknamed Pokemon in `languageId` -- what the game
+        /// compares a nickname against. PKHeX SpeciesName.GetSpeciesName1234: upper case except in
+        /// Japanese, French loses the accents on E and I, and Farfetch'd takes a straight apostrophe.
+        std::u16string gen3SpeciesName(uint16_t national, uint8_t languageId)
+        {
+            std::u16string speciesName = Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(national, Names::languageIndexFor(static_cast<Enums::LanguageID>(languageId))));
+            if (languageId == static_cast<uint8_t>(Enums::LanguageID::Japanese))
+                return speciesName;
+            for (char16_t &character : speciesName)
+            {
+                if ((character >= u'a' && character <= u'z') || (character >= 0xE0 && character <= 0xFE && character != 0xF7))
+                    character = static_cast<char16_t>(character - 0x20);
+                if (languageId == static_cast<uint8_t>(Enums::LanguageID::French))
+                {
+                    if (character >= 0xC8 && character <= 0xCA)
+                        character = u'E';
+                    else if (character == 0xCF)
+                        character = u'I';
+                }
+                if (character == 0x2019)
+                    character = u'\'';
+            }
+            return speciesName;
+        }
+
+        /// PKHeX PK5.GetTransferPID: Gen 6 counts a PID shiny below 16 where Gen 3-5 stopped at 8, so
+        /// the eighth of the Gen 3 window that would turn shiny has bit 31 flipped. The EC keeps the
+        /// original PID, which is how the games and PKHeX can still tell what it was.
+        uint32_t transferPID(uint32_t originalPID, uint32_t trainerId32)
+        {
+            const uint32_t combined = originalPID ^ trainerId32;
+            const uint32_t shinyXor = combined ^ (combined >> 16);
+            return ((shinyXor & 0xFFF8u) == 8) ? (originalPID ^ 0x80000000u) : originalPID;
+        }
+
+        /// A Gen 3 ribbon that stays its own ribbon in every later game: its bit in the PK3 ribbon
+        /// word (0x4C), and where the PK8 layout keeps it (PKHeX PK3.cs / G8PKM.cs).
+        struct Gen3CarriedRibbon
+        {
+            int gen3Bit;
+            size_t modernOffset;
+            int modernBit;
+        };
+        constexpr Gen3CarriedRibbon GEN3_CARRIED_RIBBONS[] = {
+            {15, 0x34, 1}, // Champion (Hoenn)
+            {19, 0x34, 7}, // Effort
+            {18, 0x36, 2}, // Artist
+            {23, 0x36, 6}, // Country
+            {24, 0x36, 7}, // National
+            {25, 0x37, 0}, // Earth
+            {26, 0x37, 1}, // World
+            {20, 0x38, 1}, // Battle Champion
+            {21, 0x38, 2}, // Regional Champion
+            {22, 0x38, 3}, // National Champion
+        };
+        constexpr uint32_t GEN3_FATEFUL_RIBBON_BIT = 1u << 31;
+
+        /// PK3 stores its four markings with the triangle and square bits swapped (PKHeX
+        /// PK3.MarkingValue); this turns the stored byte into circle/triangle/square/heart order and,
+        /// applied again, back.
+        constexpr uint8_t swapGen3MarkingBits(uint8_t markingBits)
+        {
+            return static_cast<uint8_t>((markingBits & 0b1001) | ((markingBits & 0b0010) << 1) | ((markingBits & 0b0100) >> 1));
+        }
 
         // PK3 (canonical decrypted, 80/100 B) -> PK8 layout (0x148 stored).
         std::vector<std::byte> remapPK3toPK8(const std::vector<std::byte> &sourceBytes)
@@ -1222,9 +1502,14 @@ namespace Conversion
             std::vector<std::byte> destinationBytes(0x148, std::byte{0});
             const uint32_t pidValue = rd32(sourceBytes, 0x00);
             const uint16_t national = Pokemon::gen3InternalToNational(rd16(sourceBytes, 0x20));
-            const uint32_t iv32 = rd32(sourceBytes, 0x48);
+            uint32_t iv32 = rd32(sourceBytes, 0x48);
             const uint16_t origins = rd16(sourceBytes, 0x46);
             const uint8_t abilBit = (iv32 >> 31) & 1;
+            constexpr uint32_t isEggBit = 1u << 30;
+            constexpr uint32_t isNicknamedBit = 1u << 31;
+            // FORCE-HATCHED, as PKHeX does before any conversion: no route out of Gen 3 carries an egg.
+            const bool hatchedOnTransfer = (iv32 & isEggBit) != 0;
+            iv32 &= ~isEggBit;
 
             // Gen 3 stores no form except Unown, whose letter lives in the PID.
             const uint8_t form = (national == 201) ? Pokemon::unownFormFromPID(pidValue) : 0;
@@ -1238,7 +1523,7 @@ namespace Conversion
             copyBytes(destinationBytes, 0x10, sourceBytes, 0x24, 4);                      // EXP
             wr16(destinationBytes, 0x14, abilBit ? pi.ability2 : pi.ability1);  // Ability id (from the slot bit)
             wr8(destinationBytes, 0x16, abilBit ? 2 : 1);                       // AbilityNumber (1=slot1 / 2=slot2)
-            wr32(destinationBytes, 0x1C, pidValue);                                  // PID
+            wr32(destinationBytes, 0x1C, transferPID(pidValue, rd32(sourceBytes, 0x04))); // PID
             wr8(destinationBytes, 0x20, static_cast<uint8_t>(pidValue % 25));        // Nature
             wr8(destinationBytes, 0x21, static_cast<uint8_t>(pidValue % 25));        // StatNature (no mints pre-Gen 8)
 
@@ -1252,9 +1537,45 @@ namespace Conversion
                 gender = 0;
             else
                 gender = ((pidValue & 0xFF) < genderRatioValue) ? 1 : 0;
-            const uint8_t fateful = (rd32(sourceBytes, 0x4C) >> 31) & 1; // Gen 3 ribbon bit31 = FatefulEncounter
+            const uint32_t gen3Ribbons = rd32(sourceBytes, 0x4C);
+            const uint8_t fateful = (gen3Ribbons & GEN3_FATEFUL_RIBBON_BIT) ? 1 : 0;
             wr8(destinationBytes, 0x22, static_cast<uint8_t>(fateful | (gender << 2)));
             wr8(destinationBytes, 0x24, form);
+
+            // MARKINGS. A PK3 keeps four one-bit markings; Gen 7 on keeps two bits per marking, and a
+            // carried Gen 3-6 marking arrives blue (PK6.ConvertToPK7, HomeConverter).
+            {
+                const uint8_t markings = swapGen3MarkingBits(rd8(sourceBytes, 0x1B));
+                constexpr uint16_t markingBlue = 1;
+                uint16_t markingValue = 0;
+                for (int markingIndex = 0; markingIndex < 4; ++markingIndex)
+                {
+                    if ((markings >> markingIndex) & 1)
+                        markingValue |= static_cast<uint16_t>(markingBlue << (markingIndex * 2));
+                }
+                wr16(destinationBytes, 0x18, markingValue);
+            }
+
+            // RIBBONS (PKHeX PK3.ConvertToPK4, then PK5.ConvertToPK6). The ten that are their own
+            // ribbon in every later game keep their bit; the contest ranks and the two Battle Tower
+            // ribbons fold into Gen 6's memory-ribbon counts, which is all Gen 6 on can show of them.
+            {
+                auto gen3Ribbon = [&](int bitIndex) { return ((gen3Ribbons >> bitIndex) & 1u) != 0; };
+                for (const Gen3CarriedRibbon &carriedRibbon : GEN3_CARRIED_RIBBONS)
+                {
+                    if (gen3Ribbon(carriedRibbon.gen3Bit))
+                        wr8(destinationBytes, carriedRibbon.modernOffset, static_cast<uint8_t>(rd8(destinationBytes, carriedRibbon.modernOffset) | (1u << carriedRibbon.modernBit)));
+                }
+                // Each contest category is a rank count (0-4) that Gen 4 spells as up to four ribbons.
+                constexpr uint32_t contestRankCount = 4;
+                uint8_t contestMemoryCount = 0;
+                for (int categoryIndex = 0; categoryIndex < 5; ++categoryIndex)
+                    contestMemoryCount = static_cast<uint8_t>(contestMemoryCount + std::min((gen3Ribbons >> (categoryIndex * 3)) & 7u, contestRankCount));
+                const uint8_t battleMemoryCount = static_cast<uint8_t>((gen3Ribbon(16) ? 1 : 0) + (gen3Ribbon(17) ? 1 : 0)); // Winning, Victory
+                wr8(destinationBytes, 0x3C, contestMemoryCount);
+                wr8(destinationBytes, 0x3D, battleMemoryCount);
+                setRibbonMemoryFlagsG8(destinationBytes);
+            }
 
             copyBytes(destinationBytes, 0x26, sourceBytes, 0x38, 6); // EVs (HP,ATK,DEF,SPE,SPA,SPD -- same order)
             copyBytes(destinationBytes, 0x2C, sourceBytes, 0x3E, 6); // Contest stats
@@ -1267,8 +1588,6 @@ namespace Conversion
                 for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
                     wr8(destinationBytes, 0x7E + moveIndex, (pokerusValue >> (moveIndex * 2)) & 3);
             }
-            wr32(destinationBytes, 0x8C, iv32 & 0x7FFFFFFFu); // IVs + isEgg(bit30); clear Gen 3 ability bit(31)
-
             // The PK3's OWN language byte picks the table, the same way the entity layer reads it.
             // A Japanese record decoded through the international table loses its name here just as
             // silently as it would going the other way.
@@ -1276,17 +1595,48 @@ namespace Conversion
             // Nickname (Gen 3 -> UTF-16)
             g3NameToUtf16(destinationBytes, 0x58, sourceBytes, 0x08, 10, 26, sourceLanguage);
             g3NameToUtf16(destinationBytes, 0xF8, sourceBytes, 0x14, 7, 26, sourceLanguage); // OT name
-            wr8(destinationBytes, 0x112, rd8(sourceBytes, 0x29)); // OT friendship (Gen 3 single friendship)
+
+            // IS IT NICKNAMED? A PK3 has no flag: the game compares the name with its own species name
+            // in the record's language (PKHeX G3PKM.IsNicknamed), and every later format stores the
+            // answer. A nickname is kept and flagged -- unflagged, the game renames it on evolution. An
+            // un-nicknamed one takes the modern species name, so a FireRed BULBASAUR arrives Bulbasaur.
+            {
+                std::u16string decodedNickname;
+                for (size_t unitOffset = 0x58; unitOffset + 1 < 0x58 + 26; unitOffset += 2)
+                {
+                    const char16_t character = static_cast<char16_t>(rd16(destinationBytes, unitOffset));
+                    if (character == 0)
+                        break;
+                    decodedNickname.push_back(character);
+                }
+                const bool nicknamed = !hatchedOnTransfer && decodedNickname != gen3SpeciesName(national, sourceLanguage);
+                if (nicknamed)
+                {
+                    iv32 |= isNicknamedBit;
+                }
+                else
+                {
+                    iv32 &= ~isNicknamedBit;
+                    writeUtf16Field(destinationBytes, 0x58, 13, Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(national, Names::languageIndexFor(static_cast<Enums::LanguageID>(sourceLanguage)))));
+                }
+            }
+            wr32(destinationBytes, 0x8C, iv32); // IVs + isNicknamed (bit 31 is Gen 3's ability bit, not this)
+
+            constexpr uint8_t hatchFriendship = 120; // PKHeX EggStateLegality.GetEggHatchFriendship, Gen 2-7
+            const uint8_t friendship = rd8(sourceBytes, 0x29);
+            wr8(destinationBytes, 0x112, hatchedOnTransfer ? std::min(friendship, hatchFriendship) : friendship); // OT friendship (Gen 3 single friendship)
             wr8(destinationBytes, 0x124, static_cast<uint8_t>((origins >> 11) & 0x0F));                          // Ball
-            // MetLevel + OTgender
-            wr8(destinationBytes, 0x125, static_cast<uint8_t>((origins & 0x7F) | (((origins >> 15) & 1) << 7)));
-            wr16(destinationBytes, 0x122, rd8(sourceBytes, 0x45)); // Met location (Gen 3 id -- carried)
+            // MET DATA IS POKE TRANSFER'S. Pal Park stamps its own location and the level the Pokemon
+            // left at, and Poke Transfer replaces the location again (PKHeX Locations.Transfer4) -- the
+            // Gen 3 byte is an id in Gen 3's space and reads as some unrelated place in any other.
+            constexpr uint16_t pokeTransferLocation = 30001;
+            const uint8_t transferLevel = Pokemon::getLevelFromExp(rd32(sourceBytes, 0x24), Pokemon::getGrowthRate(national));
+            wr8(destinationBytes, 0x125, static_cast<uint8_t>((transferLevel & 0x7F) | (((origins >> 15) & 1) << 7))); // MetLevel + OTgender
+            wr16(destinationBytes, 0x122, pokeTransferLocation);
             // Gen 3 records no met DATE, so leaving it 0 reads as "met 00/00/2000" in the destination.
-            // Emulate HOME: PKHeX's PK3.ConvertToPK4() stamps MetDate = EncounterDate.GetDateNDS()
-            // (the transfer date). Do the same with today's date; it rides the PK8-hub met-date region
-            // (0x11C-0x11E, year stored as year-2000) out to every destination format. Skip an egg -- an
-            // unhatched egg has no met date until it hatches (isEgg is iv32 bit 30, carried above).
-            if (!((iv32 >> 30) & 1))
+            // PKHeX's PK3.ConvertToPK4() stamps MetDate = EncounterDate.GetDateNDS() (the transfer
+            // date). Do the same with today's date; it rides the PK8-hub met-date region (0x11C-0x11E,
+            // year stored as year-2000) out to every destination format.
             {
                 const std::time_t nowT = std::time(nullptr);
                 if (const std::tm *lt = std::localtime(&nowT))
@@ -1621,6 +1971,14 @@ namespace Conversion
             const uint16_t national = rd16(sourceBytes, 0x08);
             const uint32_t pk8iv = rd32(sourceBytes, 0x8C);
             const bool isEgg = (pk8iv >> 30) & 1;
+            // A source that ALREADY holds a Gen 3 origin (1-5) came from Gen 3 originally -- the
+            // origin-preserving case, which keeps its version and, where it can, its PID.
+            const uint8_t sourceVersion = rd8(sourceBytes, 0xDE);
+            const bool originatedInGen3 = (sourceVersion >= 1 && sourceVersion <= 5);
+            // Gen 3 tells which mail a party member holds at 0x55, and 0xFF is "none" (PKHeX
+            // SAV3.SetPartyValues). 0 would name the first mail slot.
+            constexpr uint8_t noHeldMail = 0xFF;
+            wr8(destinationBytes, 0x55, noHeldMail);
 
             // Gen 3 derives nature/gender/shiny/ability ALL from the PID, but the source stores nature
             // and gender EXPLICITLY -- copying the PID verbatim silently changes them (an LGPE Calm pokemon
@@ -1658,8 +2016,20 @@ namespace Conversion
                 const uint32_t tid32 = rd32(sourceBytes, 0x0C);
                 const uint16_t trainerShinyValue = static_cast<uint16_t>((tid32 & 0xFFFF) ^ (tid32 >> 16));
                 const bool shWant = (static_cast<uint16_t>(((pidValue & 0xFFFF) ^ (pidValue >> 16)) ^ trainerShinyValue) < 16); // source threshold
+                // A GEN 3 POKEMON COMING HOME carries the PID its own game generated as its EC (the
+                // transfer may have flipped the PID's top bit; see transferPID). That one is taken back
+                // whenever it still gives the same nature, gender and shininess -- it is the Pokemon's
+                // real PID/IV frame, Spinda pattern and Wurmple branch. The ability is not asked of it:
+                // Gen 3 stores the slot in the IV word, and the games set PID bit 0 to match only for a
+                // species with two abilities, so testing it rerolled half of every single-ability one.
+                const uint32_t originalPID = rd32(sourceBytes, 0x00);
+                const uint8_t originalGender = (genderRatioValue == 255) ? 2 : (genderRatioValue == 254) ? 1 : (genderRatioValue == 0) ? 0 : (((originalPID & 0xFF) < genderRatioValue) ? 1 : 0);
+                const bool originalShiny = (static_cast<uint16_t>(((originalPID & 0xFFFF) ^ (originalPID >> 16)) ^ trainerShinyValue) < 8);
+                const bool originalPIDFits = originatedInGen3 && (originalPID % 25) == natWant && originalGender == genWant && originalShiny == shWant && (!isUnown || unownFormFromPID(originalPID) == rd8(sourceBytes, 0x24) % 28u);
                 uint32_t cand = pidValue;
-                for (int index = 0; index < 1000000; ++index)
+                if (originalPIDFits)
+                    outPid = originalPID;
+                for (int index = 0; !originalPIDFits && index < 1000000; ++index)
                 {
                     // Stamp the letter before ANY test: every constraint below reads the whole PID,
                     // so this has to happen first or they judge a PID that will not be stored.
@@ -1708,7 +2078,7 @@ namespace Conversion
             const bool nicknameCarried = sourceIsNicknamed && utf16ToG3Name(destinationBytes, 0x08, sourceBytes, 0x58, 26, GEN3_NICKNAME_CHARS, destinationLanguage);
             if (!nicknameCarried)
             {
-                utf8UpperToG3Name(destinationBytes, 0x08, Names::getSpeciesNameLocalized(national, Names::languageIndexFor(static_cast<Enums::LanguageID>(destinationLanguage))), GEN3_NICKNAME_CHARS, destinationLanguage);
+                utf8UpperToG3Name(destinationBytes, 0x08, Utils::utf16ToUtf8(gen3SpeciesName(national, destinationLanguage)).c_str(), GEN3_NICKNAME_CHARS, destinationLanguage);
             }
 
             // OT NAME. The one field here that cannot be reconstructed when it does not fit: a
@@ -1753,27 +2123,37 @@ namespace Conversion
             // is stamped with the game it is being written INTO. This is the normal path, not a rare edge:
             // every cross-generation transfer into Gen 3 takes it. Substituting a fixed member of the pair
             // stamps FireRed on a LeafGreen save every time.
-            const uint8_t sourceVersion = rd8(sourceBytes, 0xDE);
-            const bool originatedInGen3 = (sourceVersion >= 1 && sourceVersion <= 5);
 
             // MET LOCATION ASKS THE SAME QUESTION AS THE VERSION ABOVE, and has to answer it the same way --
             // answering it differently is what puts "Abandoned Ship" on a transferred Gen 1 pokemon.
             //
-            //   Origin-preserving: a Gen 3 pokemon coming home. Its location is already a Gen 3 id, so
-            //   it round-trips exactly (PK3 -> PK8 widened it to u16, this narrows it back, and every
-            //   Gen 3 id is <= 255 so nothing is lost). Returning to your origin game is also the one
-            //   backward transfer that is genuinely legal, so this path must not disturb anything.
+            //   Origin-preserving: a Gen 3 pokemon coming home. Its location is a Gen 3 id only if it
+            //   never left through a transfer, and then it round-trips exactly. One that went out
+            //   through Pal Park and Poke Transfer carries Poke Transfer's 30001 instead, which means
+            //   nothing in Gen 3's byte -- its own met data is gone, as in the games, so a location
+            //   is derived from a real encounter in its own origin game, and its version and level stay.
             //
             //   Foreign: the number means nothing in Gen 3's space, so it is DERIVED from a real
             //   encounter in the destination instead of carried -- see gen3LandingFor.
             uint8_t metLocation;
             uint8_t metLevel;
             uint8_t version;
-            if (originatedInGen3)
+            const uint16_t carriedMetLocation = rd16(sourceBytes, 0x122);
+            constexpr uint16_t highestGen3Location = 0xFF;
+            if (originatedInGen3 && carriedMetLocation <= highestGen3Location)
             {
-                metLocation = static_cast<uint8_t>(rd16(sourceBytes, 0x122));
+                metLocation = static_cast<uint8_t>(carriedMetLocation);
                 metLevel = sourceMetLevel;
                 version = sourceVersion;
+            }
+            else if (originatedInGen3)
+            {
+                const uint8_t gen3Form = (national == 201) ? Pokemon::unownFormFromPID(outPid) : 0;
+                const uint8_t gen3Level = Pokemon::getLevelFromExp(rd32(destinationBytes, 0x24), Pokemon::getGrowthRate(national));
+                const Gen3Landing landing = gen3LandingFor(national, gen3Form, sourceVersion, sourceMetLevel, gen3Level);
+                metLocation = landing.metLocation;
+                metLevel = std::min(landing.metLevel, gen3Level);
+                version = landing.originVersion;
             }
             else
             {
@@ -1805,6 +2185,28 @@ namespace Conversion
             // IVs: keep bits 0-29 (IVs) + bit30 (isEgg); set bit31 = ability slot from the PK8 ability number.
             const uint8_t abilNum = rd8(sourceBytes, 0x16); // 1=slot1, 2=slot2, 4=hidden (-> slot1 in Gen 3)
             wr32(destinationBytes, 0x48, (pk8iv & 0x7FFFFFFFu) | ((abilNum == 2) ? 0x80000000u : 0u));
+
+            // WHAT A PK3 HAS ROOM FOR COMES BACK: the fateful-encounter bit (Gen 3's obedience flag,
+            // without which an event Mew or Deoxys disobeys), the four markings, and the ten ribbons
+            // that kept their own bit on the way out. The contest ranks were folded into a count and
+            // cannot be unfolded.
+            {
+                uint32_t gen3Ribbons = (rd8(sourceBytes, 0x22) & 0x01) ? GEN3_FATEFUL_RIBBON_BIT : 0u;
+                for (const Gen3CarriedRibbon &carriedRibbon : GEN3_CARRIED_RIBBONS)
+                {
+                    if ((rd8(sourceBytes, carriedRibbon.modernOffset) >> carriedRibbon.modernBit) & 1u)
+                        gen3Ribbons |= 1u << carriedRibbon.gen3Bit;
+                }
+                wr32(destinationBytes, 0x4C, gen3Ribbons);
+                const uint16_t markingValue = rd16(sourceBytes, 0x18);
+                uint8_t markings = 0;
+                for (int markingIndex = 0; markingIndex < 4; ++markingIndex)
+                {
+                    if ((markingValue >> (markingIndex * 2)) & 3u)
+                        markings = static_cast<uint8_t>(markings | (1u << markingIndex));
+                }
+                wr8(destinationBytes, 0x1B, swapGen3MarkingBits(markings));
+            }
             return destinationBytes;
         }
 
@@ -1842,6 +2244,14 @@ namespace Conversion
             destOriginVersion = Enums::getGroupRepVersion(destGroup);
 
         const GameVersion from = source.getGameGroup();
+
+        if (sharesEntityFormat(from, destGroup))
+        {
+            auto rewrapped = rewrapForSibling(source, destGroup);
+            if (!rewrapped)
+                result = Result::Unsupported;
+            return rewrapped;
+        }
 
         // Copy the source's decrypted bytes; every field at a shared offset (identity, IVs/EVs, moves,
         // nickname/OT/HT, ribbons/marks, dates, ...) carries verbatim. Then fix only the regions that
@@ -1885,10 +2295,9 @@ namespace Conversion
         }
         else if (isG7(layoutFrom) && isG7(destGroup))
         {
-            // Sun/Moon <-> Ultra Sun/Ultra Moon: the same PK7 byte for byte. Nothing to null --
-            // the two differ only in how far their dex, move and item spaces run, and the gate
-            // above already refused a species Sun/Moon has no entry for. The ball needs no pass
-            // either: both stop at Beast, so nothing a PK7 can hold is out of range in the other.
+            // A Poke Transporter result landing in Sun/Moon or Ultra Sun/Ultra Moon: it is already
+            // the PK7 both store. A real Sun/Moon <-> Ultra Sun/Ultra Moon move never gets here --
+            // one record format is a re-wrap, not a conversion (rewrapForSibling).
         }
         else if (isG9(layoutFrom) && isG9(destGroup))
         { // S/V <-> Z-A: drop the fields that diverge between PK9 and PA9. The ball is left alone --
@@ -2011,12 +2420,10 @@ namespace Conversion
             // games do and leaves the moveset alone; where none does, the pokemon is being rebuilt
             // and has to be rebuilt legally.
             //
-            // Gen 3's own two groups trade with each other freely, so that IS supported: an Emerald
-            // tutor move has to survive a move into a FireRed save even though FireRed's own pool is
-            // narrower, exactly as the cartridges behave.
-            const bool sameGenerationTrade = isGen3Group(from) && isGen3Group(destGroup);
+            // Gen 3's own two groups never get here: they trade freely, so a move between them is a
+            // re-wrap that keeps an Emerald tutor move in a FireRed save (rewrapForSibling).
             const bool rebuildingIntoGen3 = isVirtualConsole(from) && isGen3Group(destGroup) && g_autoLegalizeTransfers;
-            const bool transporterMoveset = (isVirtualConsole(from) && !rebuildingIntoGen3) || sameGenerationTrade;
+            const bool transporterMoveset = isVirtualConsole(from) && !rebuildingIntoGen3;
             auto moveSurvives = [&](uint16_t moveId)
             {
                 return transporterMoveset ? Names::isMovePresent(moveId, destGroup) : Pokemon::isLearnable(speciesId, formValue, destGroup, moveId);
@@ -2074,7 +2481,7 @@ namespace Conversion
         // HeldItems_LA are both empty), and every other game has its own item space where an id that
         // doesn't exist is meaningless. `out` is already in the destination's format, so its held-item id
         // is in that game's own space -- Gen 3 ids for FRLG, modern ids everywhere else.
-        if (out->heldItem() != 0 && !Names::isHeldItemPresent(out->heldItem(), destGroup))
+        if (out->heldItem() != 0 && !destinationHasHeldItem(out->heldItem(), destGroup))
             out->setHeldItem(0);
 
         // Fill the destination's (un-checksummed) battle-stat tail whenever this conversion created a fresh
@@ -2121,11 +2528,10 @@ namespace Conversion
         // THE RECEIVING PLAYER BECOMES THE HANDLER, whoever caught the Pokemon -- Transporter, Bank and
         // HOME all do this, and PKHeX reports a Pokemon from another game still in its original trainer's
         // hands as invalid. Carrying the source's handler state left a FireRed Pokemon in Violet with no
-        // handler at all. Sun/Moon <-> Ultra Sun/Ultra Moon is one record format, so a move between them
-        // is not a transfer and the record's own state stands. Last, so the Gen 6/7 Return/Frustration
-        // rule sees the moveset the Pokemon actually arrives with.
-        const bool sameRecordFormat = isG7(from) && isG7(destGroup);
-        if (receivingTrainer != nullptr && !sameRecordFormat)
+        // handler at all. Siblings sharing one record format never get here (rewrapForSibling), so the
+        // record's own state stands for them. Last, so the Gen 6/7 Return/Frustration rule sees the
+        // moveset the Pokemon actually arrives with.
+        if (receivingTrainer != nullptr)
         {
             const Pokemon::TradePartner receiver{receivingTrainer->name, receivingTrainer->gender, receivingTrainer->language};
             Pokemon::applyReceivingTrainer(*out, receiver);

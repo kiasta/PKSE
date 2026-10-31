@@ -751,6 +751,12 @@ const Pokemon::Pokemon* firstCarried() const;
 A null cell in `moveMon` is a **hole** — the source slot was empty, or it was locked and
 deliberately left behind.
 
+**A locked slot can be empty.** `storageSlotLocked(pane, box, slot)` is the one gate every storage
+action asks (grab, drop, multi-select, sort, Clone, Put Back, the creator), and it is true for a Let's
+Go party slot, a battle-team slot (`isBoxSlotLocked`) and a Gen 1/2 slot holding a kept entry PKSE
+cannot read (`isBoxSlotUnmapped`, chapter 06). That last one reads as null, so a check that only asks
+"is it empty?" would offer it as free and overfill the box's list. Ask the gate, not the pointer.
+
 ## Overlay precedence
 
 Both `update()` and `draw()` order overlays, and **the two orders must agree**: the thing drawn last

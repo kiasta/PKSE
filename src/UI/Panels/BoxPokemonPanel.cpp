@@ -4,6 +4,7 @@
 
 #include "UI/Panels/BoxPokemonPanel.h"
 #include "UI/Panels/CarriedSprite.h" // drawLiftedMon -- shared with the bank
+#include "UI/Panels/UnmappedSlot.h"
 #include "UI/TrainerViewScreen.h"
 #include "Trainer/OriginStamp.h" // originStampLabel -- the Origin row
 #include "UI/Common.h"
@@ -154,6 +155,8 @@ namespace UI
                     if (empty)
                     {
                         framebuffer.drawCircle(centerX, centerY, discR, Colors::Border, 1);
+                        if (!grabbed && screen.trainer.isBoxSlotUnmapped(static_cast<size_t>(screen.selectedBoxIndex), static_cast<size_t>(slotIndex)))
+                            drawUnmappedSlot(framebuffer, centerX, centerY, discR);
                     }
                     else
                     {
@@ -259,9 +262,12 @@ namespace UI
             framebuffer.drawRoundedRect(boxSummaryPanelX, boxSummaryPanelY, boxSummaryPanelWidth, boxSummaryPanelHeight, 16, Colors::Border, 1);
             if (!p)
             {
+                // A kept Gen 1/2 entry PKSE cannot read is named, but has nothing to summarise.
+                const bool unmappedSelected = screen.detailViewActive && screen.selectedItemIndex >= 0 && screen.trainer.isBoxSlotUnmapped(static_cast<size_t>(screen.selectedBoxIndex), static_cast<size_t>(screen.selectedItemIndex));
+                const char *summaryText = unmappedSelected ? UNMAPPED_SLOT_LABEL : "No Pokémon selected";
                 int textWidth, textHeight;
-                framebuffer.measureText("No Pokémon selected", textWidth, textHeight, TextStyle::Caption);
-                framebuffer.drawText(boxSummaryPanelX + (boxSummaryPanelWidth - textWidth) / 2, boxSummaryPanelY + boxSummaryPanelHeight / 2, "No Pokémon selected", Colors::TextDim, TextStyle::Caption);
+                framebuffer.measureText(summaryText, textWidth, textHeight, TextStyle::Caption);
+                framebuffer.drawText(boxSummaryPanelX + (boxSummaryPanelWidth - textWidth) / 2, boxSummaryPanelY + boxSummaryPanelHeight / 2, summaryText, Colors::TextDim, TextStyle::Caption);
                 return;
             }
 
@@ -279,7 +285,7 @@ namespace UI
             int summaryRowY = boxSummaryPanelY + headerH + 6 + renderSz + 4;
             // Name (Heading) + gender + shiny, centered. Variant forms read as "Alolan Raichu" etc.
             {
-                std::string display = Names::getDisplayName(p->speciesID(), p->form(), species);
+                std::string display = Names::getDisplayName(p->speciesID(), p->form(), species, p->getGameGroup());
                 int nameWidth, nH;
                 framebuffer.measureText(display, nameWidth, nH, TextStyle::Heading);
                 framebuffer.drawText(boxSummaryPanelX + (boxSummaryPanelWidth - nameWidth) / 2, summaryRowY, display, Colors::Text, TextStyle::Heading);
@@ -364,7 +370,7 @@ namespace UI
             };
             infoRow("Nature", getNatureName(p->nature()));
             infoRow("Ability", getAbilityName(p->ability()));
-            infoRow("Held Item", p->heldItem() ? std::string(Enums::isGen3Group(p->getGameGroup()) ? Names::getItemNameG3(p->heldItem()) : getItemName(p->heldItem())) : std::string("None"));
+            infoRow("Held Item", p->heldItem() ? std::string(Names::getItemNameFor(p->getGameGroup(), p->heldItem())) : std::string("None"));
             // ORIGIN STAMP. A box always belongs to the open save, so that save is the title
             // context a versionless PK1/PK2 borrows -- see UI::originStampLabel.
             {

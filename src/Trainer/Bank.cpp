@@ -737,10 +737,30 @@ namespace Trainer
             currentBox = (storedBox < BANK_BOX_COUNT) ? storedBox : 0;
         }
 
+        // A dropped record is gone from memory, and the next save writes the bank without it. Keep a
+        // copy of the file as it was read, so the record is not lost for good -- only the slot.
+        // If the copy cannot be written, refuse to save over the original instead.
+        if (loadRejects > 0)
+        {
+            logErrorToFile("Bank: dropped damaged slot records on load", std::to_string(loadRejects).c_str());
+            const std::string damagedPath = path + ".damaged";
+            FILE *damagedFile = fopen(damagedPath.c_str(), "wb");
+            const bool copied = damagedFile && fwrite(file, 1, fileSize, damagedFile) == fileSize;
+            const bool closed = damagedFile && fclose(damagedFile) == 0;
+            if (copied && closed)
+            {
+                logErrorToFile("Bank: original file preserved as bank.dat.damaged", damagedPath.c_str());
+                loadProblem = "Some Pokemon in the bank file were damaged and could not be loaded. The original file was kept as bank.dat.damaged.";
+            }
+            else
+            {
+                logErrorToFile("Bank: damaged bank file could NOT be preserved", damagedPath.c_str());
+                fileUntouchable = true;
+                loadProblem = "Some Pokemon in the bank file were damaged and could not be loaded, so the bank will not be saved over it.";
+            }
+        }
         delete[] file;
         savedImage = serialize(); // baseline snapshot of the just-loaded state
-        if (loadRejects > 0)
-            logErrorToFile("Bank: dropped damaged slot records on load", std::to_string(loadRejects).c_str());
         logInfoToFile("Bank: loaded unified bank", path.c_str());
     }
 
@@ -868,7 +888,8 @@ namespace Trainer
 
                 // Decoded exactly as load() decodes it, padding and all.
                 auto roundTripped = makePokemonImpl(gameVersion, depositedSpan(gameVersion, std::span<const std::byte>(reinterpret_cast<const std::byte *>(image.data() + recOff + 4), recordSizeForTagImpl(bankTag))));
-                if (!roundTripped)
+                // The same test load() applies, or a record could pass here and be dropped there.
+                if (!roundTripped || roundTripped->speciesID() == 0 || !roundTripped->isStructurallyValid())
                 {
                     ++failures;
                     continue;

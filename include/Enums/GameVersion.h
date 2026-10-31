@@ -55,8 +55,9 @@ namespace Enums
         // only ever WRITTEN, by the transfer path that sends a Gen 1 Pokemon forward. Nothing
         // reads one back out of a PK1; see Pokemon1RBY::originGame(), which reports absence.
         RD = 35, // Pokemon Red
-        GN = 36, // Pokemon Green (JP)
-        BU = 37, // Pokemon Blue  (JP; the international Blue is RD's pair and shares its id)
+        GN = 36, // Pokemon Blue (international) / Green (Japan) -- one id for both
+        BU = 37, // Pokemon Blue (Japan), a different game from the international Blue. PKSE also
+                 // uses BU as the "Blue" TITLE (self-test row and save folder; getGameVersionName)
         YW = 38, // Pokemon Yellow
 
         // Gen 2 (Game Boy Color, and the 3DS Virtual Console re-releases). Like a PK1, a PK2
@@ -323,6 +324,11 @@ namespace Enums
         // there is no version byte anywhere in the 32 KiB -- and Trainer1RBY::gameTitle() is the
         // place that makes that call for a loaded save. Without these the group answered
         // "Unknown", which reached the [EVENT] log's `fmt=` field and any UI that names a group.
+        //
+        // These are TITLE names, and a title name is also a folder name: the self test looks for a
+        // loose save in sdmc:/PKSE/tests/saves/<name>/. PKSE uses BU as the "Blue" title (the one
+        // Gen 1 Blue a user owns, whatever the region), so it stays plain "Blue". The PKHeX meaning
+        // of the version BYTES 36/37 (Blue INT / Green JP, and Blue JP) is getOriginGameName's job.
         case GameVersion::RD:
             return "Red";
         case GameVersion::GN:
@@ -476,17 +482,20 @@ namespace Enums
      * The games pick this from the Pokemon's ORIGIN generation, not from the save it currently
      * lives in -- so a FireRed Rattata sitting in Shining Pearl still shows its 16-bit TID while
      * a native BDSP pokemon beside it shows six digits. Mirrors PKHeX
-     * (GameDataCore.TrainerIDDisplayFormat: `Version.Generation >= 7 ? SixDigit : SixteenBit`).
+     * (TrainerIDExtensions.GetTrainerIDFormat: `pk.Generation >= 7 ? SixDigit : SixteenBit`).
      *
      * Takes a raw version byte rather than a GameVersion, because a banked pokemon can carry an origin
      * from a game PKSE does not itself support (a HOME-transferred Sun/Moon or Gen 4/5/6 pokemon), and
-     * those ids are absent from the enum above. Gen 7+ is versions 30-33 (SM/USUM) plus 42 and up
-     * (Let's Go, Gen 8, Gen 9). Note 35-41 are the Gen 1/2 Virtual Console games, which sit ABOVE
-     * the Gen 7 SM/USUM ids numerically but are of course 16-bit.
+     * those ids are absent from the enum above. PKM.Generation is 7 or more for SM/USUM (30-33),
+     * Pokemon GO (34: 7 or 8, by where it was sent) and Let's Go through Legends: Z-A (42-52).
+     * Everything else is 16-bit, including three ranges a plain `>= 42` got wrong: the Gen 1/2
+     * Virtual Console games (35-41) sit above SM/USUM numerically, the Switch FireRed/LeafGreen
+     * (56-57) are Gen 3, and PKM.Generation is 0 for Champions, Winds and Waves (53-55). A
+     * Gen 1/2 RECORD stores no version at all and is a single 16-bit id.
      */
     inline bool usesSixDigitTrainerID(uint8_t version)
     {
-        return (version >= 30 && version <= 33) || version >= 42;
+        return (version >= 30 && version <= 34) || (version >= 42 && version <= 52);
     }
 
     /**
@@ -558,7 +567,7 @@ namespace Enums
         case 35:
             return "Red";
         case 36:
-            return "Blue";
+            return "Blue (INT) / Green (JP)";
         case 37:
             return "Blue (JP)";
         case 38:
@@ -592,6 +601,15 @@ namespace Enums
             return "Legends Z-A";
         case 53:
             return "Champions";
+        case 54:
+            return "Winds";
+        case 55:
+            return "Waves";
+        // FireRed/LeafGreen on Nintendo Switch: the ids HOME writes for them (PKHeX FRX/LGX)
+        case 56:
+            return "FireRed (Switch)";
+        case 57:
+            return "LeafGreen (Switch)";
         default:
             return "Unknown";
         }
@@ -608,7 +626,8 @@ namespace Enums
             return 1; // Red / Green / Blue / Yellow
         // Gold / Silver / Crystal
         if (version >= 39 && version <= 41) return 2;
-        if ((version >= 1 && version <= 5) || version == 15)
+        // GBA, Colosseum/XD, and the Switch releases of FireRed/LeafGreen (PKHeX FRX/LGX: Gen3)
+        if ((version >= 1 && version <= 5) || version == 15 || version == 56 || version == 57)
             return 3;
         if (version == 7 || version == 8 || (version >= 10 && version <= 12) || version == 16)
             return 4;
@@ -620,7 +639,9 @@ namespace Enums
         if ((version >= 30 && version <= 34) || version == 42 || version == 43) return 7;
         if (version >= 44 && version <= 49)
             return 8;
-        if (version >= 50 && version <= 52)
+        // Scarlet/Violet, Legends: Z-A and Champions (PKHeX: CP is EntityContext.Gen9a). Winds
+        // and Waves (54-55) have no context in PKHeX yet, so they stay unknown.
+        if (version >= 50 && version <= 53)
             return 9;
         return 0;
     }

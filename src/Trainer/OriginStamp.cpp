@@ -48,6 +48,8 @@ namespace Trainer
         const uint8_t version = entity.originGame();
         if (version >= 35 && version <= 41)
             return OriginMark::GameBoy; // Red, Blue, Blue (JP), Yellow, Gold, Silver, Crystal
+        if (version == 56 || version == 57)
+            return OriginMark::GameBoyAdvance; // FireRed / LeafGreen (Switch)
         if (version == 34)
             return OriginMark::GO;
         if (version == 42 || version == 43)
@@ -67,8 +69,8 @@ namespace Trainer
         if (version == 52)
             return OriginMark::Gen9ZA; // Legends: Z-A
 
-        // Gen 3, Gen 4, Gen 5, the GameCube titles and anything newer than PKHeX's mark set. The
-        // games stamp nothing, so neither does PKSE -- the text label carries those.
+        // Gen 3 cartridges, Gen 4, Gen 5, the GameCube titles and anything newer than PKHeX's mark
+        // set. The games stamp nothing, so neither does PKSE -- the text label carries those.
         return OriginMark::None;
     }
 
@@ -86,6 +88,7 @@ namespace Trainer
         case OriginMark::Gen9Paldea:   return "sv";
         case OriginMark::Gen9ZA:       return "za";
         case OriginMark::GO:           return "go";
+        case OriginMark::GameBoyAdvance: return "gba";
         default:                       return nullptr;
         }
     }

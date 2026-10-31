@@ -112,6 +112,19 @@ pk->refreshChecksum();
 Stat-affecting means: IVs, EVs, AVs, level, EXP, nature, stat-nature, species, form, hyper-training
 flags. Anything that feeds the stat formula. (AVs are Let's Go-only; the default virtuals return 0.)
 
+**Gens 4–7 (outside Let's Go) also keep the checksum fresh inside every setter.** Their `wr8` /
+`wr16` / `wr32` helpers recompute it whenever a write lands inside the checksummed range (0x08 to the
+stored size). The checksum itself (0x06) and the party tail are outside that range, so this does not
+recurse. An edit path that forgot `refreshChecksum()` once left every edited Gen 4–7 Pokémon reading
+as a Bad Egg, and the bank dropped it on the next launch. Keep calling `recalculateStats()` and
+`refreshChecksum()` anyway: the other formats still need it. `SuiteSetters` checks the checksum after
+every probe write in those formats.
+
+**The nature rule is one function.** `Pokemon::natureStatPercent(nature, statIndex)` computes 90, 100
+or 110 (raised stat = nature / 5, lowered = nature % 5, in the order Attack, Defense, Speed, Sp. Atk,
+Sp. Def). Do not add a per-class nature table: one such copy had Docile lowering Speed.
+**Shedinja's HP is always 1** (`Pokemon::hitPointsForBase`, base HP 1), in every generation from 3 on.
+
 `recalculateStats()` for a Gen 3+ mainline format is the standard formula:
 
 ```
@@ -465,8 +478,15 @@ in `Pokemon3FRLG::rerollPID`, which also holds an Unown's letter. Gens 4 and 5 c
 stored gender to match the new PID. Gens 6 and 7 use the same function to keep shininess. Each setter
 then pins the one thing it is changing:
 
-- `setShiny` pins shininess. `setNature` (Gen 4) pins the nature. `setGender` (Gens 4 and 5) pins the
-  gender, and only rebuilds the PID when the current one gives the other gender.
+- `setShiny` pins shininess. `setNature` (Gen 4, and Gens 5–7 for a Pokémon from Gens 3–4) pins the
+  nature. `setGender` (Gens 4 and 5) pins the gender, and only rebuilds the PID when the current one
+  gives the other gender.
+- `setAbilityNumber` (Gens 4 and 5) pins the PID's ability bit and writes that slot's ability id, as
+  PKHeX's `RefreshAbility` does. In Gen 5, slot 4 sets the hidden-ability flag (0x42 bit 0).
+- In Gens 6 and 7, `setShiny` and `setNature` on a Pokémon from Gens 3–5 rebuild the PID and set the
+  encryption constant to the same value (PKHeX `PKM.SetShiny`).
+- Every reroll also holds which line a Wurmple evolves into (`(PID >> 16) % 10 / 5`, PKHeX
+  `WurmpleUtil`). In Gen 5 it also holds the PID/ID correlation bit when the current PID has it.
 - `regeneratePID` is a touch-up that was asked to change nothing a user can see, so it holds all of
   them. A Gen 6/7 Pokémon from Gens 3–5 keeps its PID: its encryption constant *is* that PID.
 
@@ -481,6 +501,31 @@ contradicted its stored gender.
 "to maintain legality". A new PID cannot restore a PID–IV link the edit broke, and in Gens 4–7 the
 random replacement turned every shiny Pokémon plain on its first IV edit. An IV or EV edit now changes
 that IV or EV and nothing else.
+
+## Fields one setter keeps in step with another
+
+Some fields are derived from another one, by the game or by PKHeX's checks. The setter of the source
+field writes the derived one too, so no caller has to know:
+
+- **Gen 1 `setExp`** writes both level bytes (the box record's and the party record's), as PKHeX's
+  `PK1.Stat_Level` does.
+- **Gen 2 names** always end in one 0x50, even in a zero-padded field: the Game Boy's text printer
+  does not stop at 0x00.
+- **Gen 3 `refreshChecksum`** clears the Bad Egg flag (0x13 bit 0), `setSpecies` sets or clears the
+  has-species flag (bit 1), and clearing the egg flag on the placeholder egg restores the species
+  name and the save's language.
+- **Gen 4 `setBall`** splits the ball between 0x83 and 0x86 as PKHeX's `G4PKM.Ball` does (see
+  `docs/integration/GEN4.md` §5.5).
+- **Gens 4–7 names** store the half-width ♂/♀ codes when the text is half-width (PKHeX's
+  `StringConverter4/5/6` `UnNormalizeGenderSymbol`) and read them back as ♂/♀.
+- **Gens 6 and 7 `friendship()`** is the current handler's: 0xCA while the OT holds the Pokémon,
+  0xA2 after a trade (PKHeX `G6PKM.CurrentFriendship`), as in Gen 8.
+- **Let's Go `setSpecies`/`setForm`** recompute the stored height and weight floats through
+  `Pokemon7LGPE::heightAbsoluteFor` / `weightAbsoluteFor`. Those floats are compared bit for bit, so
+  the build passes `-ffp-contract=off` (no fused multiply-add) and the ratios are unfused.
+- **Scarlet/Violet and Z-A `setMetLevel`** keep the obedience level (0x11F) equal to the met level
+  while the Pokémon is untraded, and at least the met level after a trade.
+- **Z-A `setMove(slot, 0)`** gives the empty slot 35 PP and no PP Ups (PKHeX `PA9.FixMoves`).
 
 ## The full virtual surface, grouped
 
@@ -607,6 +652,21 @@ Blue's Charizard's Defense — which a later write-back then blamed on the save 
 - **A box record is 33 bytes, a party record 44.** The missing 11 are level + the five battle stats,
   which the game recomputes when a Pokemon leaves the PC — so box mons are grown to party size and
   recalculated on load.
+- **A counted list entry PKSE cannot read is kept, and it still takes a slot.** Gen 1 and Gen 2
+  (`Trainer2GSC` too) store the party and every box as a *counted* list, and the games and PKHeX's
+  PokeList1/PokeList2 keep every counted entry whatever it holds — MissingNo., a Gen 2 species past
+  251 that is not the egg marker. PKSE reads such an entry as a null slot and carries it as an
+  `UnmappedListEntry` (raw bytes, written back verbatim at its position by `orderListEntries`).
+  Null is not free: the entry is written back there, so it counts toward the list's capacity.
+  `isBoxSlotUnmapped(box, slot)` names a box slot that holds one, and `getUnmappedPartySlots()` the
+  party slots (party slot N is not `party[N]` once one precedes it: use `partyIndexAtSlot`). The UI
+  locks those box slots through `storageSlotLocked` and draws them as a "?" placeholder labelled
+  "Unknown species"; the Party view shows the entry in its own slot. When a slot read as empty, a
+  Pokemon dropped on it overfilled the list and the last entry was cut on save.
+  `orderListEntries` still keeps what fits and logs an error if a caller hands it more, and Gen 2's
+  `compactStorage()` leaves an overfull box unpacked rather than drop anything. Gen 1 has no
+  `compactStorage()`: its view keeps holes, and the write packs them (kept entries included) as
+  the game's list requires.
 
 **The save layer is verified by round-tripping real saves, not by inspection.** Load a `.sav`,
 write it back unedited, diff: an editor that cannot reproduce a file it did not change will corrupt

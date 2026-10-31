@@ -14,8 +14,9 @@ why it has to be copied rather than computed. PKHeX keeps it as two parallel arr
 PokedexConstants8a (FormStorageIndexIds -> FormStorageIndexValues), sorted so the key can be found by
 binary search; that is reproduced verbatim here.
 
-PokemonInfoIds / PokemonInfoGenders come along too: the gender flag decides whether an entry tracks
-male and female separately, which the "selected variant" logic needs.
+PokemonInfoIds / PokemonInfoGenders come along too: bit 3 of the gender byte marks an entry whose
+two genders are ONE record (PKHeX counts it once for either gender), which the "selected variant"
+logic needs (PKHeX PokedexSave8a.SetSelectedGenderForm).
 
 The size research tasks ("catch a large / small / heavy / light one") come from researchtask_la.pkl:
 one list of 0x28-byte task records per Hisui dex entry, reached from a species through personal_la's
@@ -179,9 +180,10 @@ namespace Pokemon {
     /// Statistics-entry index for a (species, form), or DEX8LA_NO_STAT_ENTRY when it has none.
     uint16_t getStatisticsIndex8LA(uint16_t species, uint8_t form) noexcept;
 
-    /// True when the dex tracks this species+form's genders SEPARATELY (PokemonInfoGenders bit 3).
-    /// Where false, the male and female slots are one shared record.
-    bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept;
+    /// True when this species+form's male and female are ONE dex record (PokemonInfoGenders bit 3;
+    /// PKHeX counts such an entry once for either gender). PKHeX's SetSelectedGenderForm then picks
+    /// the displayed gender from the obtained flags rather than from the Pokemon alone.
+    bool sharesGenderRecord8LA(uint16_t species, uint8_t form) noexcept;
 
     /// The four size research tasks. Large and small compare HeightAbsolute with the threshold;
     /// heavy and light compare WeightAbsolute with the threshold in tenths.
@@ -216,7 +218,7 @@ namespace Pokemon {
 %s        };
         constexpr int STORAGE_COUNT = static_cast<int>(sizeof(STORAGE_KEYS) / sizeof(STORAGE_KEYS[0]));
 
-        // Sorted keys again, with the per-entry gender byte. Bit 3 = the two genders are tracked apart.
+        // Sorted keys again, with the per-entry gender byte. Bit 3 = the two genders are one record.
         constexpr uint16_t INFO_KEYS[] = {
 %s        };
         constexpr uint8_t INFO_GENDERS[] = {
@@ -256,7 +258,7 @@ namespace Pokemon {
         return (i < 0) ? DEX8LA_NO_STAT_ENTRY : STORAGE_VALUES[i];
     }
 
-    bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept {
+    bool sharesGenderRecord8LA(uint16_t species, uint8_t form) noexcept {
         if (species == 0 || species > DEX8LA_MAX_SPECIES || form >= DEX8LA_MAX_FORM) return false;
         const int i = findKey(INFO_KEYS, INFO_COUNT, packKey(species, form));
         return (i >= 0) && (INFO_GENDERS[i] & 0x08) != 0;

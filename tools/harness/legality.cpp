@@ -525,8 +525,10 @@ namespace
             {
                 continue;
             }
-            // The catch-combo flag only widens the level band, which a pose at levelMin never reaches.
-            if (row.location >= 0xFFF0 || (row.flags & ~Legality::ENCOUNTER_FLAG_CATCH_COMBO) != 0)
+            // The catch-combo, Flute and DexNav flags only widen the level band, which a pose at
+            // levelMin is inside either way.
+            constexpr uint8_t levelWideningFlags = Legality::ENCOUNTER_FLAG_CATCH_COMBO | Legality::ENCOUNTER_FLAG_FLUTE | Legality::ENCOUNTER_FLAG_DEXNAV;
+            if (row.location >= 0xFFF0 || (row.flags & ~levelWideningFlags) != 0)
             {
                 continue;
             }
@@ -913,7 +915,9 @@ namespace
             {
                 continue;
             }
-            if (row.location >= 0xFFF0 || (row.flags & ~Legality::ENCOUNTER_FLAG_CATCH_COMBO) != 0 || row.form != 0)
+            // A level-widening flag cannot rescue this pose: it is met at levelMin, inside the band.
+            constexpr uint8_t levelWideningFlags = Legality::ENCOUNTER_FLAG_CATCH_COMBO | Legality::ENCOUNTER_FLAG_FLUTE | Legality::ENCOUNTER_FLAG_DEXNAV;
+            if (row.location >= 0xFFF0 || (row.flags & ~levelWideningFlags) != 0 || row.form != 0)
             {
                 continue;
             }

@@ -39,7 +39,7 @@ OUT_DIR = os.path.join(
 )
 
 # Stored as <name>.png; upstream calls the file gen_<name>.png.
-MARK_NAMES = ["vc", "6", "7", "8", "gg", "bs", "la", "sv", "za", "go"]
+MARK_NAMES = ["vc", "6", "7", "8", "gg", "bs", "la", "sv", "za", "go", "gba"]
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 

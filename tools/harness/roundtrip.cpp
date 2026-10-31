@@ -35,6 +35,11 @@ static std::string g_saveRoot;
 #include "Trainer/Trainer7LGPE.h"
 #include "Trainer/Trainer8SWSH.h"
 #include "Trainer/Trainer8LA.h"
+#include "Trainer/Trainer8BDSP.h"
+#include "Pokemon/DexTable8SWSH.h"
+#include "Pokemon/SpeciesConverter9.h"
+#include "Trainer/Inventory9LZA.h"
+#include "Trainer/Inventory8BDSP.h"
 #include "Pokemon/DexTable8LA.h"
 #include "Trainer/Trainer9SV.h"
 #include "Trainer/Trainer9LZA.h"
@@ -440,11 +445,8 @@ namespace
 
         // Then each writer alone, re-parsing from scratch each time so they can't contaminate each
         // other. A writer that changes bytes here is rewriting a block it was given nothing to change.
-        // updateBoxBlock deliberately normalises EMPTY slots: it stamps one canonical encrypted blank
-        // over every unoccupied slot, because a slot holding leftover bytes that decrypt to species 0
-        // re-encrypts into a Bad Egg (the ghost-slot fix). The game reads those slots as empty
-        // either way, so the rewrite is intended rather than a defect.
-        static constexpr const char *emptySlotsNote = "empty box slots normalised to a canonical blank";
+        // updateBoxBlock writes only the slots that changed: an unchanged record and an empty slot
+        // that already holds a game blank are left alone, so no step here may diverge.
         const struct
         {
             const char *label;
@@ -453,9 +455,9 @@ namespace
         } steps[] = {
             {"party", WriteParty, nullptr},
             {"items", WriteItems, nullptr},
-            {"boxes", WriteBoxes, emptySlotsNote},
+            {"boxes", WriteBoxes, nullptr},
             {"box names", WriteBoxNames, nullptr},
-            {"all", WriteAll, emptySlotsNote},
+            {"all", WriteAll, nullptr},
         };
         for (const auto &step : steps)
         {
@@ -1020,6 +1022,836 @@ void roundTripLGPE(const char *label, const std::string &savePath)
     }
 }
 
+/// A Boxes-view Move into an empty slot (swapBoxSlots, then a save) must change exactly the two
+/// slots involved. The source is chosen to precede every empty slot, because that is the order in
+/// which a writer that harvests "the first empty slot's bytes" as its blank picks up the moved
+/// Pokemon's record -- and then stamps a clone of it into every empty slot of every box.
+template <typename TrainerT>
+void moveIntoEmptySlotTouchesTwoSlots(const char *label, const std::string &savePath, size_t boxBlockKey, size_t slotStride)
+{
+    const std::string checkLabel = std::string(label) + " [box move]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    TrainerT trainer(Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size()));
+    const size_t slotCount = trainer.boxes.size() * Trainer::BOX_SLOTS;
+    auto slotIsEmpty = [&](size_t flatIndex)
+    {
+        const auto &pokemon = trainer.boxes[flatIndex / Trainer::BOX_SLOTS][flatIndex % Trainer::BOX_SLOTS];
+        return !pokemon || pokemon->speciesID() == 0;
+    };
+    size_t firstEmptyIndex = slotCount;
+    size_t lastEmptyIndex = slotCount;
+    for (size_t flatIndex = 0; flatIndex < slotCount; ++flatIndex)
+    {
+        if (!slotIsEmpty(flatIndex))
+        {
+            continue;
+        }
+        if (firstEmptyIndex == slotCount)
+        {
+            firstEmptyIndex = flatIndex;
+        }
+        lastEmptyIndex = flatIndex;
+    }
+    // Ahead of every empty slot when the save has such a slot; otherwise the first occupied one.
+    size_t sourceIndex = slotCount;
+    for (size_t flatIndex = 0; flatIndex < slotCount; ++flatIndex)
+    {
+        if (!slotIsEmpty(flatIndex))
+        {
+            sourceIndex = flatIndex;
+            break;
+        }
+    }
+    if (sourceIndex > firstEmptyIndex)
+    {
+        std::printf("        %s: no occupied slot precedes the first empty one; moving slot %zu\n", label, sourceIndex);
+    }
+    if (sourceIndex == slotCount || lastEmptyIndex == slotCount || lastEmptyIndex <= sourceIndex)
+    {
+        std::printf("  FAIL  %-22s the save has no occupied slot ahead of an empty one to move\n", checkLabel.c_str());
+        ++g_failCount;
+        return;
+    }
+    auto boxBlockBytes = [&](const TrainerT &owner)
+    {
+        for (const auto &block : owner.getBlocks())
+        {
+            if (block.key == boxBlockKey)
+            {
+                return block.data;
+            }
+        }
+        return std::vector<uint8_t>();
+    };
+    const std::vector<uint8_t> blockBefore = boxBlockBytes(trainer);
+    const auto &moved = trainer.boxes[sourceIndex / Trainer::BOX_SLOTS][sourceIndex % Trainer::BOX_SLOTS];
+    const std::vector<std::byte> movedBytes(moved->getData().begin(), moved->getData().end());
+
+    trainer.swapBoxSlots(sourceIndex / Trainer::BOX_SLOTS, sourceIndex % Trainer::BOX_SLOTS, lastEmptyIndex / Trainer::BOX_SLOTS, lastEmptyIndex % Trainer::BOX_SLOTS);
+    trainer.updateBoxBlock();
+    const std::vector<uint8_t> blockAfter = boxBlockBytes(trainer);
+
+    size_t strayByteCount = 0;
+    size_t straySlotCount = 0;
+    for (size_t flatIndex = 0; flatIndex < slotCount; ++flatIndex)
+    {
+        if (flatIndex == sourceIndex || flatIndex == lastEmptyIndex)
+        {
+            continue;
+        }
+        const size_t slotOffset = flatIndex * slotStride;
+        size_t slotDiffCount = 0;
+        for (size_t byteIndex = 0; byteIndex < slotStride && slotOffset + byteIndex < blockBefore.size(); ++byteIndex)
+        {
+            slotDiffCount += blockBefore[slotOffset + byteIndex] != blockAfter[slotOffset + byteIndex];
+        }
+        strayByteCount += slotDiffCount;
+        straySlotCount += slotDiffCount != 0;
+    }
+
+    std::vector<uint8_t> written = Encryption::encrypt(trainer.getBlocks());
+    TrainerT reloaded(Encryption::decrypt(written.data(), written.size()));
+    const auto &sourceAfter = reloaded.boxes[sourceIndex / Trainer::BOX_SLOTS][sourceIndex % Trainer::BOX_SLOTS];
+    const auto &destinationAfter = reloaded.boxes[lastEmptyIndex / Trainer::BOX_SLOTS][lastEmptyIndex % Trainer::BOX_SLOTS];
+    const bool sourceNowEmpty = !sourceAfter || sourceAfter->speciesID() == 0;
+    const bool destinationHoldsMoved = destinationAfter && destinationAfter->getDataSize() >= movedBytes.size() && std::memcmp(destinationAfter->getData().data(), movedBytes.data(), movedBytes.size()) == 0;
+
+    if (strayByteCount == 0 && sourceNowEmpty && destinationHoldsMoved)
+    {
+        std::printf("  PASS  %-22s slot %zu -> %zu, no other slot changed\n", checkLabel.c_str(), sourceIndex, lastEmptyIndex);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s slot %zu -> %zu: %zu other slot(s) changed (%zu bytes), source empty=%d, destination holds it=%d\n", checkLabel.c_str(), sourceIndex, lastEmptyIndex, straySlotCount, strayByteCount, sourceNowEmpty, destinationHoldsMoved);
+    ++g_failCount;
+}
+
+/// Legends: Z-A: (1) a held item never keeps IsNewNotify (flags bit 2, "never held": PKHeX
+/// InventoryPouch9a.EnsureFlagsConsistent clears it whenever the count is non-zero), so a first
+/// acquisition does not leave the game's first-pickup flyout armed; the bit is planted on the first
+/// held item before parsing. (2) Latin American Spanish (language 11) is dex language bit 9 (PKHeX
+/// PokeDexEntry9a.GetDexLangFlag); it used to be dropped. A clone of the first boxed Pokemon,
+/// relabelled language 11, is dropped into an empty slot.
+void itemAndDexLanguageFlagsLZA(const std::string &savePath)
+{
+    const char *checkLabel = "Legends Z-A [new flags]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel, SaveTree::missing(g_saveRoot, "Legends Z-A").c_str());
+        return;
+    }
+    std::vector<Save::Block> blocks = Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size());
+    size_t plantedItemOffset = 0;
+    for (auto &block : blocks)
+    {
+        if (block.key != Trainer::ITEM9_LZA)
+        {
+            continue;
+        }
+        for (size_t itemOffset = Trainer::ITEM_SIZE9_LZA; itemOffset + Trainer::ITEM_SIZE9_LZA <= block.data.size() && plantedItemOffset == 0; itemOffset += Trainer::ITEM_SIZE9_LZA)
+        {
+            if (Utils::readUInt32LittleEndian(&block.data[itemOffset + 4]) == 0)
+            {
+                continue;
+            }
+            block.data[itemOffset + 8] |= 0x04;
+            plantedItemOffset = itemOffset;
+        }
+    }
+    Trainer::Trainer9LZA trainer(std::move(blocks));
+    const Pokemon::Pokemon *sourcePokemon = nullptr;
+    std::unique_ptr<Pokemon::Pokemon> *emptySlot = nullptr;
+    for (auto &box : trainer.boxes)
+    {
+        for (auto &slotPokemon : box)
+        {
+            if (!slotPokemon || slotPokemon->speciesID() == 0)
+            {
+                if (!emptySlot)
+                {
+                    emptySlot = &slotPokemon;
+                }
+            }
+            else if (!sourcePokemon)
+            {
+                sourcePokemon = slotPokemon.get();
+            }
+        }
+    }
+    if (plantedItemOffset == 0 || !sourcePokemon || !emptySlot)
+    {
+        std::printf("  SKIP  %-22s no held item, boxed Pokemon or empty slot\n", checkLabel);
+        return;
+    }
+    const uint16_t species = sourcePokemon->speciesID();
+    auto relabelled = sourcePokemon->clone();
+    relabelled->setLanguage(11);
+    *emptySlot = std::move(relabelled);
+    trainer.updateItemBlock();
+    trainer.updatePokedexBlock();
+    bool notifyCleared = false;
+    bool spanishLatinRecorded = false;
+    const size_t dexOffset = static_cast<size_t>(Pokemon::gen9NationalToInternal(species)) * 0x84;
+    for (const auto &block : trainer.getBlocks())
+    {
+        if (block.key == Trainer::ITEM9_LZA)
+        {
+            notifyCleared = (block.data[plantedItemOffset + 8] & 0x04) == 0;
+        }
+        if (block.key == Trainer::POKEDEX9_LZA && dexOffset + 0x0A <= block.data.size())
+        {
+            spanishLatinRecorded = (Utils::readUInt16LittleEndian(&block.data[dexOffset + 0x08]) & (1u << 9)) != 0;
+        }
+    }
+    if (notifyCleared && spanishLatinRecorded)
+    {
+        std::printf("  PASS  %-22s IsNewNotify cleared on a held item; language 11 is dex bit 9\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s IsNewNotify cleared=%d, language 11 recorded=%d\n", checkLabel, notifyCleared, spanishLatinRecorded);
+    ++g_failCount;
+}
+
+/// Legends: Z-A slot footers. PKHeX sets the first gap byte of every box slot it writes to 1 on a
+/// Mega Dimension (revision != 0) save, and leaves the rest of the gap as the game wrote it. The only
+/// Z-A test save is a 1.0 save, so the revision is raised in the decrypted blocks before parsing.
+void slotFooterFollowsRevisionLZA(const std::string &savePath)
+{
+    const char *checkLabel = "Legends Z-A [slot footer]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel, SaveTree::missing(g_saveRoot, "Legends Z-A").c_str());
+        return;
+    }
+    std::vector<Save::Block> blocks = Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size());
+    for (auto &block : blocks)
+    {
+        if (block.key == Trainer::SAVE_REVISION9_LZA && !block.data.empty())
+        {
+            block.data[0] = 1;
+        }
+    }
+    Trainer::Trainer9LZA trainer(std::move(blocks));
+    size_t sourceIndex = 0;
+    size_t destinationIndex = 0;
+    const size_t slotCount = trainer.boxes.size() * Trainer::BOX_SLOTS;
+    for (size_t flatIndex = 0; flatIndex < slotCount; ++flatIndex)
+    {
+        const auto &pokemon = trainer.boxes[flatIndex / Trainer::BOX_SLOTS][flatIndex % Trainer::BOX_SLOTS];
+        const bool slotEmpty = !pokemon || pokemon->speciesID() == 0;
+        if (!slotEmpty && sourceIndex == 0 && destinationIndex == 0)
+        {
+            sourceIndex = flatIndex + 1;
+        }
+        if (slotEmpty)
+        {
+            destinationIndex = flatIndex + 1;
+        }
+    }
+    if (sourceIndex == 0 || destinationIndex == 0)
+    {
+        std::printf("  FAIL  %-22s no occupied and empty slot to move between\n", checkLabel);
+        ++g_failCount;
+        return;
+    }
+    --sourceIndex;
+    --destinationIndex;
+    std::vector<uint8_t> blockBefore;
+    for (const auto &block : trainer.getBlocks())
+    {
+        if (block.key == Trainer::BOX9_LZA)
+        {
+            blockBefore = block.data;
+        }
+    }
+    trainer.swapBoxSlots(sourceIndex / Trainer::BOX_SLOTS, sourceIndex % Trainer::BOX_SLOTS, destinationIndex / Trainer::BOX_SLOTS, destinationIndex % Trainer::BOX_SLOTS);
+    trainer.updateBoxBlock();
+    std::vector<uint8_t> blockAfter;
+    for (const auto &block : trainer.getBlocks())
+    {
+        if (block.key == Trainer::BOX9_LZA)
+        {
+            blockAfter = block.data;
+        }
+    }
+    size_t wrongByteCount = 0;
+    for (const size_t flatIndex : { sourceIndex, destinationIndex })
+    {
+        const size_t slotOffset = flatIndex * Encryption::BOX_SLOT_SIZE9_LZA;
+        wrongByteCount += blockAfter[slotOffset + Encryption::PRESENT_FLAG_OFFSET9_LZA] != 1;
+        for (size_t gapIndex = Encryption::PRESENT_FLAG_OFFSET9_LZA + 1; gapIndex < Encryption::BOX_SLOT_SIZE9_LZA; ++gapIndex)
+        {
+            wrongByteCount += blockAfter[slotOffset + gapIndex] != blockBefore[slotOffset + gapIndex];
+        }
+    }
+    if (wrongByteCount == 0)
+    {
+        std::printf("  PASS  %-22s present flag set, rest of the gap kept, in both written slots\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s %zu footer byte(s) wrong in the two written slots\n", checkLabel, wrongByteCount);
+    ++g_failCount;
+}
+
+/// A SwishCrypto save is loaded only when it is whole: longer than its hash, hash valid, and parsed to
+/// the last byte (PKHeX checks the size and SwishCrypto.GetIsHashValid before parsing anything). A
+/// missing `main` used to wrap the length and abort; a truncated one loaded a prefix that Save then
+/// re-emitted, short, under a fresh valid hash.
+void refusesDamagedSwishSave(const char *label, const std::string &savePath)
+{
+    const std::string checkLabel = std::string(label) + " [damaged]";
+    std::vector<uint8_t> whole = readFile(savePath);
+    if (whole.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    size_t acceptedCount = 0;
+    std::vector<uint8_t> hashOnly(whole.end() - SIZE_HASH_IN_BYTES, whole.end());
+    std::vector<uint8_t> truncated(whole.begin(), whole.begin() + whole.size() / 2);
+    std::vector<uint8_t> flipped = whole;
+    flipped[flipped.size() / 3] ^= 0x01;
+    acceptedCount += !Encryption::decrypt(nullptr, 0).empty();
+    acceptedCount += !Encryption::decrypt(hashOnly.data(), hashOnly.size()).empty();
+    acceptedCount += !Encryption::decrypt(truncated.data(), truncated.size()).empty();
+    acceptedCount += !Encryption::decrypt(flipped.data(), flipped.size()).empty();
+    const bool emptyTrainerInvalid = !Trainer::Trainer8SWSH(std::vector<Save::Block>()).isValid();
+    const bool wholeAccepted = !Encryption::decrypt(whole.data(), whole.size()).empty();
+    if (acceptedCount == 0 && emptyTrainerInvalid && wholeAccepted)
+    {
+        std::printf("  PASS  %-22s empty, hash-only, truncated and bit-flipped files refused; whole file loads\n", checkLabel.c_str());
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s %zu damaged file(s) accepted, empty trainer invalid=%d, whole file loads=%d\n", checkLabel.c_str(), acceptedCount, emptyTrainerInvalid, wholeAccepted);
+    ++g_failCount;
+}
+
+/// Battle teams (PKHeX TeamIndexes8 / BoxLayout8b): six teams of six (box << 8) | slot pointers, and
+/// PKHeX treats every member as overwrite-protected. PKSE read none of them. A pointer to box 3
+/// slot 6 is planted in the first team place; the save's own team members are counted for the log.
+template <typename TrainerT>
+void battleTeamSlotsLocked(const char *label, const std::string &savePath, size_t teamIndexesKey)
+{
+    const std::string checkLabel = std::string(label) + " [team locks]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    std::vector<Save::Block> blocks = Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size());
+    bool planted = false;
+    for (auto &block : blocks)
+    {
+        if (block.key != teamIndexesKey || block.data.size() < 2)
+        {
+            continue;
+        }
+        block.data[0] = 5;
+        block.data[1] = 2;
+        planted = true;
+    }
+    TrainerT trainer(std::move(blocks));
+    const bool locked = planted && trainer.isBoxSlotLocked(2, 5) && !trainer.isBoxSlotLocked(2, 6) && !trainer.isBoxSlotLocked(5, 2);
+    std::printf("  %s  %-22s %s\n", locked ? "PASS" : "FAIL", checkLabel.c_str(), locked ? "a battle-team slot is locked, its neighbours are not" : (planted ? "the planted team slot is not reported locked" : "the save has no team-index block"));
+    ++(locked ? g_passCount : g_failCount);
+}
+
+void battleTeamSlotsLockedBDSP(const std::string &savePath)
+{
+    const char *checkLabel = "Shining Pearl [team locks]";
+    std::vector<uint8_t> image = readFile(savePath);
+    if (image.size() < Trainer::BDSP_TEAM_POSITION_OFFSET + 2)
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel, SaveTree::missing(g_saveRoot, "Shining Pearl").c_str());
+        return;
+    }
+    image[Trainer::BDSP_TEAM_POSITION_OFFSET] = 5;
+    image[Trainer::BDSP_TEAM_POSITION_OFFSET + 1] = 2;
+    Trainer::Trainer8BDSP trainer(std::move(image));
+    const bool locked = trainer.isBoxSlotLocked(2, 5) && !trainer.isBoxSlotLocked(2, 6) && !trainer.isBoxSlotLocked(5, 2);
+    std::printf("  %s  %-22s %s\n", locked ? "PASS" : "FAIL", checkLabel, locked ? "a battle-team slot is locked, its neighbours are not" : "the planted team slot is not reported locked");
+    ++(locked ? g_passCount : g_failCount);
+}
+
+/// Brilliant Diamond/Shining Pearl bag: an item is in the bag exactly when its sort order (u16 at
+/// record +0xC) is non-zero, and "new" is seen == 0 at +0x4 (PKHeX InventoryItem8b). PKSE used to
+/// read presence from the count and wrote seen = 1 for a new item -- so an added item had no sort
+/// order (the game never lists it), and a removed one stayed in the bag.
+void bagFollowsSortOrderBDSP(const std::string &savePath)
+{
+    const char *checkLabel = "Shining Pearl [bag]";
+    std::vector<uint8_t> image = readFile(savePath);
+    if (image.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel, SaveTree::missing(g_saveRoot, "Shining Pearl").c_str());
+        return;
+    }
+    Trainer::Trainer8BDSP trainer(image);
+    if (!trainer.isValid() || trainer.items.empty() || trainer.items[0].size() < 2)
+    {
+        std::printf("  FAIL  %-22s the save did not load, or its Items pouch holds fewer than two items\n", checkLabel);
+        ++g_failCount;
+        return;
+    }
+    auto recordOf = [](const std::vector<uint8_t> &saveBytes, uint16_t itemId) { return &saveBytes[Trainer::BDSP_ITEM_BASE + static_cast<size_t>(itemId) * Trainer::ITEM_ENTRY_SIZE8BDSP]; };
+    trainer.updateItemBlock();
+    const bool uneditedKept = trainer.getSaveData() == image;
+
+    const auto &itemIds = Trainer::getValidItemIds8BDSP(static_cast<Trainer::PouchType8BDSP>(0));
+    uint16_t addedItemId = 0;
+    uint16_t highestSortOrder = 0;
+    for (uint16_t itemId : itemIds)
+    {
+        const uint16_t sortOrder = Utils::readUInt16LittleEndian(recordOf(image, itemId) + 0xC);
+        highestSortOrder = std::max(highestSortOrder, sortOrder);
+        if (sortOrder == 0 && addedItemId == 0)
+        {
+            addedItemId = itemId;
+        }
+    }
+    const uint16_t removedItemId = trainer.items[0].front().itemId;
+    trainer.items[0].erase(trainer.items[0].begin());
+    trainer.items[0].push_back(Trainer::InventoryItem{ addedItemId, 3, true, false });
+    trainer.updateItemBlock();
+    const uint8_t *added = recordOf(trainer.getSaveData(), addedItemId);
+    const bool addedListed = addedItemId != 0 && Utils::readUInt32LittleEndian(added) == 3 && Utils::readUInt32LittleEndian(added + 4) == 0 && Utils::readUInt16LittleEndian(added + 0xC) == highestSortOrder + 1;
+    const uint8_t *removed = recordOf(trainer.getSaveData(), removedItemId);
+    const bool removedCleared = std::all_of(removed, removed + Trainer::ITEM_ENTRY_SIZE8BDSP, [](uint8_t byteValue) { return byteValue == 0; });
+    Trainer::Trainer8BDSP reloaded(trainer.getSaveData());
+    bool reloadedAdded = false;
+    bool reloadedRemoved = false;
+    for (const auto &item : reloaded.items[0])
+    {
+        reloadedAdded |= item.itemId == addedItemId;
+        reloadedRemoved |= item.itemId == removedItemId;
+    }
+    if (uneditedKept && addedListed && removedCleared && reloadedAdded && !reloadedRemoved)
+    {
+        std::printf("  PASS  %-22s unedited bag unchanged; an added item is listed and new, a removed one gone\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s unedited kept=%d, added listed=%d, removed cleared=%d, reload has added=%d, reload has removed=%d\n", checkLabel, uneditedKept, addedListed, removedCleared, reloadedAdded, reloadedRemoved);
+    ++g_failCount;
+}
+
+/// Brilliant Diamond/Shining Pearl: only PKHeX's four save sizes, each with its own revision number
+/// in the first u32, load. No BDSP save is in the test tree, so the files are synthesized.
+void bdspRefusesUnknownSaves()
+{
+    const char *checkLabel = "BDSP [save sizes]";
+    size_t wrongCount = 0;
+    wrongCount += Trainer::Trainer8BDSP(std::vector<uint8_t>()).isValid();
+    wrongCount += Trainer::Trainer8BDSP(std::vector<uint8_t>(0x148A8, 0)).isValid();
+    for (const Trainer::SaveRevision8BDSP &revision : Trainer::SAVE_REVISIONS8_BDSP)
+    {
+        std::vector<uint8_t> image(revision.fileSize, 0);
+        Utils::writeUInt32LittleEndian(image.data(), revision.revisionId + 1);
+        wrongCount += Trainer::Trainer8BDSP(image).isValid();
+        Utils::writeUInt32LittleEndian(image.data(), revision.revisionId);
+        wrongCount += !Trainer::Trainer8BDSP(std::move(image)).isValid();
+    }
+    if (wrongCount == 0)
+    {
+        std::printf("  PASS  %-22s empty, short and mis-numbered files refused; all four revisions load\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s %zu file(s) judged wrongly\n", checkLabel, wrongCount);
+    ++g_failCount;
+}
+
+/// An FR/LG save that never loaded (installed but never saved, or a short file) has no sector table,
+/// so its writers would all write through offset 0. It must report invalid -- the save path refuses
+/// it on that -- and serializing it must leave the bytes alone. Same for Ruby/Sapphire/Emerald.
+void unreadableGen3SaveWritesNothing()
+{
+    const char *checkLabel = "Gen 3 [never saved]";
+    const std::vector<uint8_t> blankImage(0x20000, 0);
+    Trainer::Trainer3FRLG fireRed(blankImage, "");
+    Trainer::Trainer3RSE ruby(blankImage, "");
+    const bool bothInvalid = !fireRed.isValid() && !ruby.isValid();
+    const bool fireRedUntouched = fireRed.serialize() == blankImage;
+    const bool rubyUntouched = ruby.serialize() == blankImage;
+    if (bothInvalid && fireRedUntouched && rubyUntouched)
+    {
+        std::printf("  PASS  %-22s a blank 128 KiB image is invalid and serializes to itself\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s invalid=%d, FR/LG untouched=%d, R/S/E untouched=%d\n", checkLabel, bothInvalid, fireRedUntouched, rubyUntouched);
+    ++g_failCount;
+}
+
+/// Sword/Shield: registering a Pokemon must write what PKHeX's Zukan8.SetDex writes. The display
+/// gender is ONE 2-bit value at bits 29-30 (gender & 1), not a bit each (a male used to show as
+/// female); Alcremie's seen bit is form * 7 + its FormArgument (the sweet); Eternamax (Eternatus
+/// form 1) sets seen bit 63; and a registered species gets a battled count of at least 1. The
+/// Pokemon are copies of the save's first party member, dropped into empty box slots.
+void pokedexRegistersLikePKHeXSWSH(const char *label, const std::string &savePath)
+{
+    const std::string checkLabel = std::string(label) + " [dex register]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    auto entryOffset = [](uint16_t species) { return static_cast<size_t>(Pokemon::getDexEntry8SWSH(species).index - 1) * Pokemon::DEX8SWSH_ENTRY_SIZE; };
+    // Clear Eternatus's seen bit 63 in all four regions first, so the Eternamax check can only pass
+    // if the writer sets it.
+    auto decryptedBlocks = Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size());
+    for (auto &block : decryptedBlocks)
+    {
+        if (block.key != Trainer::SAVE_REVISION8_SWSH || block.data.size() < entryOffset(890) + 4 * 8)
+        {
+            continue;
+        }
+        for (size_t region = 0; region < 4; ++region)
+        {
+            block.data[entryOffset(890) + region * 8 + 7] &= 0x7F;
+        }
+    }
+    Trainer::Trainer8SWSH trainer(std::move(decryptedBlocks));
+    auto galarBytes = [&]() -> const std::vector<uint8_t>*
+    {
+        for (const auto &block : trainer.getBlocks())
+        {
+            if (block.key == Trainer::SAVE_REVISION8_SWSH)
+            {
+                return &block.data;
+            }
+        }
+        return nullptr;
+    };
+    if (trainer.party.empty() || !galarBytes() || galarBytes()->empty())
+    {
+        std::printf("  SKIP  %-22s no party member or no Galar Pokedex\n", checkLabel.c_str());
+        return;
+    }
+    uint16_t unownedSpecies = 0;
+    for (uint16_t species = 1; species <= 898 && unownedSpecies == 0; ++species)
+    {
+        if (species == 869 || species == 890 || Pokemon::getDexEntry8SWSH(species).dex != Pokemon::Dex8SWSH::Galar)
+        {
+            continue;
+        }
+        const std::vector<uint8_t> &galar = *galarBytes();
+        if (Utils::readUInt32LittleEndian(&galar[entryOffset(species) + 0x20]) == 0 && Utils::readUInt32LittleEndian(&galar[entryOffset(species) + 0x24]) == 0)
+        {
+            unownedSpecies = species;
+        }
+    }
+    struct Placed { uint16_t species; uint8_t form; uint8_t gender; uint8_t formArgument; };
+    const Placed placements[] = {{unownedSpecies, 0, 0, 0}, {869, 2, 1, 3}, {890, 1, 2, 0}};
+    std::vector<int> regions;
+    size_t placedCount = 0;
+    for (size_t boxIndex = 0; boxIndex < trainer.boxes.size() && placedCount < 3; ++boxIndex)
+    {
+        for (size_t slotIndex = 0; slotIndex < trainer.getSlotsPerBox() && placedCount < 3; ++slotIndex)
+        {
+            auto &slot = trainer.boxes[boxIndex][slotIndex];
+            if (slot && slot->speciesID() != 0)
+            {
+                continue;
+            }
+            const Placed &placed = placements[placedCount];
+            auto pokemon = trainer.party[0]->clone();
+            pokemon->setSpecies(placed.species);
+            pokemon->setForm(placed.form);
+            pokemon->setGender(placed.gender);
+            pokemon->setEgg(false);
+            pokemon->getData()[0xE4] = static_cast<std::byte>(placed.formArgument);
+            regions.push_back((pokemon->gender() & 1) | (pokemon->isShiny(pokemon->id32(), pokemon->species()) ? 2 : 0));
+            slot = std::move(pokemon);
+            ++placedCount;
+        }
+    }
+    if (unownedSpecies == 0 || placedCount < 3)
+    {
+        std::printf("  SKIP  %-22s no unowned Galar species or not three empty box slots\n", checkLabel.c_str());
+        return;
+    }
+    trainer.updatePokedexBlock();
+    const std::vector<uint8_t> &galar = *galarBytes();
+    const uint32_t caughtFlags = Utils::readUInt32LittleEndian(&galar[entryOffset(unownedSpecies) + 0x20]);
+    const bool maleDisplayed = ((caughtFlags >> 29) & 3) == 0;
+    const bool battledOnce = Utils::readUInt32LittleEndian(&galar[entryOffset(unownedSpecies) + 0x24]) == 1;
+    auto seenBit = [&](uint16_t species, int region, unsigned bitIndex)
+    {
+        const uint64_t seen = Utils::readUInt64LittleEndian(&galar[entryOffset(species) + static_cast<size_t>(region) * 8]);
+        return ((seen >> bitIndex) & 1) != 0;
+    };
+    const bool alcremieSweetSeen = seenBit(869, regions[1], 2 * 7 + 3);
+    const bool eternamaxSeen = seenBit(890, regions[2], 63) && seenBit(890, regions[2], 0);
+    if (maleDisplayed && battledOnce && alcremieSweetSeen && eternamaxSeen)
+    {
+        std::printf("  PASS  %-22s display gender, battled count, Alcremie and Eternamax as PKHeX\n", checkLabel.c_str());
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s male displayed=%d, battled once=%d, Alcremie sweet seen=%d, Eternamax seen=%d\n", checkLabel.c_str(), maleDisplayed, battledOnce, alcremieSweetSeen, eternamaxSeen);
+    ++g_failCount;
+}
+
+/// Scarlet/Violet: the Pokedex writer must not re-pick the displayed variant (form, gender, shiny)
+/// of a species the save already has. "Nothing displayed" and "form 0, male, not shiny" are the
+/// same zero bytes, so a writer that tested the display bytes overwrote the player's choice with
+/// whichever specimen came last. Kitakami entries are 0x20 bytes, obtained-form bits at +0x00 and
+/// the three regional display slots at +0x14/+0x18/+0x1C.
+void pokedexKeepsDisplayedVariantSV(const char *label, const std::string &savePath)
+{
+    const std::string checkLabel = std::string(label) + " [dex display]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    Trainer::Trainer9SV trainer(Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size()));
+    auto kitakamiBytes = [&]()
+    {
+        for (const auto &block : trainer.getBlocks())
+        {
+            if (block.key == Trainer::ZUKAN9_SV_KITAKAMI)
+            {
+                return block.data;
+            }
+        }
+        return std::vector<uint8_t>();
+    };
+    const std::vector<uint8_t> dexBefore = kitakamiBytes();
+    if (dexBefore.empty())
+    {
+        std::printf("  SKIP  %-22s the save has no Kitakami Pokedex block\n", checkLabel.c_str());
+        return;
+    }
+    trainer.updatePokedexBlock();
+    const std::vector<uint8_t> dexAfter = kitakamiBytes();
+    constexpr size_t entrySize = 0x20;
+    size_t changedEntryCount = 0;
+    size_t obtainedEntryCount = 0;
+    for (size_t entryOffset = 0; entryOffset + entrySize <= dexBefore.size(); entryOffset += entrySize)
+    {
+        if (Utils::readUInt32LittleEndian(&dexBefore[entryOffset]) == 0)
+        {
+            continue;
+        }
+        ++obtainedEntryCount;
+        changedEntryCount += !std::equal(dexBefore.begin() + entryOffset + 0x14, dexBefore.begin() + entryOffset + entrySize, dexAfter.begin() + entryOffset + 0x14);
+    }
+    if (changedEntryCount == 0)
+    {
+        std::printf("  PASS  %-22s %zu obtained species keep their displayed variant\n", checkLabel.c_str(), obtainedEntryCount);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s %zu of %zu obtained species had their displayed variant re-picked\n", checkLabel.c_str(), changedEntryCount, obtainedEntryCount);
+    ++g_failCount;
+}
+
+/// Japanese Gen 3: trainer names are five characters (PKHeX SAV3.OT), because the zero pair the
+/// Japanese games leave in the name field's bytes 6-7 is what marks the save Japanese. A six-glyph
+/// rename used to overwrite byte 6 and turn the save international on the next load. There is no
+/// Japanese test save, so the FireRed save is made one by zeroing those bytes in its Small sectors
+/// (sector id 0, found by the 0xFF4 footer of each 0x1000-byte sector in both save slots).
+void japaneseTrainerNameStaysFiveFRLG(const std::string &savePath)
+{
+    const char *checkLabel = "FireRed [JP name]";
+    std::vector<uint8_t> image = readFile(savePath);
+    if (image.size() < 0x1C000)
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel, SaveTree::missing(g_saveRoot, "FireRed").c_str());
+        return;
+    }
+    for (size_t sectorOffset = 0; sectorOffset + 0x1000 <= 0x1C000; sectorOffset += 0x1000)
+    {
+        if (Utils::readUInt16LittleEndian(&image[sectorOffset + 0xFF4]) != 0)
+        {
+            continue;
+        }
+        image[sectorOffset + 6] = 0;
+        image[sectorOffset + 7] = 0;
+    }
+    Trainer::Trainer3FRLG japaneseSave(image, "");
+    const bool readsJapanese = japaneseSave.isValid() && japaneseSave.language() == static_cast<uint8_t>(Enums::LanguageID::Japanese);
+    const bool capsAtFive = japaneseSave.getMaxTrainerNameLength() == 5;
+    japaneseSave.trainerName = "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B"; // six hiragana
+    const std::vector<uint8_t> written = japaneseSave.serialize();
+    Trainer::Trainer3FRLG reloaded(written, "");
+    const bool staysJapanese = reloaded.isValid() && reloaded.language() == static_cast<uint8_t>(Enums::LanguageID::Japanese);
+    if (readsJapanese && capsAtFive && staysJapanese)
+    {
+        std::printf("  PASS  %-22s five-character names; a six-glyph rename leaves the save Japanese\n", checkLabel);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s reads Japanese=%d, capped at five=%d, still Japanese after a rename=%d\n", checkLabel, readsJapanese, capsAtFive, staysJapanese);
+    ++g_failCount;
+}
+
+/// Legends: Arceus: a newly registered species shows the gender PKHeX's SetSelectedGenderForm
+/// picks -- for an entry whose genders are separate records, simply the Pokemon's own. The writer
+/// used to gate the female flag on PokemonInfoGenders bit 3, which marks the SHARED records, so a
+/// female of a separate-record species showed as male. A clone of the first boxed Pokemon becomes
+/// a female of the first such species the save has never caught.
+void selectedGenderFollowsPKHeXLA(const char *label, const std::string &savePath)
+{
+    const std::string checkLabel = std::string(label) + " [dex gender]";
+    std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.empty())
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    using Field = Trainer::ResearchField8LA;
+    Trainer::Trainer8LA trainer(Encryption::decrypt(originalSaveBytes.data(), originalSaveBytes.size()));
+    auto pokedexBytes = [&]()
+    {
+        for (const auto &block : trainer.getBlocks())
+        {
+            if (block.key == Trainer::POKEDEX8_LA)
+            {
+                return block.data;
+            }
+        }
+        return std::vector<uint8_t>();
+    };
+    const std::vector<uint8_t> loadedPokedex = pokedexBytes();
+    uint16_t targetSpecies = 0;
+    for (uint16_t speciesId = 1; speciesId < Pokemon::DEX8LA_MAX_SPECIES && targetSpecies == 0; ++speciesId)
+    {
+        if (Pokemon::getStatisticsIndex8LA(speciesId, 0) == Pokemon::DEX8LA_NO_STAT_ENTRY || Pokemon::sharesGenderRecord8LA(speciesId, 0))
+        {
+            continue;
+        }
+        if (Trainer::Trainer8LA::researchField(loadedPokedex, speciesId, Field::CatchCount) == 0 && (Trainer::Trainer8LA::researchField(loadedPokedex, speciesId, Field::Flags) & 0x38) == 0)
+        {
+            targetSpecies = speciesId;
+        }
+    }
+    const Pokemon::Pokemon *sourcePokemon = nullptr;
+    std::unique_ptr<Pokemon::Pokemon> *emptySlot = nullptr;
+    for (auto &box : trainer.boxes)
+    {
+        for (auto &slotPokemon : box)
+        {
+            if (!slotPokemon || slotPokemon->speciesID() == 0)
+            {
+                if (!emptySlot)
+                {
+                    emptySlot = &slotPokemon;
+                }
+            }
+            else if (!sourcePokemon)
+            {
+                sourcePokemon = slotPokemon.get();
+            }
+        }
+    }
+    if (targetSpecies == 0 || !sourcePokemon || !emptySlot)
+    {
+        std::printf("  SKIP  %-22s no uncaught separate-gender species, boxed Pokemon or empty slot\n", checkLabel.c_str());
+        return;
+    }
+    auto female = sourcePokemon->clone();
+    female->setSpecies(targetSpecies);
+    female->setForm(0);
+    female->setGender(1);
+    female->setEgg(false);
+    *emptySlot = std::move(female);
+    trainer.updatePokedexBlock();
+    const uint16_t flags = Trainer::Trainer8LA::researchField(pokedexBytes(), targetSpecies, Field::Flags);
+    if ((flags & 0x08) != 0)
+    {
+        std::printf("  PASS  %-22s a new female of species %u is displayed female\n", checkLabel.c_str(), targetSpecies);
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s a new female of species %u is displayed male (flags 0x%04X)\n", checkLabel.c_str(), targetSpecies, flags);
+    ++g_failCount;
+}
+
+/// Let's Go: a size record taken is written to the species' whole evolution line (PKHeX
+/// Zukan7b.SetSizeData walks GetEvolutionsAndPreEvolutions). PKSE wrote only the species' own entry.
+/// A clone of the first boxed Pokemon becomes an Ivysaur smaller than any recorded (height scalar
+/// 0); Bulbasaur's and Venusaur's minimum-height records must then match Ivysaur's.
+void sizeRecordCoversEvolutionLineLGPE(const char *label, const std::string &savePath)
+{
+    const std::string checkLabel = std::string(label) + " [size lineage]";
+    const std::vector<uint8_t> originalSaveBytes = readFile(savePath);
+    if (originalSaveBytes.size() < Trainer::SAVE_SIZE7_LGPE)
+    {
+        std::printf("  SKIP  %-22s (%s)\n", checkLabel.c_str(), SaveTree::missing(g_saveRoot, label).c_str());
+        return;
+    }
+    const std::vector<uint8_t> area(originalSaveBytes.begin(), originalSaveBytes.begin() + Trainer::SAVE_SIZE7_LGPE);
+    Trainer::Trainer7LGPE trainer(Trainer::createBlocksFromSaveData7LGPE(area));
+    const Pokemon::Pokemon *sourcePokemon = nullptr;
+    std::unique_ptr<Pokemon::Pokemon> *emptySlot = nullptr;
+    for (auto &box : trainer.boxes)
+    {
+        for (auto &slotPokemon : box)
+        {
+            if (!slotPokemon || slotPokemon->speciesID() == 0)
+            {
+                if (!emptySlot)
+                {
+                    emptySlot = &slotPokemon;
+                }
+            }
+            else if (!sourcePokemon && !isPartnerLGPE(*slotPokemon))
+            {
+                sourcePokemon = slotPokemon.get();
+            }
+        }
+    }
+    if (!sourcePokemon || !emptySlot)
+    {
+        std::printf("  SKIP  %-22s no boxed Pokemon or no empty slot\n", checkLabel.c_str());
+        return;
+    }
+    auto ivysaur = sourcePokemon->clone();
+    ivysaur->setSpecies(2);
+    ivysaur->setForm(0);
+    ivysaur->setEgg(false);
+    auto writeFloat = [&](size_t offset, float floatValue) { std::memcpy(ivysaur->getData().data() + offset, &floatValue, sizeof floatValue); };
+    ivysaur->getData()[0x3A] = std::byte{0};   // height scalar
+    ivysaur->getData()[0x3B] = std::byte{200}; // weight scalar
+    writeFloat(0x2C, 0.25f);                   // height, far below Ivysaur's base
+    writeFloat(0xE4, 1.0f);                    // weight, far below Ivysaur's base
+    *emptySlot = std::move(ivysaur);
+    trainer.updatePokedexBlock();
+    const std::vector<uint8_t> zukan = zukanBlockLGPE(trainer);
+    auto minimumHeightRecord = [&](int entryIndex)
+    {
+        const size_t recordOffset = sizeRecordOffsetLGPE(0, entryIndex);
+        return std::vector<uint8_t>(zukan.begin() + recordOffset, zukan.begin() + recordOffset + 4);
+    };
+    const std::vector<uint8_t> ivysaurRecord = minimumHeightRecord(1);
+    const bool ivysaurTaken = ivysaurRecord[0] == 0 && ivysaurRecord[1] == 0 && ivysaurRecord[2] == 200;
+    const bool lineageTaken = minimumHeightRecord(0) == ivysaurRecord && minimumHeightRecord(2) == ivysaurRecord;
+    if (ivysaurTaken && lineageTaken)
+    {
+        std::printf("  PASS  %-22s Bulbasaur and Venusaur take Ivysaur's new minimum height\n", checkLabel.c_str());
+        ++g_passCount;
+        return;
+    }
+    std::printf("  FAIL  %-22s Ivysaur record taken=%d, evolution line updated=%d\n", checkLabel.c_str(), ivysaurTaken, lineageTaken);
+    ++g_failCount;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -1052,9 +1884,29 @@ int main(int argc, char **argv)
     roundTripSCBlock<Trainer::Trainer9LZA>("Legends Z-A", SaveTree::legendsZA(root));
     roundTripSCBlock<Trainer::Trainer9SV>("Violet", SaveTree::violet(root));
     roundTripSCBlock<Trainer::Trainer8LA>("Legends Arceus", SaveTree::legendsArceus(root));
+    moveIntoEmptySlotTouchesTwoSlots<Trainer::Trainer8SWSH>("Sword", swordPath, Trainer::BOX8_SWSH, Encryption::SIZE_PARTY8_SWSH);
+    moveIntoEmptySlotTouchesTwoSlots<Trainer::Trainer8SWSH>("Shield", shieldPath, Trainer::BOX8_SWSH, Encryption::SIZE_PARTY8_SWSH);
+    moveIntoEmptySlotTouchesTwoSlots<Trainer::Trainer8LA>("Legends Arceus", SaveTree::legendsArceus(root), Trainer::BOX8_LA, Encryption::SIZE_STORED8_LA);
+    moveIntoEmptySlotTouchesTwoSlots<Trainer::Trainer9SV>("Violet", SaveTree::violet(root), Trainer::BOX9_SV, Encryption::SIZE_PARTY9_SV);
+    moveIntoEmptySlotTouchesTwoSlots<Trainer::Trainer9LZA>("Legends Z-A", SaveTree::legendsZA(root), Trainer::BOX9_LZA, Encryption::BOX_SLOT_SIZE9_LZA);
+    slotFooterFollowsRevisionLZA(SaveTree::legendsZA(root));
+    itemAndDexLanguageFlagsLZA(SaveTree::legendsZA(root));
+    refusesDamagedSwishSave("Shield", shieldPath);
+    bdspRefusesUnknownSaves();
+    bagFollowsSortOrderBDSP(SaveTree::forTitle(root, "Shining Pearl"));
+    battleTeamSlotsLockedBDSP(SaveTree::forTitle(root, "Shining Pearl"));
+    battleTeamSlotsLocked<Trainer::Trainer8SWSH>("Sword", swordPath, Trainer::TEAM_INDEXES8_SWSH);
+    battleTeamSlotsLocked<Trainer::Trainer9SV>("Violet", SaveTree::violet(root), Trainer::TEAM_INDEXES9_SV);
+    battleTeamSlotsLocked<Trainer::Trainer9LZA>("Legends Z-A", SaveTree::legendsZA(root), Trainer::TEAM_INDEXES9_LZA);
+    unreadableGen3SaveWritesNothing();
+    japaneseTrainerNameStaysFiveFRLG(SaveTree::fireRed(root));
+    pokedexKeepsDisplayedVariantSV("Violet", SaveTree::violet(root));
+    pokedexRegistersLikePKHeXSWSH("Sword", swordPath);
+    selectedGenderFollowsPKHeXLA("Legends Arceus", SaveTree::legendsArceus(root));
     catchResearchCountsOnceLA("Legends Arceus", SaveTree::legendsArceus(root));
     roundTripLGPE("Let's Go Pikachu", SaveTree::letsGoPikachu(root));
     roundTripLGPE("Let's Go Eevee", SaveTree::letsGoEevee(root));
+    sizeRecordCoversEvolutionLineLGPE("Let's Go Pikachu", SaveTree::letsGoPikachu(root));
 
     std::printf("\n%d passed, %d known divergence(s), %d FAILED\n", g_passCount, g_knownCount, g_failCount);
     if (g_knownCount)

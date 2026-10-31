@@ -40,6 +40,13 @@ namespace Encryption {
     };
 
     void cryptStaticXorpadBytes(std::vector<uint8_t> &data, size_t dataLength);
+    /**
+     * Decrypts and parses a SwishCrypto save (Sword/Shield, Legends: Arceus, Scarlet/Violet,
+     * Legends: Z-A). Returns NO blocks -- which is what a trainer's isValid() reports -- unless the
+     * file is longer than its hash, its SHA-256 footer matches (PKHeX SwishCrypto.GetIsHashValid),
+     * and the block parse covers the whole payload. A partial parse is refused rather than loaded,
+     * because the save path re-emits only the blocks it parsed, under a fresh valid hash.
+     */
     std::vector<Save::Block> decrypt(uint8_t* data, size_t dataLength);
     std::vector<uint8_t> encrypt(const std::vector<Save::Block>& blocks);
     void computeHash(const uint8_t* data, size_t dataLength, uint8_t* hash);

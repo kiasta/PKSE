@@ -307,6 +307,8 @@ namespace Trainer
                 {
                     // Calculate offset (packed for LA: stride == SIZE_PARTY8_LA)
                     const size_t offset = partySlotIndex * partySlotStride;
+                    if (slotHoldsLoadedRecord(party[partySlotIndex].get(), &block.data[offset], SIZE_PARTY8_LA, decryptArray8LA))
+                        continue;
 
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
@@ -325,18 +327,20 @@ namespace Trainer
 
                         delete[] encryptedData;
                     }
-                    else
+                    else if (!slotHoldsGameBlank(&block.data[offset], SIZE_PARTY8_LA, RECORD_SPECIES_OFFSET, decryptArray8LA))
                     {
-                        // Empty slot: write the encrypted blank, NOT zeros (see the header note).
+                        // Empty slot: an already-empty one keeps the game's own bytes; otherwise the
+                        // encrypted blank, NOT zeros (see the header note).
                         std::memcpy(&block.data[offset], blankSlot.data(), partySlotStride);
                     }
                 }
 
-                // Remaining trailing slots are empty -> encrypted blank, not zeros.
+                // Remaining trailing slots are empty too.
                 for (size_t partySlotIndex = party.size(); partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
                 {
                     const size_t offset = partySlotIndex * partySlotStride;
-                    std::memcpy(&block.data[offset], blankSlot.data(), partySlotStride);
+                    if (!slotHoldsGameBlank(&block.data[offset], SIZE_PARTY8_LA, RECORD_SPECIES_OFFSET, decryptArray8LA))
+                        std::memcpy(&block.data[offset], blankSlot.data(), partySlotStride);
                 }
 
                 break;
@@ -400,11 +404,13 @@ namespace Trainer
          * (crypto shuffles/XORs the 0x08..0x168 blocks; the 0x10 party tail is irrelevant
          * to a box slot), then copy ONLY the first 0x168 encrypted bytes into the slot.
          *
-         * Empty box slots must be the game's encrypted "blank" (which DECRYPTS to species 0),
-         * NOT literal zeros: the game decrypts every box slot and checks species, so a zeroed
-         * slot decrypts to garbage and renders a BAD EGG. Reuse the game's own blank by copying
-         * an existing empty (species-0) slot; if every box is full, synthesize one from an
-         * all-zero PA8 encrypted with EC 0 and take its first 0x168 bytes.
+         * Every slot is decided from its POSITION in the file, as PKHeX writes only the slot it
+         * sets: bytes that still hold this slot's in-memory record, or an empty slot whose bytes
+         * already read as empty, are left alone; an occupied slot is written; anything else (a
+         * Pokemon moved or removed from here, a zeroed slot) gets a synthesized blank -- an
+         * all-zero PA8 encrypted with EC 0, first 0x168 bytes. Never zeros (the game decrypts every
+         * slot; zeros render a BAD EGG), and never one slot's bytes harvested as "the" blank: after
+         * a Move the first empty slot in memory can still hold the moved Pokemon in the file.
          */
         for (auto &block : blocks)
         {
@@ -416,27 +422,8 @@ namespace Trainer
                     block.data.resize(requiredSize, 0);
                 }
 
-                // Capture a reference "blank" slot (0x168 bytes) that decrypts to species 0.
                 std::vector<uint8_t> blankSlot;
-                for (size_t boxIndex = 0; boxIndex < BOX_COUNT8_LA && blankSlot.empty(); ++boxIndex)
                 {
-                    for (size_t slotIndex = 0; slotIndex < BOX_SLOTS; ++slotIndex)
-                    {
-                        if (boxes[boxIndex][slotIndex] && boxes[boxIndex][slotIndex]->speciesID() == 0)
-                        {
-                            const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * boxSlotStride;
-                            if (byteOffset + boxSlotStride <= block.data.size())
-                            {
-                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + boxSlotStride);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (blankSlot.empty())
-                {
-                    // Synthesize: encrypt an all-zero PA8 (party size) with EC 0, then take the
-                    // first SIZE_STORED8_LA (0x168) bytes — a stored-size blank that decrypts to species 0.
                     std::vector<std::byte> zero(SIZE_PARTY8_LA, std::byte{0});
                     std::byte *encryptedRecord = encryptArray8LA(std::span<const std::byte>(zero.data(), SIZE_PARTY8_LA), 0);
                     blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_STORED8_LA);
@@ -448,32 +435,22 @@ namespace Trainer
                 {
                     for (size_t slot = 0; slot < BOX_SLOTS; ++slot)
                     {
-                        // Calculate offset (packed for LA: stride == SIZE_STORED8_LA = 0x168)
                         const size_t offset = (boxIndex * BOX_SLOTS + slot) * boxSlotStride;
+                        const auto &pokemon = boxes[boxIndex][slot];
+                        if (slotHoldsLoadedRecord(pokemon.get(), &block.data[offset], SIZE_STORED8_LA, decryptArray8LA))
+                            continue;
 
-                        // Gate on species, not just the pointer (ghost-slot fix). A slot left holding a
-                        // non-null but blank/species-0 pokemon (e.g. after a bank move) must read as EMPTY
-                        // in-game — re-encrypting a blank writes a bad egg.
-                        if (boxes[boxIndex][slot] && boxes[boxIndex][slot]->speciesID() != 0)
+                        if (pokemon && pokemon->speciesID() != 0)
                         {
-                            const auto &pokemon = boxes[boxIndex][slot];
-
                             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
-
                             std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
-
                             std::byte *encryptedData = encryptArray8LA(decryptedSpan, encryptionConstant);
-
                             // Box slots are STORED-size: copy ONLY the first 0x168 encrypted bytes.
-                            // (No party-stats region and no inter-slot gap for a box slot.)
                             std::memcpy(&block.data[offset], encryptedData, SIZE_STORED8_LA);
-
                             delete[] encryptedData;
                         }
-                        else
+                        else if (!slotHoldsGameBlank(&block.data[offset], SIZE_STORED8_LA, RECORD_SPECIES_OFFSET, decryptArray8LA))
                         {
-                            // Empty/cleared slot: write the game's encrypted blank (0x168), NOT zeros.
-                            // Zeros decrypt to garbage in-game and show as a BAD EGG in every empty slot.
                             std::memcpy(&block.data[offset], blankSlot.data(), boxSlotStride);
                         }
                     }
@@ -528,6 +505,7 @@ namespace Trainer
         constexpr size_t PLA_BLOCK_SIZE = 0x1E460;
         constexpr uint16_t PLA_MAX_RESEARCH_POINTS = 60000; // PokedexConstants8a
         constexpr size_t GLOBAL_UPDATE_COUNTER_OFFSET8_LA = 0x06;
+        constexpr size_t RESEARCH_FLAGS_OFFSET8_LA = 0x00;
         constexpr size_t RESEARCH_CATCH_COUNT_OFFSET8_LA = 0x0A;
         constexpr size_t RESEARCH_UPDATE_COUNTER_OFFSET8_LA = 0x0C;
         constexpr size_t RESEARCH_ALPHA_COUNT_OFFSET8_LA = 0x22;
@@ -601,6 +579,9 @@ namespace Trainer
             break;
         case ResearchField8LA::UpdateCounter:
             fieldOffset = RESEARCH_UPDATE_COUNTER_OFFSET8_LA;
+            break;
+        case ResearchField8LA::Flags:
+            fieldOffset = RESEARCH_FLAGS_OFFSET8_LA;
             break;
         }
         return rdU16(pokedexBytes, PLA_RESEARCH_BASE + static_cast<size_t>(speciesId) * PLA_RESEARCH_SIZE + fieldOffset);
@@ -806,10 +787,19 @@ namespace Trainer
             {
                 (*dex)[research + 0x50] = form;
                 uint32_t flags = rdU32(*dex, research + 0x00) & ~0x38u; // clear gender/shiny/alpha
-                // The female bit only means anything where the dex keeps the two sexes as separate
-                // models. Where it does not, male and female share one record and the bit would claim
-                // a variant the page cannot show (PKHeX reads the same PokemonInfoGenders bit 3).
-                if (gender == 1 && ::Pokemon::tracksGenderSeparately8LA(species, form))
+                // PKHeX SetSelectedGenderForm: the Pokemon's own gender, except where the two
+                // genders are one record -- there the obtained flags of this shiny/alpha variant
+                // decide (shift +0 male, +1 female), which the obtain bit set above feeds.
+                bool selectedGender1 = gender == 1;
+                if (::Pokemon::sharesGenderRecord8LA(species, form))
+                {
+                    const uint8_t obtainedFlags = (*dex)[stats + 0x05];
+                    const int variantShift = (shiny ? 4 : 0) + (alpha ? 2 : 0);
+                    const bool maleObtained = (obtainedFlags & (1u << variantShift)) != 0;
+                    const bool femaleObtained = (obtainedFlags & (1u << (variantShift + 1))) != 0;
+                    selectedGender1 = selectedGender1 ? (!maleObtained || femaleObtained) : (!maleObtained && femaleObtained);
+                }
+                if (selectedGender1)
                     flags |= 0x08;
                 if (shiny)
                     flags |= 0x10;

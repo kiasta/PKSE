@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -616,6 +617,117 @@ namespace
 
         std::printf("      locale=%s  game=%s  OT='%s'  ID=%u  money=%u  coins=%u  badges=0x%02X\n", trainer.japanese() ? "JP" : "INT", trainer.gameTitle(), trainer.trainerName.c_str(), trainer.TID16, trainer.money, trainer.coins, trainer.badgeFlags);
         std::printf("      played %02u:%02u:%02u   dex owned=%u seen=%u   rival='%s'\n", trainer.playedHours, trainer.playedMinutes, trainer.playedSeconds, trainer.dexOwned, trainer.dexSeen, trainer.rivalName.c_str());
+
+        // A glitch species in a counted party entry (MissingNo., internal 0x1F) is kept, in place,
+        // byte for byte: PKHeX's PokeList1 copies every counted entry. It used to be dropped on load
+        // and the list compacted over it on any save.
+        {
+            const size_t partyOffset = isJapanese ? 0x2ED5u : 0x2F2Cu;
+            const size_t partyCount = originalBytes[partyOffset];
+            if (partyCount >= 1 && partyCount <= 6)
+            {
+                const size_t nameLength = isJapanese ? 6u : 11u;
+                const size_t partyListLength = 1 + 6 + 1 + (44 + nameLength * 2) * 6;
+                std::vector<uint8_t> glitchedBytes = originalBytes;
+                glitchedBytes[partyOffset + 1] = 0x1F;
+                glitchedBytes[partyOffset + 1 + 6 + 1] = 0x1F;
+                Trainer::Trainer1RBY glitchedTrainer(glitchedBytes, savePath);
+                check(glitchedTrainer.party.size() == partyCount - 1, "a MissingNo. party entry is not shown as a Pokemon", std::to_string(glitchedTrainer.party.size()));
+                const std::vector<uint8_t> writtenBytes = glitchedTrainer.serialize();
+                check(std::equal(glitchedBytes.begin() + partyOffset, glitchedBytes.begin() + partyOffset + partyListLength, writtenBytes.begin() + partyOffset), "a MissingNo. party entry is written back in place, byte for byte");
+                // The party view shows the kept entry in its own slot (0) and every Pokemon after it.
+                const std::vector<size_t> unmappedPartySlots = glitchedTrainer.getUnmappedPartySlots();
+                check(unmappedPartySlots.size() == 1 && unmappedPartySlots[0] == 0, "getUnmappedPartySlots reports the MissingNo. in party slot 1", std::to_string(unmappedPartySlots.size()));
+                // Fill the party to the room the API reports, the way a caller adding Pokemon must:
+                // the kept entry takes a slot, so a full party is five Pokemon plus it, and all six
+                // entries write and reload.
+                const ::Pokemon::Pokemon *partyDonor = glitchedTrainer.party.empty() ? nullptr : glitchedTrainer.party[0].get();
+                for (size_t boxIndex = 0; !partyDonor && boxIndex < glitchedTrainer.boxes.size(); ++boxIndex)
+                    for (size_t slotIndex = 0; !partyDonor && slotIndex < Trainer::BOX_SLOTS; ++slotIndex)
+                        partyDonor = glitchedTrainer.boxes[boxIndex][slotIndex].get();
+                if (partyDonor)
+                {
+                    std::unique_ptr<::Pokemon::Pokemon> donorCopy = partyDonor->clone();
+                    while (glitchedTrainer.party.size() + glitchedTrainer.getUnmappedPartySlots().size() < Trainer::MAX_PARTY_SLOTS)
+                        glitchedTrainer.party.push_back(donorCopy->clone());
+                    bool partySlotsMapped = glitchedTrainer.partyIndexAtSlot(0) == -1;
+                    for (size_t partySlotIndex = 1; partySlotIndex < Trainer::MAX_PARTY_SLOTS; ++partySlotIndex)
+                        partySlotsMapped = partySlotsMapped && glitchedTrainer.partyIndexAtSlot(partySlotIndex) == static_cast<int>(partySlotIndex - 1);
+                    check(partySlotsMapped, "partyIndexAtSlot skips the MissingNo.'s party slot");
+                    Trainer::Trainer1RBY reloadedTrainer(glitchedTrainer.serialize(), savePath);
+                    check(glitchedTrainer.party.size() == Trainer::MAX_PARTY_SLOTS - 1 && reloadedTrainer.party.size() == glitchedTrainer.party.size() && reloadedTrainer.getUnmappedPartySlots() == std::vector<size_t>{0}, "a party filled around a MissingNo. keeps every Pokemon and the MissingNo. on save", std::to_string(glitchedTrainer.party.size()) + " placed, " + std::to_string(reloadedTrainer.party.size()) + " reloaded");
+                }
+            }
+        }
+
+        // The same entry in a BOX: it keeps its slot (isBoxSlotUnmapped), counts toward the box's
+        // capacity, and a box filled around it -- every free slot the storage view offers -- writes
+        // and reloads every Pokemon and the kept entry. A box slot that read as free let a Pokemon be
+        // dropped on the entry, overfilling the list so the last Pokemon was cut on save.
+        {
+            Trainer::Trainer1RBY probeTrainer(originalBytes, savePath);
+            const size_t liveBoxOffset = probeTrainer.currentBoxFlush().liveBoxOffset;
+            const size_t boxCapacity = probeTrainer.getSlotsPerBox();
+            const size_t boxIndex = probeTrainer.getCurrentBox();
+            const size_t storedCount = originalBytes[liveBoxOffset];
+            const ::Pokemon::Pokemon *donor = !probeTrainer.party.empty() ? probeTrainer.party[0].get() : nullptr;
+            for (size_t slotIndex = 0; !donor && slotIndex < boxCapacity; ++slotIndex)
+                donor = probeTrainer.boxes[boxIndex][slotIndex].get();
+            if (storedCount <= boxCapacity && donor)
+            {
+                // Plant MissingNo. (internal 0x1F) as a new last entry, or over the last one in a full box.
+                const size_t glitchSlot = std::min(storedCount, boxCapacity - 1);
+                std::vector<uint8_t> glitchedBytes = originalBytes;
+                glitchedBytes[liveBoxOffset] = static_cast<uint8_t>(glitchSlot + 1);
+                glitchedBytes[liveBoxOffset + 1 + glitchSlot] = 0x1F;
+                glitchedBytes[liveBoxOffset + 1 + glitchSlot + 1] = 0xFF;
+                glitchedBytes[liveBoxOffset + 1 + boxCapacity + 1 + glitchSlot * ::Pokemon::SIZE_1STORED] = 0x1F;
+                Trainer::Trainer1RBY glitchedTrainer(glitchedBytes, savePath);
+                check(!glitchedTrainer.boxes[boxIndex][glitchSlot] && glitchedTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot), "isBoxSlotUnmapped reports the MissingNo.'s box slot");
+                bool otherSlotReported = false;
+                for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+                    otherSlotReported = otherSlotReported || (slotIndex != glitchSlot && glitchedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex));
+                check(!otherSlotReported && !glitchedTrainer.isBoxSlotUnmapped((boxIndex + 1) % glitchedTrainer.getBoxCount(), glitchSlot), "isBoxSlotUnmapped reports a slot that holds no kept entry");
+                const size_t boxListLength = 1 + boxCapacity + 1 + (::Pokemon::SIZE_1STORED + (isJapanese ? 6u : 11u) * 2) * boxCapacity;
+                const std::vector<uint8_t> unchangedBytes = glitchedTrainer.serialize();
+                check(std::equal(glitchedBytes.begin() + liveBoxOffset, glitchedBytes.begin() + liveBoxOffset + boxListLength, unchangedBytes.begin() + liveBoxOffset), "a boxed MissingNo. is written back in place, byte for byte");
+
+                size_t pokemonCount = 0;
+                for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+                {
+                    auto &slot = glitchedTrainer.boxes[boxIndex][slotIndex];
+                    if (!slot && !glitchedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex))
+                        slot = donor->clone();
+                    pokemonCount += slot && slot->speciesID() != 0;
+                }
+                // The writer's order for that box: every Pokemon and the kept entry, in slot order.
+                std::vector<::Pokemon::Pokemon *> boxPokemon;
+                for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+                    boxPokemon.push_back(glitchedTrainer.boxes[boxIndex][slotIndex].get());
+                const std::vector<Trainer::UnmappedListEntry> plantedEntries{Trainer::UnmappedListEntry{glitchSlot, 0x1F, std::vector<uint8_t>(::Pokemon::SIZE_1STORED, 0x1F), {}, {}}};
+                const std::vector<Trainer::ListEntrySource> listEntries = Trainer::orderListEntries(boxPokemon, plantedEntries, boxCapacity, true);
+                check(listEntries.size() == boxCapacity && Trainer::unmappedListPositions(listEntries) == std::vector<size_t>{glitchSlot}, "orderListEntries keeps every entry of a full box, the kept one at its slot", std::to_string(listEntries.size()));
+                Trainer::Trainer1RBY reloadedTrainer(glitchedTrainer.serialize(), savePath);
+                size_t reloadedCount = 0;
+                for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+                    reloadedCount += reloadedTrainer.boxes[boxIndex][slotIndex] && reloadedTrainer.boxes[boxIndex][slotIndex]->speciesID() != 0;
+                check(pokemonCount == boxCapacity - 1 && reloadedCount == pokemonCount && reloadedTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot), "a box filled around a MissingNo. keeps every Pokemon and the MissingNo. on save", std::to_string(pokemonCount) + " placed, " + std::to_string(reloadedCount) + " reloaded");
+            }
+        }
+
+        // Gen 1's glyph table is the trainer-name check (canStoreBoxName), and a name with a
+        // character it lacks is not written at all -- encoding used to stop there and save "R" for
+        // an accented "Red" while the editor kept the full name.
+        {
+            Trainer::Trainer1RBY nameTrainer(originalBytes, savePath);
+            const std::string unstorableName = isJapanese ? "\xE3\x81\x82\xC3\xAB" : "R\xC3\xABd"; // "a" + e-diaeresis / "Red" with it
+            const std::string storableName = isJapanese ? "\xE3\x81\x82" : "Red";
+            check(!nameTrainer.canStoreBoxName(unstorableName) && nameTrainer.canStoreBoxName(storableName), "the Gen 1 charset check accepts an unstorable name or refuses a storable one");
+            nameTrainer.trainerName = unstorableName;
+            const std::vector<uint8_t> writtenBytes = nameTrainer.serialize();
+            const size_t nameByteCount = isJapanese ? 6u : 8u;
+            check(std::equal(originalBytes.begin() + 0x2598, originalBytes.begin() + 0x2598 + nameByteCount, writtenBytes.begin() + 0x2598), "an unstorable trainer name was written (truncated) over the saved one");
+        }
 
         // A brand-new save has no trainer name yet, and that is a real state -- the Yellow save here
         // is one. Only require a name once the file shows evidence of having been played.

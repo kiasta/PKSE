@@ -48,7 +48,11 @@
 #include "Pokemon/PersonalInfoTable.h"
 #include "Pokemon/AbilityInfo.h"
 #include "Pokemon/Pokemon8LA.h"
+#include "Pokemon/Pokemon7LGPE.h" // the creator's Let's Go size, spirit and mood checks
+#include "Pokemon/PersonalRecord.h" // the creator's friendship check
+#include "Pokemon/Evolution.h" // speciesNameAsStored -- the creator's default nickname
 #include "Utils/Logger.h"
+#include "Utils/StringHelpers.h" // utf16ToUtf8 -- the creator check names the nickname it saw
 
 namespace Test
 {
@@ -370,7 +374,7 @@ namespace Test
                 context.skip("the open pouch has nothing to add (every legal item held, or full)", "pouch=" + std::to_string(g_addPouchIndex));
                 return;
             }
-            const bool isPouchPicker = screen.pickerKind == UI::Dialogs::PickerKind::PouchItem || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG1 || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG3;
+            const bool isPouchPicker = screen.pickerKind == UI::Dialogs::PickerKind::PouchItem || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG1 || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG2 || screen.pickerKind == UI::Dialogs::PickerKind::PouchItemG3;
             if (context.check(screen.pickerActive && isPouchPicker, "Minus in the items view did not open the add-item picker", "pouch=" + std::to_string(g_addPouchIndex)) && context.check(!screen.pickerOrder.empty(), "the add-item picker offered nothing"))
             {
                 g_addItemId = screen.pickerOrder[screen.pickerSel];
@@ -466,6 +470,54 @@ namespace Test
             }
         }
         bool creatorPickerOpen(const TrainerView &screen, const Trainer::Trainer &) { return screen.pickerActive && screen.creator.active; }
+        /// The fields the creator fills in, each the way the game itself would.
+        void checkCreatedFields(Context &context, const Pokemon::Pokemon &created)
+        {
+            const Enums::GameVersion group = created.getGameGroup();
+            const int generation = Enums::getVersionGeneration(Enums::getGroupRepVersion(group));
+            const std::string speciesDetail = "species=" + std::to_string(created.speciesID()) + " form=" + std::to_string(created.form());
+            // The name the game itself stores for the species: upper case before Gen 5, the record's
+            // own language, the game's own punctuation.
+            const std::u16string storedName = Pokemon::speciesNameAsStored(created.speciesID(), group, created.language());
+            context.check(created.nickname() == storedName, "the creator's default nickname is not the name the game stores for the species", speciesDetail + " nickname=\"" + Utils::utf16ToUtf8(created.nickname()) + "\" want=\"" + Utils::utf16ToUtf8(storedName) + "\"");
+            if (created.hasFriendship())
+            {
+                const uint8_t baseFriendship = Pokemon::getPersonalRecord(group, created.speciesID(), created.form()).baseFriendship;
+                context.check(created.friendship() == baseFriendship, "the creator's friendship is not the species' base friendship in this game", speciesDetail + " friendship=" + std::to_string(created.friendship()) + " base=" + std::to_string(baseFriendship));
+            }
+            if (created.hasMetData() && generation >= 3)
+            {
+                context.check(created.metLocation() != 0, "the creator left the met location at 0, which is no place in this game", speciesDetail);
+            }
+            // Ball and met level go last because their setters read other fields (Heart Gold/Soul
+            // Silver's second ball byte; the obedience level from Scarlet/Violet on). Written last,
+            // writing them again changes nothing.
+            if (generation >= 3)
+            {
+                auto rewritten = created.clone();
+                rewritten->setMetLevel(created.metLevel());
+                rewritten->setBall(created.ball());
+                rewritten->refreshChecksum();
+                const std::span<const std::byte> createdBytes = created.getData();
+                const std::span<const std::byte> rewrittenBytes = rewritten->getData();
+                const bool same = createdBytes.size() == rewrittenBytes.size() && std::memcmp(createdBytes.data(), rewrittenBytes.data(), createdBytes.size()) == 0;
+                context.check(same, "the creator set the ball or the met level before a field they depend on", speciesDetail + " ball=" + std::to_string(created.ball()) + " metLevel=" + std::to_string(created.metLevel()));
+            }
+            if (group == Enums::GameVersion::GG)
+            {
+                const auto &letsGoPokemon = static_cast<const Pokemon::Pokemon7LGPE &>(created);
+                auto resizedPokemon = letsGoPokemon.clone();
+                auto &resized = static_cast<Pokemon::Pokemon7LGPE &>(*resizedPokemon);
+                resized.resetSizeAbsolutes();
+                const float createdHeight = letsGoPokemon.heightAbsolute();
+                const float resizedHeight = resized.heightAbsolute();
+                const float createdWeight = letsGoPokemon.weightAbsolute();
+                const float resizedWeight = resized.weightAbsolute();
+                context.check(std::memcmp(&createdHeight, &resizedHeight, sizeof(float)) == 0 && std::memcmp(&createdWeight, &resizedWeight, sizeof(float)) == 0, "the creator's Let's Go height and weight are not the ones its size scalars give", speciesDetail + " height=" + std::to_string(createdHeight) + " want=" + std::to_string(resizedHeight));
+                context.check(letsGoPokemon.spirit() == Pokemon::Pokemon7LGPE::INITIAL_SPIRIT_MOOD && letsGoPokemon.mood() == Pokemon::Pokemon7LGPE::INITIAL_SPIRIT_MOOD, "the creator's Let's Go Pokemon does not arrive with full spirit and mood", speciesDetail + " spirit=" + std::to_string(letsGoPokemon.spirit()) + " mood=" + std::to_string(letsGoPokemon.mood()));
+                context.check(letsGoPokemon.receivedYear() == created.metYear(), "the creator's Let's Go Pokemon has no received date", speciesDetail + " received=" + std::to_string(letsGoPokemon.receivedYear()) + " met=" + std::to_string(created.metYear()));
+            }
+        }
         /// A created Pokemon must be COMPLETE, not just present. In Legends: Arceus that includes its
         /// absolute height and weight: the game stores them rather than deriving them, the Pokedex
         /// and the size research tasks read them, and a creator that left them 0 made a Pokemon
@@ -491,6 +543,7 @@ namespace Test
                 context.check(createdHeight > 0 && createdWeight > 0, "the creator made a Legends: Arceus Pokemon with no height or weight", sizeDetail);
                 context.check(std::memcmp(&createdHeight, &resizedHeight, sizeof(float)) == 0 && std::memcmp(&createdWeight, &resizedWeight, sizeof(float)) == 0, "the creator's Legends: Arceus height and weight are not the ones its size scalars give", sizeDetail + " wantHeight=" + std::to_string(resizedHeight) + " wantWeight=" + std::to_string(resizedWeight));
             }
+            checkCreatedFields(context, *created);
         }
         bool creatorEditing(const TrainerView &screen, const Trainer::Trainer &) { return screen.details.active && screen.creator.editing; }
         void checkKeepPrompt(Context &context, TrainerView &screen, Trainer::Trainer &)

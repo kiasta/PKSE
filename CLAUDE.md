@@ -129,6 +129,9 @@ python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept 
   test, with nothing stricter. Emulator wrappers are save envelopes. See chapter 05.
 - **A bank tag names a FORMAT, not a game.** Never compare `groupForBankTag(tag)` with an entity's
   own group. Bank tags are only ever added, never changed. See chapter 10.
+- **The bank and the game save are saved separately — by design, don't couple them.** Leaving the
+  bank asks Save & Exit / Discard / Cancel for the bank only (Discard never touches the save's
+  boxes); the game save never writes the bank. See chapter 10.
 - **Name tables are per language; stored text is not.** A byte is a font index, so the RECORD's
   language selects the codec. Gen 3 text goes through `include/Utils/Gen3Text.h` only. See
   chapter 07.

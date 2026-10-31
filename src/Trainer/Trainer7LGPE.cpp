@@ -5,7 +5,9 @@
 #include "Trainer/Trainer7LGPE.h"
 #include "Pokemon/Pokemon7LGPE.h"
 #include "Pokemon/DexTable7LGPE.h"      // the generated dex form-bit + entry tables
+#include "Pokemon/EvolutionTable.h"    // a size record covers the whole evolution line
 #include "Pokemon/PersonalInfoTable.h" // getPersonalInfo -> per-game presence + formCount (Pokedex gate)
+#include "Utils/CRC16.h"
 #include "Utils/Logger.h"
 
 using namespace Utils;
@@ -592,8 +594,8 @@ namespace Trainer
     {
         // A zeroed *decrypted* PB7 buffer encrypted with EC/seed 0, then fed to the ctor (which
         // decrypts it straight back to zeros) -> a clean species-0, checksum-valid entity. LGPE's
-        // own empty box slots are written as raw zeros (the read path gates on a non-zero EC), but a
-        // *live* blank entity still needs a valid decrypted PB7 buffer, so use the encrypt->decrypt
+        // own empty slots hold the encrypted blank behind a zero EC (the read path skips them, and
+        // updateBoxBlock() keeps the file's own), but a *live* blank entity still needs a valid decrypted PB7 buffer, so use the encrypt->decrypt
         // round-trip here (same principle as the SwishCrypto gens' encrypted-blank fallback).
         std::vector<std::byte> zero(SIZE_PARTY7_LGPE, std::byte{0});
         std::byte *encryptedRecord = Encryption::encryptArray7LGPE(std::span<const std::byte>(zero.data(), SIZE_PARTY7_LGPE), 0);
@@ -651,6 +653,9 @@ namespace Trainer
         constexpr size_t ZUKAN_SIZE_START = 0xF78;
         constexpr size_t ZUKAN_SIZE_ENTRY = 6;
         constexpr size_t ZUKAN_SIZE_COUNT = 186;
+        // The size entries cover species up to Melmetal and forms below this (PKHeX TryGetSizeEntryIndex).
+        constexpr uint16_t MAX_SPECIES_ID7_LGPE = 809;
+        constexpr uint8_t MAX_SIZE_ENTRY_FORM7_LGPE = 32;
         enum : int
         {
             SIZE_MIN_HEIGHT = 0,
@@ -728,6 +733,42 @@ namespace Trainer
         }
         // block missing or too small: leave it alone
         if (!dex || dex->size() < ZUKAN_OFS_LANG) return;
+
+        // Every (species, form) the size records cover, found once per write and only if a record
+        // is taken; descendants of a species are the entries whose pre-evolution chain holds it.
+        std::vector<std::pair<uint16_t, uint8_t>> sizeEntrySpeciesForms;
+        auto sizeEntriesOfLineage = [&](uint16_t species, uint8_t form)
+        {
+            constexpr int MAX_LINEAGE_DEPTH = 4;
+            if (sizeEntrySpeciesForms.empty())
+            {
+                for (uint16_t candidateSpecies = 1; candidateSpecies <= MAX_SPECIES_ID7_LGPE; ++candidateSpecies)
+                {
+                    for (uint8_t candidateForm = 0; candidateForm < MAX_SIZE_ENTRY_FORM7_LGPE; ++candidateForm)
+                    {
+                        if (getDexEntryIndex7LGPE(candidateSpecies, candidateForm) >= 0)
+                            sizeEntrySpeciesForms.push_back({candidateSpecies, candidateForm});
+                    }
+                }
+            }
+            std::vector<int> lineageEntryIndices{getDexEntryIndex7LGPE(species, form)};
+            uint16_t chainSpecies[MAX_LINEAGE_DEPTH];
+            uint8_t chainForms[MAX_LINEAGE_DEPTH];
+            const int ancestorCount = ::Pokemon::getPreEvolutionChain(Enums::GameVersion::GG, species, form, chainSpecies, chainForms, MAX_LINEAGE_DEPTH);
+            for (int ancestorIndex = 0; ancestorIndex < ancestorCount; ++ancestorIndex)
+                lineageEntryIndices.push_back(getDexEntryIndex7LGPE(chainSpecies[ancestorIndex], chainForms[ancestorIndex]));
+            for (const auto &[candidateSpecies, candidateForm] : sizeEntrySpeciesForms)
+            {
+                const int candidateAncestorCount = ::Pokemon::getPreEvolutionChain(Enums::GameVersion::GG, candidateSpecies, candidateForm, chainSpecies, chainForms, MAX_LINEAGE_DEPTH);
+                for (int ancestorIndex = 0; ancestorIndex < candidateAncestorCount; ++ancestorIndex)
+                {
+                    if (chainSpecies[ancestorIndex] == species && chainForms[ancestorIndex] == form)
+                        lineageEntryIndices.push_back(getDexEntryIndex7LGPE(candidateSpecies, candidateForm));
+                }
+            }
+            std::erase_if(lineageEntryIndices, [](int entryIndex) { return entryIndex < 0; });
+            return lineageEntryIndices;
+        };
 
         auto registerMon = [&](const ::Pokemon::Pokemon *pokemon)
         {
@@ -824,18 +865,29 @@ namespace Trainer
             const ::Pokemon::PersonalInfo &pi = ::Pokemon::getPersonalInfo(species, form);
             const uint8_t heightScalarValue = lg->heightScalar();
             const uint8_t weightScalarValue = lg->weightScalar();
+            // A record taken is written to the species' whole evolution line -- every pre-evolution
+            // and every evolution with a size entry -- exactly as PKHeX's Zukan7b.SetSizeData does.
+            auto writeSizeRecordToLineage = [&](int sizeGroup)
+            {
+                for (int lineageEntryIndex : sizeEntriesOfLineage(species, form))
+                {
+                    const size_t lineageOffset = ggSizeOffset(sizeGroup, lineageEntryIndex);
+                    if (lineageOffset + ZUKAN_SIZE_ENTRY <= dex->size())
+                        ggSizeWrite(*dex, lineageOffset, heightScalarValue, weightScalarValue);
+                }
+            };
 
             if (hAbs < static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_HEIGHT, entryIndex);
                 if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue < ggSizeHeightScalar(*dex, offset)))
-                    ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
+                    writeSizeRecordToLineage(SIZE_MIN_HEIGHT);
             }
             else if (hAbs > static_cast<float>(pi.height))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_HEIGHT, entryIndex);
                 if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || heightScalarValue > ggSizeHeightScalar(*dex, offset)))
-                    ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
+                    writeSizeRecordToLineage(SIZE_MAX_HEIGHT);
             }
 
             // Weight records compare ABSOLUTE weight, not the scalar: absolute weight depends on the
@@ -844,13 +896,13 @@ namespace Trainer
             {
                 const size_t offset = ggSizeOffset(SIZE_MIN_WEIGHT, entryIndex);
                 if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs < ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
-                    ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
+                    writeSizeRecordToLineage(SIZE_MIN_WEIGHT);
             }
             else if (wAbs > static_cast<float>(pi.weight))
             {
                 const size_t offset = ggSizeOffset(SIZE_MAX_WEIGHT, entryIndex);
                 if (offset + ZUKAN_SIZE_ENTRY <= dex->size() && (ggSizeUnset(*dex, offset) || wAbs > ggWeightAbsoluteFrom(pi, ggSizeHeightScalar(*dex, offset), (*dex)[offset + 2])))
-                    ggSizeWrite(*dex, offset, heightScalarValue, weightScalarValue);
+                    writeSizeRecordToLineage(SIZE_MAX_WEIGHT);
             }
         };
 
@@ -986,22 +1038,6 @@ namespace Trainer
 
     namespace
     {
-        // CRC-16/ARC (reflected poly 0xA001, init 0x0000, no final XOR) — the LGPE block
-        // checksum (PKHeX Checksums.CRC16NoInvert / BlockInfo7b). Computed over [p, p+n).
-        uint16_t crc16Arc(const uint8_t *bytes, size_t byteCount)
-        {
-            uint16_t checksum = 0x0000;
-            for (size_t index = 0; index < byteCount; ++index)
-            {
-                checksum ^= bytes[index];
-                for (int bitIndex = 0; bitIndex < 8; ++bitIndex)
-                {
-                    checksum = (checksum & 1) ? static_cast<uint16_t>((checksum >> 1) ^ 0xA001) : static_cast<uint16_t>(checksum >> 1);
-                }
-            }
-            return checksum;
-        }
-
         // Active-area byte offset for a Beluga block key (matches createBlocksFromSaveData7LGPE).
         size_t offsetForBlockKey(uint32_t key)
         {
@@ -1048,7 +1084,7 @@ namespace Trainer
 
             // Recompute this block's checksum into the footer. (Blocks we don't touch keep
             // their original bytes and valid checksums, so we only need to redo the ones here.)
-            const uint16_t storedChecksum = crc16Arc(raw.data() + offset, length);
+            const uint16_t storedChecksum = Utils::crc16NoInvert(raw.data() + offset, length);
             const size_t chkOff = CHECKSUM_BASE + static_cast<size_t>(block.key) * 8;
             if (chkOff + 2 <= raw.size())
             {

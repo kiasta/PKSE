@@ -19,6 +19,7 @@
  */
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -565,6 +566,502 @@ static void gen2Synthetic()
     std::printf("      edits persist\n");
 }
 
+// A Bad Egg -- a record whose stored checksum is wrong -- must be written back exactly as it was,
+// the way PKHeX leaves every slot it was not asked to set. Writers that re-checksum every record
+// they meet turned it into a "valid" Pokemon (Gens 6-7) or re-keyed its garbage (Gens 4-5, where the
+// checksum is the crypt key). The first boxed Pokemon is made into one by flipping its stored
+// checksum wherever its unencrypted 8-byte header appears (both Gen 4 partitions, say), then the
+// save is serialized and every flipped record must come back byte for byte.
+template <typename TrainerT>
+static void badEggKept(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty())
+    {
+        return;
+    }
+    if (!TrainerT::detect(originalBytes))
+    {
+        Save::stripRtcFooter(originalBytes);
+    }
+    if (!TrainerT::detect(originalBytes))
+    {
+        return;
+    }
+    std::vector<uint8_t> recordHeader;
+    {
+        TrainerT probeTrainer(originalBytes, path);
+        for (auto &box : probeTrainer.boxes)
+        {
+            for (auto &pokemon : box)
+            {
+                if (pokemon && pokemon->speciesID() != 0 && recordHeader.empty())
+                {
+                    const uint8_t *recordBytes = reinterpret_cast<const uint8_t *>(pokemon->getData().data());
+                    recordHeader.assign(recordBytes, recordBytes + 8);
+                }
+            }
+        }
+    }
+    if (recordHeader.empty())
+    {
+        return;
+    }
+    constexpr size_t comparedRecordSize = 0x88; // the smallest stored record (Gens 4-5)
+    std::vector<uint8_t> corruptedBytes = originalBytes;
+    std::vector<size_t> recordOffsets;
+    for (size_t recordOffset = 0; recordOffset + comparedRecordSize <= corruptedBytes.size(); ++recordOffset)
+    {
+        if (!std::equal(recordHeader.begin(), recordHeader.end(), corruptedBytes.begin() + recordOffset))
+        {
+            continue;
+        }
+        corruptedBytes[recordOffset + 6] ^= 0x5A;
+        recordOffsets.push_back(recordOffset);
+    }
+    TrainerT trainer(corruptedBytes, path);
+    const auto &writtenBytes = trainer.serialize();
+    size_t changedRecordCount = 0;
+    for (const size_t recordOffset : recordOffsets)
+    {
+        changedRecordCount += !std::equal(corruptedBytes.begin() + recordOffset, corruptedBytes.begin() + recordOffset + comparedRecordSize, writtenBytes.begin() + recordOffset);
+    }
+    CHECK(!recordOffsets.empty() && changedRecordCount == 0, "%s: Bad Egg rewritten in %zu of %zu place(s)", tag, changedRecordCount, recordOffsets.size());
+    if (!recordOffsets.empty() && changedRecordCount == 0)
+    {
+        std::printf("      %-16s a Bad Egg (bad stored checksum) is written back untouched\n", tag);
+    }
+}
+
+// Gen 4 reads its language from the trainer record (Trainer1 + 0x19), so a Pokemon created on a
+// non-English save is not stamped English. The save holds no language to compare with directly, so
+// the player's own Pokemon (same TID, SID) testify: they were caught in this cartridge's language.
+template <typename TrainerT>
+static void gen4LanguageFollowsSave(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty() || (!TrainerT::detect(originalBytes) && !(Save::stripRtcFooter(originalBytes) && TrainerT::detect(originalBytes))))
+    {
+        return;
+    }
+    TrainerT trainer(originalBytes, path);
+    uint8_t ownLanguage = 0;
+    for (auto &pokemon : trainer.party)
+    {
+        if (pokemon && pokemon->speciesID() != 0 && pokemon->tid16() == trainer.TID16 && pokemon->sid16() == trainer.SID16)
+        {
+            ownLanguage = pokemon->language();
+            break;
+        }
+    }
+    CHECK(ownLanguage != 0 && trainer.language() == ownLanguage, "%s: save language %u, the player's own Pokemon say %u", tag, trainer.language(), ownLanguage);
+    // English is also the fallback, so an English save alone cannot tell a read from a default:
+    // rewrite the byte to German in both partitions' trainer records and require it to follow.
+    size_t patchedCount = 0;
+    for (const size_t partitionStart : {size_t{0}, TrainerT::GEN4_PARTITION})
+    {
+        const size_t trainerOffset = partitionStart + trainer.ofsTrainer();
+        if (trainerOffset + 0x20 > originalBytes.size() || Utils::readUInt16LittleEndian(&originalBytes[trainerOffset + 0x10]) != trainer.TID16)
+        {
+            continue;
+        }
+        originalBytes[trainerOffset + TrainerT::GEN4_LANGUAGE_OFFSET] = static_cast<uint8_t>(Enums::LanguageID::German);
+        ++patchedCount;
+    }
+    TrainerT germanTrainer(originalBytes, path);
+    CHECK(patchedCount != 0 && germanTrainer.language() == static_cast<uint8_t>(Enums::LanguageID::German), "%s: a German save reads as language %u", tag, germanTrainer.language());
+    if (ownLanguage != 0 && trainer.language() == ownLanguage)
+    {
+        std::printf("      %-16s language %u, as the player's own Pokemon; follows the byte to German\n", tag, trainer.language());
+    }
+}
+
+// HeartGold/SoulSilver: the version comes from the trainer record's ROM code, and a box edit must
+// flag every box as changed (PKHeX SAV4HGSS FlagsBoxContentChanged): the game copies only flagged
+// boxes on its next save, so a box PKSE changed but did not flag reads back corrupt.
+static void heartGoldSoulSilver(const std::string &path, const char *tag, Enums::GameVersion expectedVersion)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty() || (!Trainer::Trainer4HGSS::detect(originalBytes) && !(Save::stripRtcFooter(originalBytes) && Trainer::Trainer4HGSS::detect(originalBytes))))
+    {
+        return;
+    }
+    const char *versionName = expectedVersion == Enums::GameVersion::SS ? "SoulSilver" : "HeartGold";
+    {
+        Trainer::Trainer4HGSS uneditedTrainer(originalBytes, path);
+        CHECK(uneditedTrainer.getGameVersion() == expectedVersion, "%s: the save names itself version %d", tag, static_cast<int>(uneditedTrainer.getGameVersion()));
+        const uint32_t flagsBefore = uneditedTrainer.boxContentChangedFlags();
+        uneditedTrainer.serialize();
+        CHECK(uneditedTrainer.boxContentChangedFlags() == flagsBefore, "%s: an unedited save changed the box flags 0x%X -> 0x%X", tag, flagsBefore, uneditedTrainer.boxContentChangedFlags());
+    }
+    Trainer::Trainer4HGSS trainer(originalBytes, path);
+    size_t sourceIndex = SIZE_MAX;
+    size_t destinationIndex = SIZE_MAX;
+    for (size_t flatIndex = 0; flatIndex < trainer.getBoxCount() * Trainer::BOX_SLOTS; ++flatIndex)
+    {
+        const auto &pokemon = trainer.boxes[flatIndex / Trainer::BOX_SLOTS][flatIndex % Trainer::BOX_SLOTS];
+        const bool slotEmpty = !pokemon || pokemon->speciesID() == 0;
+        if (!slotEmpty && sourceIndex == SIZE_MAX)
+        {
+            sourceIndex = flatIndex;
+        }
+        if (slotEmpty && flatIndex >= 4 * Trainer::BOX_SLOTS && destinationIndex == SIZE_MAX)
+        {
+            destinationIndex = flatIndex;
+        }
+    }
+    if (sourceIndex == SIZE_MAX || destinationIndex == SIZE_MAX)
+    {
+        std::printf("      %-16s names itself %s; no boxed Pokemon to move\n", tag, versionName);
+        return;
+    }
+    trainer.swapBoxSlots(sourceIndex / Trainer::BOX_SLOTS, sourceIndex % Trainer::BOX_SLOTS, destinationIndex / Trainer::BOX_SLOTS, destinationIndex % Trainer::BOX_SLOTS);
+    trainer.serialize();
+    CHECK(trainer.boxContentChangedFlags() == Trainer::Trainer4HGSS::BOX_CONTENT_CHANGED_ALL4_HGSS, "%s: box move left the box flags at 0x%X", tag, trainer.boxContentChangedFlags());
+    std::printf("      %-16s names itself %s; a box move flags all 18 boxes (0x%X)\n", tag, versionName, trainer.boxContentChangedFlags());
+}
+
+// Gen 2 box lists are counted and gapless, so compactStorage() must pack the view the way the
+// write will: it used to report success and move nothing, so a Pokemon moved to a later slot was
+// shown there and reloaded somewhere else. The first boxed Pokemon is moved to its box's last slot.
+static void gen2CompactionMatchesReload(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty())
+    {
+        return;
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        Save::stripRtcFooter(originalBytes);
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        return;
+    }
+    Trainer::Trainer2GSC trainer(originalBytes, path);
+    const size_t lastSlot = trainer.getSlotsPerBox() - 1;
+    for (size_t boxIndex = 0; boxIndex < trainer.getBoxCount(); ++boxIndex)
+    {
+        auto &box = trainer.boxes[boxIndex];
+        if (!box[0] || box[0]->speciesID() == 0 || box[lastSlot])
+        {
+            continue;
+        }
+        size_t occupiedCount = 0;
+        for (size_t slotIndex = 0; slotIndex <= lastSlot; ++slotIndex)
+        {
+            occupiedCount += box[slotIndex] && box[slotIndex]->speciesID() != 0;
+        }
+        const uint16_t speciesId = box[0]->speciesID();
+        box[lastSlot] = std::move(box[0]);
+        const bool moved = trainer.compactStorage();
+        const size_t packedSlot = occupiedCount - 1;
+        const bool packed = box[packedSlot] && box[packedSlot]->speciesID() == speciesId && (packedSlot == lastSlot || !box[lastSlot]);
+        CHECK(moved && packed, "%s: compactStorage() did not pack box %zu the way the save is written", tag, boxIndex + 1);
+        CHECK(!trainer.compactStorage(), "%s: compactStorage() reported a move on a packed box", tag);
+        Trainer::Trainer2GSC reloadedTrainer(trainer.serialize(), path);
+        const auto &reloadedSlot = reloadedTrainer.boxes[boxIndex][packedSlot];
+        const bool reloadsThere = reloadedSlot && reloadedSlot->speciesID() == speciesId;
+        CHECK(reloadsThere, "%s: the packed slot is not where the Pokemon reloads", tag);
+        if (moved && packed && reloadsThere)
+        {
+            std::printf("      %-16s a moved boxed Pokemon is shown where it reloads\n", tag);
+        }
+        return;
+    }
+    std::printf("      %-16s (no box with a free last slot -- compaction not checked)\n", tag);
+}
+
+// Gen 2: a counted party entry PKSE cannot map (species 252 here) is kept, in place, byte for
+// byte -- PKHeX's PokeList2 copies every counted entry. It used to be dropped on load and the list
+// compacted over it on any save.
+static void gen2GlitchEntryKept(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty())
+    {
+        return;
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        Save::stripRtcFooter(originalBytes);
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        return;
+    }
+    Trainer::Trainer2GSC probeTrainer(originalBytes, path);
+    if (probeTrainer.party.empty())
+    {
+        return;
+    }
+    std::vector<uint8_t> listHeader{static_cast<uint8_t>(probeTrainer.party.size())};
+    for (auto &pokemon : probeTrainer.party)
+    {
+        listHeader.push_back(static_cast<uint8_t>(pokemon->getData()[1]));
+    }
+    listHeader.push_back(0xFF);
+    // The international party lists (Gold/Silver 0x288A, Crystal 0x2865); a Japanese save is skipped.
+    size_t partyOffset = 0;
+    for (const size_t candidateOffset : {size_t{0x288A}, size_t{0x2865}})
+    {
+        if (candidateOffset + listHeader.size() <= originalBytes.size() && std::equal(listHeader.begin(), listHeader.end(), originalBytes.begin() + candidateOffset))
+        {
+            partyOffset = candidateOffset;
+        }
+    }
+    if (partyOffset == 0)
+    {
+        return;
+    }
+    std::vector<uint8_t> glitchedBytes = originalBytes;
+    glitchedBytes[partyOffset + 1] = 0xFC;
+    glitchedBytes[partyOffset + 1 + 6 + 1] = 0xFC;
+    Trainer::Trainer2GSC glitchedTrainer(glitchedBytes, path);
+    CHECK(glitchedTrainer.party.size() == probeTrainer.party.size() - 1, "%s: a species-252 party entry is shown as a Pokemon", tag);
+    const auto &writtenBytes = glitchedTrainer.serialize();
+    const size_t headerAndBodiesLength = 1 + 6 + 1 + 48 * 6;
+    const bool kept = std::equal(glitchedBytes.begin() + partyOffset, glitchedBytes.begin() + partyOffset + headerAndBodiesLength, writtenBytes.begin() + partyOffset);
+    CHECK(kept, "%s: a species-252 party entry was not written back in place", tag);
+    if (kept)
+    {
+        std::printf("      %-16s an unmappable party entry is kept in place on save\n", tag);
+    }
+
+    // The party view shows the kept entry in its own slot, and it takes one of the six: a party
+    // filled to the room the trainer reports writes and reloads every Pokemon and the kept entry.
+    CHECK(glitchedTrainer.getUnmappedPartySlots() == std::vector<size_t>{0}, "%s: getUnmappedPartySlots does not report the species-252 entry in party slot 1", tag);
+    if (glitchedTrainer.party.empty() && probeTrainer.party.empty())
+    {
+        return;
+    }
+    const std::unique_ptr<::Pokemon::Pokemon> donorCopy = probeTrainer.party[0]->clone();
+    while (glitchedTrainer.party.size() + glitchedTrainer.getUnmappedPartySlots().size() < Trainer::MAX_PARTY_SLOTS)
+    {
+        glitchedTrainer.party.push_back(donorCopy->clone());
+    }
+    bool partySlotsMapped = glitchedTrainer.partyIndexAtSlot(0) == -1;
+    for (size_t partySlotIndex = 1; partySlotIndex < Trainer::MAX_PARTY_SLOTS; ++partySlotIndex)
+    {
+        partySlotsMapped = partySlotsMapped && glitchedTrainer.partyIndexAtSlot(partySlotIndex) == static_cast<int>(partySlotIndex - 1);
+    }
+    CHECK(partySlotsMapped, "%s: partyIndexAtSlot does not skip the species-252 entry's party slot", tag);
+    Trainer::Trainer2GSC reloadedTrainer(glitchedTrainer.serialize(), path);
+    const bool partyKept = glitchedTrainer.party.size() == Trainer::MAX_PARTY_SLOTS - 1 && reloadedTrainer.party.size() == glitchedTrainer.party.size() && reloadedTrainer.getUnmappedPartySlots() == std::vector<size_t>{0};
+    CHECK(partyKept, "%s: a party filled around a species-252 entry lost an entry on save (%zu placed, %zu reloaded)", tag, glitchedTrainer.party.size(), reloadedTrainer.party.size());
+    if (partyKept)
+    {
+        std::printf("      %-16s a party filled around it keeps all six entries\n", tag);
+    }
+}
+
+// Gen 2: the same kind of entry in a BOX. It keeps its slot (isBoxSlotUnmapped), compactStorage()
+// moves it exactly where the write puts it, so the view equals a reload, and it counts toward the
+// box's capacity: a box filled around it writes and reloads every entry. A slot that read as free
+// let a Pokemon be dropped on the entry, overfilling the list so the last entry was cut on save.
+static void gen2GlitchBoxEntryKept(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty())
+    {
+        return;
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        Save::stripRtcFooter(originalBytes);
+    }
+    if (!Trainer::Trainer2GSC::detect(originalBytes))
+    {
+        return;
+    }
+    Trainer::Trainer2GSC probeTrainer(originalBytes, path);
+    if (probeTrainer.japanese())
+    {
+        return;
+    }
+    // The international box lists: boxes 1-7 from 0x4000 and 8-14 from 0x6000, each the list
+    // length plus 2 apart (PKHeX SAV2). Find a box with room for one more; an empty one is given a
+    // Pokemon first, so the kept entry has one before it to slide over.
+    const size_t boxCapacity = probeTrainer.getSlotsPerBox();
+    const size_t nameLength = 11;
+    const size_t boxListLength = 1 + boxCapacity + 1 + (32 + nameLength * 2) * boxCapacity;
+    const size_t boxStride = boxListLength + 2;
+    size_t boxIndex = 0, boxOffset = 0, storedCount = 0;
+    for (size_t candidateBox = 0; candidateBox < probeTrainer.getBoxCount() && boxOffset == 0; ++candidateBox)
+    {
+        const size_t candidateOffset = candidateBox < 7 ? 0x4000 + candidateBox * boxStride : 0x6000 + (candidateBox - 7) * boxStride;
+        const size_t candidateCount = originalBytes[candidateOffset];
+        bool headerMatches = candidateCount < boxCapacity && (candidateCount > 0 || originalBytes[candidateOffset + 1] == 0xFF);
+        for (size_t slotIndex = 0; headerMatches && slotIndex < candidateCount; ++slotIndex)
+        {
+            const auto &pokemon = probeTrainer.boxes[candidateBox][slotIndex];
+            headerMatches = pokemon && pokemon->getData()[1] == static_cast<std::byte>(originalBytes[candidateOffset + 1 + slotIndex]);
+        }
+        if (headerMatches)
+        {
+            boxIndex = candidateBox;
+            boxOffset = candidateOffset;
+            storedCount = candidateCount;
+        }
+    }
+    if (boxOffset == 0 || probeTrainer.party.empty())
+    {
+        std::printf("      %-16s (no box with a free slot -- boxed glitch entry not checked)\n", tag);
+        return;
+    }
+    std::vector<uint8_t> baseBytes = originalBytes;
+    if (storedCount == 0)
+    {
+        probeTrainer.boxes[boxIndex][0] = probeTrainer.party[0]->clone();
+        baseBytes = probeTrainer.serialize();
+        storedCount = 1;
+    }
+    // Plant species 252 as a new last entry.
+    const size_t glitchSlot = storedCount;
+    std::vector<uint8_t> glitchedBytes = baseBytes;
+    glitchedBytes[boxOffset] = static_cast<uint8_t>(storedCount + 1);
+    glitchedBytes[boxOffset + 1 + glitchSlot] = 0xFC;
+    glitchedBytes[boxOffset + 1 + glitchSlot + 1] = 0xFF;
+    glitchedBytes[boxOffset + 1 + boxCapacity + 1 + glitchSlot * 32] = 0xFC;
+
+    Trainer::Trainer2GSC glitchedTrainer(glitchedBytes, path);
+    bool otherSlotReported = false;
+    for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+    {
+        otherSlotReported = otherSlotReported || (slotIndex != glitchSlot && glitchedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex));
+    }
+    CHECK(!glitchedTrainer.boxes[boxIndex][glitchSlot] && glitchedTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot) && !otherSlotReported, "%s: isBoxSlotUnmapped does not report exactly the species-252 entry's box slot", tag);
+    CHECK(!glitchedTrainer.compactStorage(), "%s: compactStorage() moved a packed box holding a kept entry", tag);
+    const auto &unchangedBytes = glitchedTrainer.serialize();
+    CHECK(std::equal(glitchedBytes.begin() + boxOffset, glitchedBytes.begin() + boxOffset + boxListLength, unchangedBytes.begin() + boxOffset), "%s: a boxed species-252 entry was not written back in place", tag);
+
+    // Release the first Pokemon: compaction slides the rest AND the kept entry down one, exactly
+    // as the write packs them, so the view is what a reload shows.
+    {
+        Trainer::Trainer2GSC compactedTrainer(glitchedBytes, path);
+        compactedTrainer.boxes[boxIndex][0].reset();
+        compactedTrainer.compactStorage();
+        Trainer::Trainer2GSC reloadedTrainer(compactedTrainer.serialize(), path);
+        bool viewMatchesReload = compactedTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot - 1) && reloadedTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot - 1);
+        for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+        {
+            const auto &shown = compactedTrainer.boxes[boxIndex][slotIndex];
+            const auto &reloaded = reloadedTrainer.boxes[boxIndex][slotIndex];
+            const uint16_t shownSpecies = shown ? shown->speciesID() : 0;
+            const uint16_t reloadedSpecies = reloaded ? reloaded->speciesID() : 0;
+            viewMatchesReload = viewMatchesReload && shownSpecies == reloadedSpecies && compactedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex) == reloadedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex);
+        }
+        CHECK(viewMatchesReload, "%s: after compaction the box view (kept entry included) is not what a reload shows", tag);
+    }
+
+    // Fill every slot the storage view offers (free and not a kept entry's): every entry survives.
+    size_t pokemonCount = 0;
+    const std::unique_ptr<::Pokemon::Pokemon> donorCopy = glitchedTrainer.boxes[boxIndex][0]->clone();
+    for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+    {
+        auto &slot = glitchedTrainer.boxes[boxIndex][slotIndex];
+        if (!slot && !glitchedTrainer.isBoxSlotUnmapped(boxIndex, slotIndex))
+        {
+            slot = donorCopy->clone();
+        }
+        pokemonCount += slot && slot->speciesID() != 0;
+    }
+    glitchedTrainer.compactStorage();
+    Trainer::Trainer2GSC filledTrainer(glitchedTrainer.serialize(), path);
+    size_t reloadedCount = 0;
+    for (size_t slotIndex = 0; slotIndex < boxCapacity; ++slotIndex)
+    {
+        reloadedCount += filledTrainer.boxes[boxIndex][slotIndex] && filledTrainer.boxes[boxIndex][slotIndex]->speciesID() != 0;
+    }
+    const bool boxKept = pokemonCount == boxCapacity - 1 && reloadedCount == pokemonCount && filledTrainer.isBoxSlotUnmapped(boxIndex, glitchSlot);
+    CHECK(boxKept, "%s: a box filled around a species-252 entry lost an entry on save (%zu placed, %zu reloaded)", tag, pokemonCount, reloadedCount);
+    if (boxKept)
+    {
+        std::printf("      %-16s a boxed unmappable entry keeps its slot through compaction and a full box\n", tag);
+    }
+}
+
+// Gen 7 shows the six-digit trainer ID: TID = ID32 % 1000000, SID = ID32 / 1000000 (PKHeX
+// TrainerTID7/TrainerSID7). Sun/Moon and Ultra Sun/Ultra Moon used to show the 16-bit halves.
+template <typename TrainerT>
+static void gen7DisplayedTrainerId(const std::string &path, const char *tag)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty() || !TrainerT::detect(originalBytes))
+    {
+        return;
+    }
+    TrainerT trainer(originalBytes, path);
+    CHECK(trainer.TID == trainer.ID32 % 1000000 && trainer.SID == trainer.ID32 / 1000000, "%s: the trainer ID shown is %u/%u, want %u/%u", tag, trainer.TID, trainer.SID, trainer.ID32 % 1000000, trainer.ID32 / 1000000);
+}
+
+// The Gen 5 berry pouch is 64 slots and the Gen 6 one 67 (PKHeX ItemStorage5.Berry /
+// ItemStorage6XY.Berry). PKSE used to run it to the next boundary (74/85/72 slots) and zero those
+// extra bytes on every save. Bytes the game would never read as an item (id 0, a count) are planted
+// right after the real pouch; an edited bag must leave them alone.
+template <typename TrainerT>
+static void berryPouchTailKept(const std::string &path, const char *tag, size_t berryPouchFileOffset, size_t berrySlotCount, size_t formerBerrySlotCount)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty() || !TrainerT::detect(originalBytes))
+    {
+        return;
+    }
+    const size_t tailOffset = berryPouchFileOffset + berrySlotCount * 4;
+    const size_t tailLength = (formerBerrySlotCount - berrySlotCount) * 4;
+    for (size_t slotOffset = tailOffset; slotOffset < tailOffset + tailLength; slotOffset += 4)
+    {
+        originalBytes[slotOffset] = 0;
+        originalBytes[slotOffset + 1] = 0;
+        originalBytes[slotOffset + 2] = 0x05;
+        originalBytes[slotOffset + 3] = 0;
+    }
+    TrainerT trainer(originalBytes, path);
+    trainer.money = trainer.money == 1234 ? 4321 : 1234;
+    if (!trainer.items.empty())
+    {
+        trainer.items[0].push_back(Trainer::InventoryItem{1, 5, false, false});
+    }
+    const auto &writtenBytes = trainer.serialize();
+    const bool kept = std::equal(originalBytes.begin() + tailOffset, originalBytes.begin() + tailOffset + tailLength, writtenBytes.begin() + tailOffset);
+    CHECK(kept, "%s: an edited bag overwrote the %zu bytes after the berry pouch", tag, tailLength);
+    if (kept)
+    {
+        std::printf("      %-16s the bytes after the %zu-slot berry pouch survive a bag edit\n", tag, berrySlotCount);
+    }
+}
+
+// Gen 7 battle teams are (box << 8) | slot pointers at 0x4C4 of the box-layout block (PKHeX
+// BoxLayout7); PKHeX treats every team member as overwrite-protected. PKSE read none of them, so a
+// move or sort left a team pointing at whatever slid in. A team pointer to box 3 slot 6 is planted
+// in the first team place; the test save's own team pointers are reported as found.
+template <typename TrainerT>
+static void gen7BattleTeamSlotsLocked(const std::string &path, const char *tag, size_t teamPointerFileOffset)
+{
+    auto originalBytes = load(path);
+    if (originalBytes.empty() || !TrainerT::detect(originalBytes))
+    {
+        return;
+    }
+    size_t teamMemberCount = 0;
+    {
+        TrainerT savedTrainer(originalBytes, path);
+        for (size_t boxIndex = 0; boxIndex < savedTrainer.getBoxCount(); ++boxIndex)
+        {
+            for (size_t slotIndex = 0; slotIndex < savedTrainer.getSlotsPerBox(); ++slotIndex)
+            {
+                teamMemberCount += savedTrainer.isBoxSlotLocked(boxIndex, slotIndex);
+            }
+        }
+    }
+    originalBytes[teamPointerFileOffset] = 5;     // slot 6
+    originalBytes[teamPointerFileOffset + 1] = 2; // box 3
+    TrainerT plantedTrainer(originalBytes, path);
+    CHECK(plantedTrainer.isBoxSlotLocked(2, 5) && !plantedTrainer.isBoxSlotLocked(2, 6) && !plantedTrainer.isBoxSlotLocked(5, 2), "%s: a battle-team slot is not reported locked (or a free one is)", tag);
+    std::printf("      %-16s battle-team slots are locked (%zu in the save itself)\n", tag, teamMemberCount);
+}
+
 template <typename TrainerT>
 static void gen7Signature(const std::string &path, const char *tag, size_t signatureOffset, size_t hashedSize)
 {
@@ -1023,7 +1520,39 @@ int main(int argc, char **argv)
     gameByteFollows<Trainer::Trainer7SM>(sun, "Sun", Trainer::BLOCKS_7SM[Trainer::BLOCK_STATUS_7SM].offset + 0x04, Enums::GameVersion::MN);
     gameByteFollows<Trainer::Trainer7USUM>(ultraSun, "Ultra Sun", Trainer::BLOCKS_7USUM[Trainer::BLOCK_STATUS_7USUM].offset + 0x04, Enums::GameVersion::UM);
 
+    std::printf("\nBad Eggs are kept\n");
+    badEggKept<Trainer::Trainer4DP>  (diamond,    "Diamond");
+    badEggKept<Trainer::Trainer4PT>  (platinum,   "Platinum");
+    badEggKept<Trainer::Trainer4HGSS>(heartGold,  "HeartGold");
+    badEggKept<Trainer::Trainer5BW>  (black,      "Black");
+    badEggKept<Trainer::Trainer5B2W2>(black2,     "Black 2");
+    badEggKept<Trainer::Trainer6XY>  (pokemonX,   "X");
+    badEggKept<Trainer::Trainer6ORAS>(omegaRuby,  "Omega Ruby");
+    badEggKept<Trainer::Trainer7SM>  (sun,        "Sun");
+    badEggKept<Trainer::Trainer7USUM>(ultraSun,   "Ultra Sun");
+
+    std::printf("\nGen 2 glitch entries\n");
+    gen2GlitchEntryKept(gold, "Gold");
+    gen2GlitchEntryKept(crystal, "Crystal");
+    gen2GlitchBoxEntryKept(gold, "Gold");
+    gen2GlitchBoxEntryKept(crystal, "Crystal");
+    gen2CompactionMatchesReload(gold, "Gold");
+    gen2CompactionMatchesReload(crystal, "Crystal");
+
+    std::printf("\nGen 4 save language and HeartGold/SoulSilver\n");
+    gen4LanguageFollowsSave<Trainer::Trainer4DP>  (diamond,    "Diamond");
+    gen4LanguageFollowsSave<Trainer::Trainer4PT>  (platinum,   "Platinum");
+    gen4LanguageFollowsSave<Trainer::Trainer4HGSS>(heartGold,  "HeartGold");
+    heartGoldSoulSilver(heartGold,  "HeartGold",  Enums::GameVersion::HG);
+    heartGoldSoulSilver(soulSilver, "SoulSilver", Enums::GameVersion::SS);
+
     std::printf("\nGen 7 MemeCrypto\n");
+    berryPouchTailKept<Trainer::Trainer5BW>(black, "Black", Trainer::BLOCKS_5BW[Trainer::BLOCK_INVENTORY_5BW].offset + Trainer::POUCHES5_BW[4].offset, 64, 74); // 64 and 67 are PKHeX's berry list lengths, pinned here on purpose
+    berryPouchTailKept<Trainer::Trainer6XY>(pokemonX, "X", Trainer::BLOCKS_6XY[Trainer::BLOCK_ITEM_6XY].offset + Trainer::POUCHES6_XY[4].offset, 67, 72);
+    gen7DisplayedTrainerId<Trainer::Trainer7SM>(sun, "Sun");
+    gen7DisplayedTrainerId<Trainer::Trainer7USUM>(ultraSun, "Ultra Sun");
+    gen7BattleTeamSlotsLocked<Trainer::Trainer7SM>(sun, "Sun", Trainer::BLOCKS_7SM[Trainer::BLOCK_BOX_LAYOUT_7SM].offset + Trainer::BATTLE_TEAM_POINTERS7_SM);
+    gen7BattleTeamSlotsLocked<Trainer::Trainer7USUM>(ultraSun, "Ultra Sun", Trainer::BLOCKS_7USUM[Trainer::BLOCK_BOX_LAYOUT_7USUM].offset + Trainer::BATTLE_TEAM_POINTERS7_USUM);
     gen7Signature<Trainer::Trainer7SM>(sun, "Sun", 0x6BB00, 0x140);
     gen7Signature<Trainer::Trainer7USUM>(ultraSun, "Ultra Sun", 0x6C100, 0x150);
 

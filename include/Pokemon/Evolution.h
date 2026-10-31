@@ -37,12 +37,20 @@
 #ifndef POKEMON_EVOLUTION_H
 #define POKEMON_EVOLUTION_H
 
+#include <cstdint>
+#include <string>
+
+#include "Enums/GameVersion.h"
 #include "Pokemon/EvolutionTable.h"
 
 namespace Pokemon
 {
 
     class Pokemon;
+
+    /** A species name as the record's own game and language would have stored it: upper case
+     *  before Gen 5 outside Japanese and Korean (PKHeX SpeciesName.GetSpeciesName1234). */
+    std::u16string speciesNameAsStored(uint16_t speciesId, Enums::GameVersion gameGroup, uint8_t languageId);
 
     /**
      * The trade evolutions a Pokemon's species+form has in its own game, and which one -- if any --

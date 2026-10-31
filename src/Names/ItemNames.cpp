@@ -26170,7 +26170,7 @@ namespace Names
         "Alte Karte",
     };
     static const char* const ITEM3_NAMES_ES[] = {
-        "Ningún",
+        "(Ningún)",
         "Master Ball",
         "Ultra Ball",
         "Super Ball",

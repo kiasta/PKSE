@@ -2,7 +2,7 @@
  * Trainer5BW.h - the Black and White save container.
  *
  * AFTER GEN 4 THIS IS A RELIEF. No partitions, no counters, no "which half is newer". A Gen 5
- * save is a flat list of fixed blocks (BlockEntryNDSs.h, generated from PKHeX), each carrying a
+ * save is a flat list of fixed blocks (Blocks5BW.h, generated from PKHeX), each carrying a
  * CRC16-CCITT over its own data. Round-tripping an unedited save is therefore trivially exact --
  * there is nothing to choose and nothing to bump.
  *

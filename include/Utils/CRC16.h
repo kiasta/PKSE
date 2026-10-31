@@ -4,7 +4,7 @@
  *
  *   crc16ccitt   Gen 4 save blocks (SAV4)  AND  Gen 6 save blocks (BlockInfo6)
  *   crc16Invert  Gen 7 (3DS) save blocks   (BlockInfo7)
- *   crc16NoInvert                          (BlockInfo7b -- Let's Go; unused today)
+ *   crc16NoInvert                          (BlockInfo7b -- Let's Go save blocks)
  *
  * PKHeX Checksums.CRC16_CCITT / CRC16Invert / CRC16NoInvert.
  */

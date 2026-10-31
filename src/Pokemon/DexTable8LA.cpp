@@ -67,7 +67,7 @@ namespace Pokemon {
         };
         constexpr int STORAGE_COUNT = static_cast<int>(sizeof(STORAGE_KEYS) / sizeof(STORAGE_KEYS[0]));
 
-        // Sorted keys again, with the per-entry gender byte. Bit 3 = the two genders are tracked apart.
+        // Sorted keys again, with the per-entry gender byte. Bit 3 = the two genders are one record.
         constexpr uint16_t INFO_KEYS[] = {
              0,     25,     26,     35,     36,     37,     38,     41,     42,     46,     47,     54,
             55,     63,     64,     65,     66,     67,     68,     72,     73,     74,     75,     76,
@@ -229,7 +229,7 @@ namespace Pokemon {
         return (i < 0) ? DEX8LA_NO_STAT_ENTRY : STORAGE_VALUES[i];
     }
 
-    bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept {
+    bool sharesGenderRecord8LA(uint16_t species, uint8_t form) noexcept {
         if (species == 0 || species > DEX8LA_MAX_SPECIES || form >= DEX8LA_MAX_FORM) return false;
         const int i = findKey(INFO_KEYS, INFO_COUNT, packKey(species, form));
         return (i >= 0) && (INFO_GENDERS[i] & 0x08) != 0;

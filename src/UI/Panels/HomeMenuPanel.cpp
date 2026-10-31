@@ -8,6 +8,7 @@
 #include "UI/Common.h"
 #include "UI/PKSEFramebuffer.h"
 #include "UI/SpriteManager.h"
+#include "UI/Panels/UnmappedSlot.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/Bank.h"
 #include "Pokemon/Pokemon.h"
@@ -71,6 +72,8 @@ namespace UI
                     if (empty)
                     {
                         framebuffer.drawCircle(centerX, centerY, discR, Colors::Border, 1);
+                        if (screen.trainer.isBoxSlotUnmapped(static_cast<size_t>(box), static_cast<size_t>(index)))
+                            drawUnmappedSlot(framebuffer, centerX, centerY, discR);
                         continue;
                     }
                     int markerSize = std::min(static_cast<int>(discR * 1.8), colPitch - 4);
@@ -138,7 +141,8 @@ namespace UI
 
             const int rightColumnX = 648, rW = 600;
             const int stored = countMons(screen.trainer.boxes);
-            int party = 0;
+            // A kept Gen 1/2 entry PKSE cannot read still fills a party slot.
+            int party = static_cast<int>(screen.trainer.getUnmappedPartySlots().size());
             for (const auto &m : screen.trainer.party)
                 if (m && m->speciesID() != 0)
                     ++party;

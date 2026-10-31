@@ -17,6 +17,8 @@
 
 #include "Pokemon/FormInfo.h"
 
+#include "Pokemon/PersonalInfoTable.h"
+
 namespace
 {
 
@@ -334,6 +336,17 @@ namespace Pokemon
         // Low bit only -- the rest of the index is whatever else the form encodes (Meowstic's
         // Z-A Mega lives at 2/3, so Mega male 2 flips to Mega female 3, not to plain female 1).
         return static_cast<uint8_t>((currentForm & ~1u) | gender);
+    }
+
+    uint8_t getGenderRatio(uint16_t species, uint8_t form, Enums::GameVersion group)
+    {
+        constexpr uint16_t pikachuSpecies = 25;
+        constexpr uint8_t lastCosplayForm = 6;
+        constexpr uint8_t femaleOnlyRatio = 254;
+        const bool generationSixGroup = group == Enums::GameVersion::XY || group == Enums::GameVersion::ORAS;
+        if (species == pikachuSpecies && form >= 1 && form <= lastCosplayForm && generationSixGroup)
+            return femaleOnlyRatio;
+        return getPersonalInfo(species, form).genderRatio;
     }
 
     uint32_t correctEncryptionConstantForForm(uint16_t species, uint8_t form, uint32_t encryptionConstant)

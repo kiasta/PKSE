@@ -61,10 +61,13 @@
 #include "Names/ItemPouches.h" // Add All Items is checked against the same legal lists
 #include "Trainer/Inventory8SWSH.h"
 #include "Trainer/Inventory9SV.h"
+#include "Trainer/Inventory9LZA.h" // the Z-A pouch the Cherished Ring check names
 #include "Trainer/Trainer3RSE.h"
 #include "Trainer/Trainer8BDSP.h"
 #include "Trainer/Trainer9SV.h"
 #include "UI/ListSearch.h"
+#include "UI/Panels/UnmappedSlot.h" // the placeholder mark and label the unmapped-slot journeys look for
+#include "UI/Panels/ItemsPanel.h" // pouchDisplayName -- the Add All ceiling is looked up by the pouch's name
 #include "UI/Common.h"
 #include "UI/ScreenChrome.h" // NAV_BAR_HEIGHT -- the one-nav-bar rule is checked against its geometry
 #include "UI/Dialogs/FileBrowserDialog.h"
@@ -72,6 +75,9 @@
 #include "UI/Dialogs/StatEditDialog.h"
 #include "UI/Dialogs/RibbonEditDialog.h" // the grid geometry and tile ids the ribbon test drives
 #include "Names/RibbonNames.h"
+#include "Names/FormNames.h" // getDisplayName -- the party journey looks for the name the panel draws
+#include "Names/ItemNames.h" // getItemNameFor -- the held-item picker is checked against the game's own table
+#include "UI/Dialogs/PickerDialog.h"
 #include "Globals.h" // g_allowIllegalEdits -- the Hyper Training row gives way to it
 #include "Utils/Settings.h"
 #include "Utils/StringHelpers.h"
@@ -941,7 +947,54 @@ namespace
     /// What one item should hold after Add All Items gave `amount`, checked against the bag before it.
     /// The per-item ceilings PKHeX documents are spelled out here as well as in the screen, for the
     /// items that have one, so a rule dropped from itemMaxCount() is caught rather than agreed with.
-    int expectedCeiling(Enums::GameVersion group, int pouchIndex, uint16_t itemId, int screenCeiling)
+    /// The pouch's stack ceiling, from PKHeX's PlayerBag*.cs tables and the pouch's own name. Kept
+    /// apart from the screen's pouchItemMaxCount on purpose: a check that asks the code under test
+    /// for its answer agrees with every bug in it, which is how Ruby/Sapphire/Emerald's 999 passed.
+    int expectedPouchCeiling(const Trainer::Trainer &trainer, int pouchIndex)
+    {
+        using Version = Enums::GameVersion;
+        const Version group = trainer.getGameGroup();
+        const std::string pouchName = UI::Panels::pouchDisplayName(trainer, pouchIndex);
+        const auto named = [&](const char *fragment) { return pouchName.find(fragment) != std::string::npos; };
+        if (group == Version::RBY || group == Version::GSC)
+        {
+            return 99;
+        }
+        const bool isTechnicalMachinePouch = named("TM");
+        if (group == Version::GG)
+        {
+            return isTechnicalMachinePouch ? 1 : 999;
+        }
+        if (named("Key"))
+        {
+            return 1;
+        }
+        switch (group)
+        {
+        case Version::RSE:
+            return (named("Berr") || named("PC")) ? 999 : 99;
+        case Version::DP:
+        case Version::PT:
+        case Version::HGSS:
+            return isTechnicalMachinePouch ? 99 : 999;
+        case Version::BW:
+        case Version::B2W2:
+        case Version::XY:
+        case Version::ORAS:
+            return isTechnicalMachinePouch ? 1 : 999;
+        case Version::SM:
+        case Version::USUM:
+            return (isTechnicalMachinePouch || named("Z-Crystal")) ? 1 : 999;
+        case Version::PLA:
+            return named("Recipe") ? 1 : 999;
+        case Version::ZA:
+            return (isTechnicalMachinePouch || named("Mega")) ? 1 : 999;
+        default:
+            return 999;
+        }
+    }
+
+    int expectedCeiling(const Trainer::Trainer &trainer, Enums::GameVersion group, int pouchIndex, uint16_t itemId, int pouchCeiling)
     {
         using Version = Enums::GameVersion;
         if (group == Version::GSC && itemId >= 243 && itemId <= 249)
@@ -970,7 +1023,21 @@ namespace
         }
         if (group == Version::ZA && (itemId == 2612 || itemId == 2619))
         {
-            return 0; // Cherished Ring, Colorful Screw
+            return 0; // Cherished Ring; the Colorful Screw's ceiling is its own count, which Add All never lowers
+        }
+        if (group == Version::ZA && itemId == 2618)
+        {
+            for (const auto &block : trainer.getBlocks())
+            {
+                if (block.key == 0x0ABC6547)
+                {
+                    return 9999; // Mega Shard, once the save carries the 2.0.1 block (PKHeX PlayerBag9a)
+                }
+            }
+        }
+        if (group == Version::GG && pouchIndex == static_cast<int>(Trainer::PouchType7LGPE::Battle) && itemId > 100)
+        {
+            return 1; // Mega Stones (PKHeX PlayerBag7b)
         }
         if ((group == Version::SM || group == Version::USUM) && itemId == 797)
         {
@@ -980,7 +1047,7 @@ namespace
         {
             return 1;
         }
-        return screenCeiling;
+        return pouchCeiling;
     }
 
     /// Add All Items, driven through its dialog: the nav bar names it, ZR opens it, the amount and the
@@ -1161,7 +1228,7 @@ namespace
                         }
                         continue;
                     }
-                    const int ceiling = expectedCeiling(group, static_cast<int>(pouchIndex), itemId, screen.pouchItemMaxCount(static_cast<int>(pouchIndex)));
+                    const int ceiling = expectedCeiling(*trainer, group, static_cast<int>(pouchIndex), itemId, expectedPouchCeiling(*trainer, static_cast<int>(pouchIndex)));
                     if (!now && !was)
                     {
                         if (!pouchFull && ceiling > 0)
@@ -3021,6 +3088,918 @@ namespace
         Utils::loadSettings();
     }
 
+    /// The first unlocked box slot holding a Pokemon of the save's own format, or false.
+    bool findBoxedPokemon(TrainerViewScreen &screen, Trainer::Trainer &trainer, int &foundBox, int &foundSlot)
+    {
+        for (int boxIndex = 0; boxIndex < static_cast<int>(trainer.getBoxCount()); ++boxIndex)
+        {
+            for (int slotIndex = 0; slotIndex < static_cast<int>(trainer.getSlotsPerBox()); ++slotIndex)
+            {
+                const auto &occupant = trainer.boxes[boxIndex][slotIndex];
+                if (occupant && occupant->speciesID() != 0 && !occupant->isEgg() && !screen.storageSlotLocked(0, boxIndex, slotIndex))
+                {
+                    foundBox = boxIndex;
+                    foundSlot = slotIndex;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Every edit of the details page ends the same way: stats recalculated when the edit affects
+    /// them, the checksum refreshed, the GAME marked changed only when the Pokemon is the game's.
+    /// The Gen 4-7 setters are plain writes, so an edit that skipped the commit left a record whose
+    /// checksum no longer matched -- harmless in the save (the writers refresh), fatal in the bank,
+    /// whose loader drops a record with a bad checksum.
+    void testDetailsEditCommits(Test::Context &context, TrainerViewScreen &screen, Trainer::Trainer &trainer)
+    {
+        int boxIndex = -1;
+        int boxSlot = -1;
+        if (!findBoxedPokemon(screen, trainer, boxIndex, boxSlot) || !trainer.boxes[boxIndex][boxSlot]->hasNature())
+        {
+            context.note("no boxed Pokemon with a nature, so the details commit test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        const std::unique_ptr<Pokemon::Pokemon> originalPokemon = trainer.boxes[boxIndex][boxSlot]->clone();
+        const bool unsavedBefore = screen.hasUnsavedChanges;
+
+        Driver driver(context, screen, "details-commit");
+        driver.step("open the box view");
+        gotoHome(driver, screen, 0);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.detailViewActive, "could not open the box view"))
+        {
+            return;
+        }
+        // Nature is the edit with the most to commit: it changes the stats as well as the record.
+        auto changeNature = [&](const char *where) -> Pokemon::Pokemon *
+        {
+            constexpr int natureField = 7;
+            screen.details.selectedField = natureField;
+            driver.step(std::string("open the nature picker (") + where + ")").press(Btn::A).frame();
+            if (!driver.expect(screen.pickerActive && screen.pickerKind == UI::Dialogs::PickerKind::Nature, "A on the Nature row did not open the nature picker", where))
+            {
+                return nullptr;
+            }
+            driver.step("pick the next nature").press(Btn::Down).press(Btn::A).frame();
+            return screen.detailsTargetPokemon();
+        };
+        auto expectCommitted = [&](const Pokemon::Pokemon *edited, const char *where)
+        {
+            if (!driver.expect(edited != nullptr, "the details page lost its Pokemon after the edit", where))
+            {
+                return;
+            }
+            const std::string detail = std::string(where) + " species=" + std::to_string(edited->speciesID()) + " nature=" + std::to_string(edited->nature());
+            driver.expect(edited->nature() != originalPokemon->nature(), "picking another nature did not change it", detail);
+            driver.expect(edited->isStructurallyValid(), "a details edit left the record with a stale checksum (the bank drops such a record on its next load)", detail);
+            auto recalculated = edited->clone();
+            recalculated->recalculateStats();
+            driver.expect(edited->statATK() == recalculated->statATK() && edited->statSPE() == recalculated->statSPE(), "a nature edit left the stats from before it", detail + " atk=" + std::to_string(edited->statATK()) + " want=" + std::to_string(recalculated->statATK()));
+        };
+
+        screen.selectedBoxIndex = boxIndex;
+        screen.selectedItemIndex = boxSlot;
+        driver.step("open the details page on a boxed Pokemon").press(Btn::A).frame(2);
+        if (driver.expect(screen.details.active, "A on an occupied slot did not open the details page"))
+        {
+            expectCommitted(changeNature("save"), "save");
+            driver.expect(screen.hasUnsavedChanges, "a details edit of a save Pokemon did not mark the save as changed");
+            // A move: no stats to recalculate, which is exactly the edit that used to skip the
+            // checksum (recalculating the stats refreshes it in several formats).
+            constexpr int firstMoveField = 10;
+            screen.details.selectedField = firstMoveField;
+            const uint16_t moveBefore = screen.detailsTargetPokemon()->move(0);
+            driver.step("open the first move's picker").press(Btn::A).frame();
+            if (driver.expect(screen.pickerActive && screen.pickerKind == UI::Dialogs::PickerKind::Move, "A on the first move row did not open the move picker"))
+            {
+                driver.step("pick another move").press(Btn::Down).press(Btn::A).frame();
+                const Pokemon::Pokemon *edited = screen.detailsTargetPokemon();
+                const std::string detail = "move=" + std::to_string(edited ? edited->move(0) : 0) + " before=" + std::to_string(moveBefore);
+                if (driver.expect(edited && edited->move(0) != moveBefore, "picking another move did not change it", detail))
+                {
+                    driver.expect(edited->isStructurallyValid(), "a move edit left the record with a stale checksum (the bank drops such a record on its next load)", detail);
+                }
+            }
+        }
+        screen.details.active = false;
+        screen.pickerActive = false;
+        trainer.boxes[boxIndex][boxSlot] = originalPokemon->clone();
+        screen.hasUnsavedChanges = unsavedBefore;
+
+        // The same edit on a BANK Pokemon: committed the same way, but the game is not changed by it.
+        if (!screen.bank)
+        {
+            return;
+        }
+        int bankSlot = -1;
+        for (int slotIndex = 0; slotIndex < static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX) && bankSlot < 0; ++slotIndex)
+        {
+            if (!screen.bank->boxes[0][slotIndex])
+            {
+                bankSlot = slotIndex;
+            }
+        }
+        if (bankSlot < 0)
+        {
+            return;
+        }
+        screen.bank->boxes[0][bankSlot] = originalPokemon->clone();
+        screen.openStorageEditor(1, 0, bankSlot);
+        driver.frame(2);
+        if (driver.expect(screen.details.active, "the storage editor did not open on a bank Pokemon"))
+        {
+            expectCommitted(changeNature("bank"), "bank");
+            driver.expect(screen.hasUnsavedChanges == unsavedBefore, "editing a BANK Pokemon marked the game save as changed");
+        }
+        screen.details.active = false;
+        screen.pickerActive = false;
+        screen.bank->boxes[0][bankSlot].reset();
+        screen.hasUnsavedChanges = unsavedBefore;
+    }
+
+    /// Put Back (B with a Pokemon in hand) sends every carried cell home, and nothing is ever lost
+    /// or duplicated on the way. Three cases, each a way the old Put Back lost or made a Pokemon:
+    /// a COPY carried back (it used to land as a second Pokemon), a foreign-format cell (it used to
+    /// land in the save unconverted), and a cell with nowhere to go (it used to be deleted).
+    void testPutBackKeepsEveryPokemon(Test::Context &context, TrainerViewScreen &screen, Trainer::Trainer &trainer)
+    {
+        int boxIndex = -1;
+        int boxSlot = -1;
+        if (!screen.bank || !findBoxedPokemon(screen, trainer, boxIndex, boxSlot))
+        {
+            context.note("no bank or no boxed Pokemon, so the put-back test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        using Screen = TrainerViewScreen;
+        auto countSave = [&]()
+        {
+            int savePokemonCount = 0;
+            for (const auto &box : trainer.boxes)
+                for (const auto &pokemon : box)
+                    savePokemonCount += (pokemon && pokemon->speciesID() != 0) ? 1 : 0;
+            return savePokemonCount;
+        };
+        auto countBank = [&]()
+        {
+            int bankPokemonCount = 0;
+            for (const auto &box : screen.bank->boxes)
+                for (const auto &pokemon : box)
+                    bankPokemonCount += pokemon ? 1 : 0;
+            return bankPokemonCount;
+        };
+        const bool unsavedBefore = screen.hasUnsavedChanges;
+        const int saveBefore = countSave();
+        const int bankBefore = countBank();
+
+        Driver driver(context, screen, "put-back");
+        driver.step("open the storage view");
+        gotoHome(driver, screen, 2);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.detailViewActive && screen.selectedMode == Screen::ViewMode::Storage, "could not open the storage view"))
+        {
+            return;
+        }
+
+        // A copy (Multi mode's Y) of one slot, then B: the copy is dropped, the original stays.
+        screen.storageFocusPane = 0;
+        screen.selectedBoxIndex = boxIndex;
+        screen.stSaveSlot = boxSlot;
+        screen.currentlySelecting = true;
+        screen.selectPane = 0;
+        screen.selectBox = boxIndex;
+        const int saveColumns = screen.paneCols(0);
+        screen.selectDimensions = {boxSlot % saveColumns, boxSlot / saveColumns};
+        screen.grabSelection(false);
+        if (driver.expect(screen.carriedCount() == 1, "copying one occupied slot did not put one Pokemon in hand"))
+        {
+            driver.step("B puts the copy back").press(Btn::B).frame();
+            driver.expect(!screen.carrying(), "B did not empty the hands after a copy");
+            driver.expect(countSave() == saveBefore && countBank() == bankBefore, "putting a COPY back made a second Pokemon", "save=" + std::to_string(countSave()) + " want=" + std::to_string(saveBefore) + " bank=" + std::to_string(countBank()) + " want=" + std::to_string(bankBefore));
+        }
+
+        // A foreign-format Pokemon whose recorded home is a save slot: Put Back converts nothing, so
+        // it must go to the bank rather than into the save as a record the game cannot read.
+        const Enums::GameVersion foreignGroup = trainer.getGameGroup() == Enums::GameVersion::USUM ? Enums::GameVersion::SM : Enums::GameVersion::USUM;
+        auto foreignPokemon = std::make_unique<Pokemon::Pokemon7USUM>();
+        foreignPokemon->setSpecies(25);
+        foreignPokemon->setExp(1000);
+        foreignPokemon->recalculateStats();
+        foreignPokemon->refreshChecksum();
+        std::unique_ptr<Pokemon::Pokemon> carried = std::move(foreignPokemon);
+        if (trainer.getGameGroup() == Enums::GameVersion::USUM)
+        {
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            carried = Conversion::convert(*carried, foreignGroup, conversionResult, 0);
+        }
+        if (carried)
+        {
+            const std::unique_ptr<Pokemon::Pokemon> savedSlot = trainer.boxes[boxIndex][boxSlot] ? trainer.boxes[boxIndex][boxSlot]->clone() : nullptr;
+            trainer.boxes[boxIndex][boxSlot].reset(); // its "home" is free, so only the format check can refuse it
+            screen.clearCarried();
+            screen.moveMon.push_back(std::move(carried));
+            screen.moveMonOrigins.push_back(Screen::CarriedCellOrigin{0, boxIndex, boxSlot, false});
+            screen.selectDimensions = {1, 1};
+            screen.heldPane = 0;
+            screen.heldFromBox = boxIndex;
+            screen.heldFromSlot = boxSlot;
+            const bool returned = screen.returnHeldToOrigin();
+            driver.expect(returned && !screen.carrying(), "a foreign-format Pokemon could not be put back anywhere");
+            const auto &home = trainer.boxes[boxIndex][boxSlot];
+            driver.expect(!home || home->speciesID() == 0, "Put Back placed a foreign-format Pokemon in the save without converting it", "group=" + std::to_string(static_cast<int>(home ? home->getGameGroup() : Enums::GameVersion::Invalid)));
+            driver.expect(countBank() == bankBefore + 1, "a foreign-format Pokemon that could not go home did not go to the bank", "bank=" + std::to_string(countBank()) + " want=" + std::to_string(bankBefore + 1));
+            // Undo: take it back out of the bank.
+            for (auto &box : screen.bank->boxes)
+                for (auto &pokemon : box)
+                    if (pokemon && pokemon->getGameGroup() == foreignGroup && pokemon->speciesID() == 25)
+                        pokemon.reset();
+            trainer.boxes[boxIndex][boxSlot] = savedSlot ? savedSlot->clone() : nullptr;
+        }
+
+        // A cell with nowhere to go (no bank, home taken by another format) stays in hand.
+        {
+            auto strandedPokemon = std::make_unique<Pokemon::Pokemon7USUM>();
+            strandedPokemon->setSpecies(25);
+            strandedPokemon->refreshChecksum();
+            std::unique_ptr<Trainer::Bank> bankAside = std::move(screen.bank);
+            screen.clearCarried();
+            screen.moveMon.push_back(std::move(strandedPokemon));
+            const bool saveIsUsum = trainer.getGameGroup() == Enums::GameVersion::USUM;
+            screen.moveMonOrigins.push_back(Screen::CarriedCellOrigin{saveIsUsum ? 1 : 0, 0, 0, false});
+            screen.selectDimensions = {1, 1};
+            const bool returned = screen.returnHeldToOrigin();
+            driver.expect(!returned && screen.carriedCount() == 1, "Put Back deleted a Pokemon that had nowhere to go instead of keeping it in hand");
+            driver.expect(countSave() == saveBefore, "Put Back put a Pokemon somewhere it does not belong", "save=" + std::to_string(countSave()) + " want=" + std::to_string(saveBefore));
+            screen.clearCarried();
+            screen.bank = std::move(bankAside);
+        }
+        screen.hasUnsavedChanges = unsavedBefore;
+    }
+
+    /// THE BANK AND THE GAME SAVE ARE SEPARATE. The bank prompt's Discard reloads the bank ONLY and
+    /// never touches the save's boxes (a withdrawn Pokemon stays in the save until the game save's
+    /// own Save/Discard decides it); the game save never writes the bank; the bank prompt's Save &
+    /// Exit writes the bank and never the game.
+    void testBankSavedSeparately(Test::Context &context, TrainerViewScreen &screen, Trainer::Trainer &trainer)
+    {
+        using Screen = TrainerViewScreen;
+        int boxIndex = -1;
+        int boxSlot = -1;
+        if (!screen.bank || !findBoxedPokemon(screen, trainer, boxIndex, boxSlot))
+        {
+            context.note("no bank or no boxed Pokemon, so the bank-separation test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        const int bankBox = static_cast<int>(screen.bank->currentBox);
+        int bankSlot = -1;
+        for (int slotIndex = 0; slotIndex < static_cast<int>(Trainer::Bank::BANK_SLOTS_PER_BOX) && bankSlot < 0; ++slotIndex)
+        {
+            if (!screen.bank->boxes[bankBox][slotIndex])
+            {
+                bankSlot = slotIndex;
+            }
+        }
+        if (bankSlot < 0 || screen.bank->hasChanged())
+        {
+            context.note("the open bank box is full or already changed, so the bank-separation test was skipped", "title=\"" + Enums::getGameVersionName(context.version) + "\"");
+            return;
+        }
+        // The bank file is put back afterwards: the bank prompt's Save & Exit writes it.
+        const std::string bankFile = "/tmp/pkse-uitest-bank/bank.dat";
+        std::vector<char> bankFileBefore;
+        bool bankFileExisted = false;
+        if (FILE *bankStream = std::fopen(bankFile.c_str(), "rb"))
+        {
+            bankFileExisted = true;
+            char buffer[4096];
+            size_t readCount = 0;
+            while ((readCount = std::fread(buffer, 1, sizeof(buffer), bankStream)) > 0)
+                bankFileBefore.insert(bankFileBefore.end(), buffer, buffer + readCount);
+            std::fclose(bankStream);
+        }
+        const std::span<const std::byte> originalSpan = trainer.boxes[boxIndex][boxSlot]->getData();
+        const std::vector<std::byte> originalBytes(originalSpan.begin(), originalSpan.end());
+        const bool unsavedBefore = screen.hasUnsavedChanges;
+        // Let's Go compacts its storage every frame, so a Pokemon is found by its bytes, not by the
+        // slot it was in, and every box is put back afterwards.
+        std::vector<std::vector<std::unique_ptr<Pokemon::Pokemon>>> boxesBefore(trainer.boxes.size());
+        for (size_t snapshotBox = 0; snapshotBox < trainer.boxes.size(); ++snapshotBox)
+            for (const auto &pokemon : trainer.boxes[snapshotBox])
+                boxesBefore[snapshotBox].push_back(pokemon ? pokemon->clone() : nullptr);
+        const auto restoreBoxes = [&]()
+        {
+            for (size_t snapshotBox = 0; snapshotBox < trainer.boxes.size() && snapshotBox < boxesBefore.size(); ++snapshotBox)
+                for (size_t snapshotSlot = 0; snapshotSlot < trainer.boxes[snapshotBox].size() && snapshotSlot < boxesBefore[snapshotBox].size(); ++snapshotSlot)
+                    trainer.boxes[snapshotBox][snapshotSlot] = boxesBefore[snapshotBox][snapshotSlot] ? boxesBefore[snapshotBox][snapshotSlot]->clone() : nullptr;
+        };
+        const auto countSaveBoxed = [&]() -> int
+        {
+            int boxedCount = 0;
+            for (const auto &box : trainer.boxes)
+                for (const auto &pokemon : box)
+                    if (pokemon && pokemon->speciesID() != 0)
+                        ++boxedCount;
+            return boxedCount;
+        };
+        // A save can hold byte-identical duplicates, so the test Pokemon's copies are counted.
+        const auto countOriginalCopies = [&]() -> int
+        {
+            int copyCount = 0;
+            for (const auto &box : trainer.boxes)
+                for (const auto &pokemon : box)
+                    if (pokemon && pokemon->getData().size() == originalBytes.size() && std::memcmp(pokemon->getData().data(), originalBytes.data(), originalBytes.size()) == 0)
+                        ++copyCount;
+            return copyCount;
+        };
+        const int boxedBefore = countSaveBoxed();
+        const int copiesBefore = countOriginalCopies();
+
+        Driver driver(context, screen, "bank-saved-separately");
+        driver.step("open the storage view");
+        gotoHome(driver, screen, 2);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.detailViewActive && screen.selectedMode == Screen::ViewMode::Storage, "could not open the storage view"))
+        {
+            return;
+        }
+        auto deposit = [&](const char *which) -> bool
+        {
+            screen.storageFocusPane = 0;
+            screen.selectedBoxIndex = boxIndex;
+            screen.stSaveSlot = boxSlot;
+            driver.step(std::string("pick up a save Pokemon (") + which + ")").press(Btn::A).frame();
+            if (screen.storageMenuActive)
+            {
+                screen.storageMenuIndex = Screen::STORAGE_MENU_ROW_MOVE;
+                driver.press(Btn::A).frame();
+            }
+            if (!driver.expect(screen.carrying(), "could not pick up a save Pokemon", which))
+            {
+                return false;
+            }
+            screen.storageFocusPane = 1;
+            screen.stBankBox = bankBox;
+            screen.stBankSlot = bankSlot;
+            driver.step("put it down in the bank").press(Btn::A).frame();
+            if (screen.moveConfirmActive())
+            {
+                driver.press(Btn::A).frame();
+            }
+            return driver.expect(!screen.carrying() && screen.bank->boxes[bankBox][bankSlot] && countSaveBoxed() == boxedBefore - 1, "a deposit did not move the Pokemon from the save to the bank", which);
+        };
+
+        if (deposit("then Discard"))
+        {
+            driver.step("B asks about the bank").press(Btn::B).frame();
+            if (driver.expect(screen.storageExitConfirmActive, "leaving Storage after a deposit did not ask about the bank"))
+            {
+                expectOneNavBar(driver, "bank exit prompt open");
+                driver.expect(screen.overlayNavHint().find("A: Confirm") != std::string::npos, "the bank exit prompt's keys are not on the nav bar", screen.overlayNavHint());
+                // The bank and the game save are separate: after a deposit the bank's prompt saves
+                // the bank (Save & Exit), never "keep it for the game save".
+                driver.expect(std::string(screen.storageExitConfirmLabel(Screen::STORAGE_EXIT_ROW_SAVE)) == "Save & Exit", "after a deposit the bank prompt no longer offers Save & Exit", screen.storageExitConfirmLabel(Screen::STORAGE_EXIT_ROW_SAVE));
+                screen.storageExitConfirmIndex = Screen::STORAGE_EXIT_ROW_DISCARD;
+                driver.step("Discard").press(Btn::A).frame();
+                // Discard is the BANK's: the bank goes back to its file, and the save's half of the
+                // move (the emptied slot) is left for the game save's own Save/Discard.
+                driver.expect(!screen.bank->boxes[bankBox][bankSlot] && !screen.bank->hasChanged(), "bank Discard after a deposit did not put the bank back to its saved state");
+                driver.expect(countSaveBoxed() == boxedBefore - 1 && countOriginalCopies() == copiesBefore - 1, "bank Discard put the deposited Pokemon back in the save -- Discard must touch the bank only", "boxed=" + std::to_string(countSaveBoxed()) + " want=" + std::to_string(boxedBefore - 1));
+                driver.expect(screen.hasUnsavedChanges, "bank Discard cleared the game save's dirty flag -- the emptied save slot is still an unsaved game change");
+            }
+        }
+        restoreBoxes();
+        screen.hasUnsavedChanges = unsavedBefore;
+
+        // THE BANK AND THE GAME SAVE ARE SAVED SEPARATELY. After a
+        // deposit, the game save writes the game and NOT the bank; leaving the bank then asks about
+        // the bank, and its Save & Exit writes the bank and NOT the game.
+        const auto readBankFile = [&]() -> std::vector<uint8_t>
+        {
+            std::vector<uint8_t> bankBytes;
+            if (FILE *bankStream = std::fopen(bankFile.c_str(), "rb"))
+            {
+                uint8_t chunk[4096];
+                size_t readCount = 0;
+                while ((readCount = std::fread(chunk, 1, sizeof(chunk), bankStream)) > 0)
+                    bankBytes.insert(bankBytes.end(), chunk, chunk + readCount);
+                std::fclose(bankStream);
+            }
+            return bankBytes;
+        };
+        screen.detailViewActive = true;
+        screen.selectedMode = Screen::ViewMode::Storage;
+        if (deposit("then the game save"))
+        {
+            const std::vector<uint8_t> bankFileBeforeGameSave = readBankFile();
+            UIHost::setSaveResult(true);
+            screen.performSave("/tmp/pkse-uitest/journal-save", false);
+            driver.expect(screen.bank->hasChanged() && screen.bank->boxes[bankBox][bankSlot], "the game save wrote (or dropped) the bank's changes -- the bank is saved only from its own prompt");
+            driver.expect(readBankFile() == bankFileBeforeGameSave, "the game save wrote the bank file -- the bank and the game save are separate");
+
+            screen.detailViewActive = true;
+            screen.selectedMode = Screen::ViewMode::Storage;
+            driver.step("B asks about the bank").press(Btn::B).frame();
+            if (driver.expect(screen.storageExitConfirmActive, "leaving Storage with bank changes did not ask about the bank"))
+            {
+                driver.expect(std::string(screen.storageExitConfirmLabel(Screen::STORAGE_EXIT_ROW_SAVE)) == "Save & Exit", "the bank prompt does not offer Save & Exit", screen.storageExitConfirmLabel(Screen::STORAGE_EXIT_ROW_SAVE));
+                const int gameSavesBefore = UIHost::saveCallCount();
+                const bool gameDirtyBefore = screen.hasUnsavedChanges;
+                screen.storageExitConfirmIndex = Screen::STORAGE_EXIT_ROW_SAVE;
+                driver.step("Save & Exit").press(Btn::A).frame();
+                driver.expect(!screen.bank->hasChanged() && readBankFile() != bankFileBeforeGameSave, "the bank prompt's Save & Exit did not write the bank");
+                driver.expect(UIHost::saveCallCount() == gameSavesBefore && screen.hasUnsavedChanges == gameDirtyBefore, "the bank prompt's Save & Exit touched the game save -- the bank and the game save are separate");
+            }
+
+            // The Pokemon is now saved in the bank. Withdraw it to the save, then Discard the bank:
+            // the save keeps the withdrawn Pokemon (the game save decides it) and the bank gets
+            // its saved copy back.
+            screen.detailViewActive = true;
+            screen.selectedMode = Screen::ViewMode::Storage;
+            screen.storageFocusPane = 1;
+            screen.stBankBox = bankBox;
+            screen.stBankSlot = bankSlot;
+            driver.step("pick up the banked Pokemon").press(Btn::A).frame();
+            if (screen.storageMenuActive)
+            {
+                screen.storageMenuIndex = Screen::STORAGE_MENU_ROW_MOVE;
+                driver.press(Btn::A).frame();
+            }
+            int freeBox = -1;
+            int freeSlot = -1;
+            // Searched through the pane's own geometry: Let's Go's storage is not one vector per box.
+            for (int searchBox = 0; searchBox < screen.paneBoxes(0) && freeBox < 0; ++searchBox)
+                for (int searchSlot = 0; searchSlot < screen.paneSlots(0) && freeBox < 0; ++searchSlot)
+                {
+                    const auto &candidate = screen.storageSlot(0, searchBox, searchSlot);
+                    if ((!candidate || candidate->speciesID() == 0) && !screen.storageSlotLocked(0, searchBox, searchSlot))
+                    {
+                        freeBox = searchBox;
+                        freeSlot = searchSlot;
+                    }
+                }
+            if (driver.expect(screen.carrying() && freeBox >= 0, "could not pick up the banked Pokemon, or the save has no free slot"))
+            {
+                screen.storageFocusPane = 0;
+                screen.selectedBoxIndex = freeBox;
+                screen.stSaveSlot = freeSlot;
+                driver.step("put it down in the save").press(Btn::A).frame();
+                if (screen.moveConfirmActive())
+                {
+                    driver.press(Btn::A).frame();
+                }
+                driver.expect(!screen.carrying() && countOriginalCopies() == copiesBefore && !screen.bank->boxes[bankBox][bankSlot], "a withdrawal did not move the Pokemon from the bank to the save", "box=" + std::to_string(freeBox) + " slot=" + std::to_string(freeSlot) + " carrying=" + std::to_string(screen.carrying()) + " copies=" + std::to_string(countOriginalCopies()) + " want=" + std::to_string(copiesBefore));
+                driver.step("B asks about the bank").press(Btn::B).frame();
+                if (driver.expect(screen.storageExitConfirmActive, "leaving Storage after a withdrawal did not ask about the bank"))
+                {
+                    screen.storageExitConfirmIndex = Screen::STORAGE_EXIT_ROW_DISCARD;
+                    driver.step("Discard").press(Btn::A).frame();
+                    driver.expect(countOriginalCopies() == copiesBefore && countSaveBoxed() == boxedBefore, "bank Discard undid a withdrawal from the save -- Discard must touch the bank only", "boxed=" + std::to_string(countSaveBoxed()) + " want=" + std::to_string(boxedBefore));
+                    driver.expect(screen.bank->boxes[bankBox][bankSlot] && !screen.bank->hasChanged(), "bank Discard after a withdrawal did not put the bank back to its saved state");
+                    driver.expect(screen.hasUnsavedChanges, "bank Discard cleared the game save's dirty flag after a withdrawal");
+                }
+            }
+        }
+
+        // Put everything back, the bank file included.
+        screen.bank->boxes[bankBox][bankSlot].reset();
+        restoreBoxes();
+        screen.hasUnsavedChanges = unsavedBefore;
+        if (bankFileExisted)
+        {
+            if (FILE *bankStream = std::fopen(bankFile.c_str(), "wb"))
+            {
+                std::fwrite(bankFileBefore.data(), 1, bankFileBefore.size(), bankStream);
+                std::fclose(bankStream);
+            }
+        }
+        else
+        {
+            std::remove(bankFile.c_str());
+        }
+        screen.bank->load();
+    }
+
+    /// + waits for whatever owns the next button press, and the bars name the right keys.
+    void testPlusWaitsAndExitHints(Test::Context &context, TrainerViewScreen &screen, Trainer::Trainer &trainer)
+    {
+        using Screen = TrainerViewScreen;
+        int boxIndex = -1;
+        int boxSlot = -1;
+        Driver driver(context, screen, "plus-waits");
+        if (screen.bank && findBoxedPokemon(screen, trainer, boxIndex, boxSlot))
+        {
+            driver.step("open the storage view");
+            gotoHome(driver, screen, 2);
+            driver.press(Btn::A).frame();
+            if (driver.expect(screen.detailViewActive && screen.selectedMode == Screen::ViewMode::Storage, "could not open the storage view"))
+            {
+                screen.storageFocusPane = 0;
+                screen.selectedBoxIndex = boxIndex;
+                screen.stSaveSlot = boxSlot;
+                screen.storageMenuActive = true;
+                screen.menuPane = 0;
+                screen.menuBox = boxIndex;
+                screen.menuSlot = boxSlot;
+                driver.step("+ with the Pokemon menu open").press(Btn::Plus).frame();
+                driver.expect(!screen.hasRequestedExit() && !screen.saveConfirmActive, "+ left the app (or raised the save prompt) over an open menu");
+                driver.expect(screen.storageMenuActive, "+ closed the open menu instead of waiting for it");
+                screen.storageMenuActive = false;
+            }
+        }
+        // The save dialog raised by leaving: its A discards, and the bar has to say so.
+        screen.saveConfirmActive = true;
+        screen.exitingWithUnsavedChanges = true;
+        driver.step("the save dialog raised by leaving").frame();
+        driver.expect(screen.overlayNavHint().find("A: Discard & Exit") != std::string::npos, "the leaving save dialog's bar does not say that A discards", screen.overlayNavHint());
+        expectOneNavBar(driver, "leaving save dialog open");
+        screen.saveConfirmActive = false;
+        screen.exitingWithUnsavedChanges = false;
+    }
+
+    /// Items and EVs are offered in the save's own terms: a Gen 2 held item comes from the Gen 2
+    /// table, and the EV ceiling is the generation's (255 per stat before Gen 6, 252 from it).
+    void testGenerationLimits(Test::Context &context, TrainerViewScreen &screen, Trainer::Trainer &trainer)
+    {
+        int boxIndex = -1;
+        int boxSlot = -1;
+        // A save whose boxes are empty lends its first party member to an empty box for the test.
+        std::unique_ptr<Pokemon::Pokemon> lentSlotBefore;
+        bool lent = false;
+        if (!findBoxedPokemon(screen, trainer, boxIndex, boxSlot))
+        {
+            if (trainer.party.empty() || Test::isEmptySlot(trainer.party[0].get()) || trainer.boxes.empty() || trainer.boxes[0].empty())
+            {
+                return;
+            }
+            boxIndex = 0;
+            boxSlot = 0;
+            lentSlotBefore = std::move(trainer.boxes[0][0]);
+            trainer.boxes[0][0] = trainer.party[0]->clone();
+            lent = true;
+        }
+        struct LentSlotRestorer
+        {
+            Trainer::Trainer &trainer;
+            std::unique_ptr<Pokemon::Pokemon> &slotBefore;
+            bool active;
+            ~LentSlotRestorer()
+            {
+                if (active)
+                    trainer.boxes[0][0] = std::move(slotBefore);
+            }
+        } lentSlotRestorer{trainer, lentSlotBefore, lent};
+        Pokemon::Pokemon &pokemon = *trainer.boxes[boxIndex][boxSlot];
+        const Enums::GameVersion group = pokemon.getGameGroup();
+        const int generation = Enums::getVersionGeneration(Enums::getGroupRepVersion(group));
+        const int expectedCap = generation <= 2 ? pokemon.maxEV() : generation <= 5 ? 255 : 252;
+        // Per-item stack ceilings PKHeX applies inside a mixed pouch (PlayerBag7b, PlayerBag9a).
+        if (group == Enums::GameVersion::GG)
+        {
+            constexpr uint16_t shinyCharmItemId = 632;
+            const int shinyCharmCap = screen.itemMaxCount(static_cast<int>(Trainer::PouchType7LGPE::KeyItems), shinyCharmItemId);
+            context.check(shinyCharmCap == 1, "a Let's Go key item in the mixed Items pouch can be stacked", "cap=" + std::to_string(shinyCharmCap));
+        }
+        if (group == Enums::GameVersion::ZA)
+        {
+            constexpr uint16_t cherishedRingItemId = 2612;
+            const int cherishedRingCap = screen.itemMaxCount(static_cast<int>(Trainer::PouchType9LZA::KeyItems), cherishedRingItemId);
+            context.check(cherishedRingCap == 0, "the Cherished Ring, which the player never holds, can be given", "cap=" + std::to_string(cherishedRingCap));
+        }
+        // Gender comes from the FORM's entry in this game's table: Cosplay Pikachu (Omega Ruby/Alpha
+        // Sapphire form 1) is always female, though Pikachu itself is not.
+        screen.buildGenderPickerOrder(25, 1, Enums::GameVersion::ORAS, 1);
+        context.check(screen.pickerOrder == std::vector<int>{1}, "the gender picker for Cosplay Pikachu offers more than female", "rows=" + std::to_string(screen.pickerOrder.size()));
+        screen.pickerOrder.clear();
+        context.check(UI::Dialogs::legalEffortValueCap(pokemon) == expectedCap, "the EV editor's legal ceiling is not this generation's", "generation=" + std::to_string(generation) + " cap=" + std::to_string(UI::Dialogs::legalEffortValueCap(pokemon)) + " want=" + std::to_string(expectedCap));
+
+        Driver driver(context, screen, "held-item-table");
+        driver.step("open the box view");
+        gotoHome(driver, screen, 0);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.detailViewActive, "could not open the box view"))
+        {
+            return;
+        }
+        screen.selectedBoxIndex = boxIndex;
+        screen.selectedItemIndex = boxSlot;
+        driver.step("open the details page").press(Btn::A).frame(2);
+        if (!driver.expect(screen.details.active, "A on an occupied slot did not open the details page"))
+        {
+            return;
+        }
+        constexpr int heldItemField = 14;
+        if (generation <= 1)
+        {
+            screen.details.active = false;
+            return; // Gen 1 holds no item: the byte is the catch rate
+        }
+        screen.details.selectedField = heldItemField;
+        driver.step("open the held-item picker").press(Btn::A).frame();
+        if (driver.expect(screen.pickerActive, "A on the held-item row opened no picker"))
+        {
+            const int optionCount = UI::Dialogs::pickerOptionCount(screen.pickerKind);
+            int mismatches = 0;
+            std::string firstMismatch;
+            for (int itemId = 1; itemId < optionCount && itemId < 300; ++itemId)
+            {
+                const char *offered = UI::Dialogs::pickerOptionLabel(screen.pickerKind, itemId);
+                const char *gameName = Names::getItemNameFor(group, static_cast<uint16_t>(itemId));
+                if (std::strcmp(offered ? offered : "", gameName ? gameName : "") != 0)
+                {
+                    if (mismatches++ == 0)
+                        firstMismatch = "id=" + std::to_string(itemId) + " offered=\"" + (offered ? offered : "") + "\" game=\"" + (gameName ? gameName : "") + "\"";
+                }
+            }
+            driver.expect(mismatches == 0, "the held-item picker names items from another generation's table", firstMismatch + " mismatches=" + std::to_string(mismatches));
+        }
+        screen.pickerActive = false;
+        screen.details.active = false;
+    }
+
+    /// A new backup goes beside the session's own folder: in the title's backup folder, which the
+    /// backup list reads. It used to be built from the display name, which carries no title id and
+    /// for FireRed/LeafGreen holds a '/', so the folder landed where no list would show it.
+    void testNamedBackupFolder(Test::Context &context, Trainer::Trainer &trainer)
+    {
+        const std::string titleDirectory = "/tmp/pkse-uitest-backups/0100000000000000";
+        const std::string snapshotDirectory = titleDirectory + "/Snapshot 2026-01-01";
+        mkdir("/tmp/pkse-uitest-backups", 0777);
+        mkdir(titleDirectory.c_str(), 0777);
+        mkdir(snapshotDirectory.c_str(), 0777);
+        if (FILE *seedFile = std::fopen((snapshotDirectory + "/main").c_str(), "wb"))
+        {
+            std::fputs("seed", seedFile);
+            std::fclose(seedFile);
+        }
+        TrainerViewScreen screen(trainer, "FireRed/LeafGreen", snapshotDirectory, 0, AccountUid{}, true);
+        context.check(!TrainerViewScreen::backupNameIsUsable("/../"), "a backup name with no usable characters was accepted");
+        const std::string createdDirectory = screen.createNamedBackupDir("Snapshot 2026-01-01 Edited");
+        context.check(createdDirectory == titleDirectory + "/Snapshot 2026-01-01 Edited", "a new backup was not made beside the session's own folder", "created=\"" + createdDirectory + "\"");
+        struct stat seedStatus{};
+        context.check(stat((createdDirectory + "/main").c_str(), &seedStatus) == 0, "a new backup was not seeded with a copy of the session's folder", createdDirectory);
+        context.check(stat((snapshotDirectory + "/main").c_str(), &seedStatus) == 0, "making a new backup disturbed the snapshot it was copied from", snapshotDirectory);
+        std::remove((createdDirectory + "/main").c_str());
+        rmdir(createdDirectory.c_str());
+        std::remove((snapshotDirectory + "/main").c_str());
+        rmdir(snapshotDirectory.c_str());
+        rmdir(titleDirectory.c_str());
+        rmdir("/tmp/pkse-uitest-backups");
+    }
+
+    /// Every Pokemon in the save's boxes.
+    int countBoxedPokemon(const Trainer::Trainer &trainer)
+    {
+        int boxedPokemonCount = 0;
+        for (const auto &box : trainer.boxes)
+            for (const auto &pokemon : box)
+                boxedPokemonCount += (pokemon && pokemon->speciesID() != 0) ? 1 : 0;
+        return boxedPokemonCount;
+    }
+
+    /**
+     * A counted Gen 1/2 box entry PKSE cannot read (MissingNo. here) is kept and written back at its
+     * slot, so the Storage view must treat that slot as taken: shown as a "?" placeholder, never
+     * grabbed, dropped onto, sorted, filled by Clone or Put Back, or opened. It used to read as an
+     * empty slot, so a Pokemon dropped there overfilled the list and the last entry was cut on save.
+     * The box is filled around the entry first, so every "find a free slot" path meets a full box.
+     */
+    void testUnmappedBoxSlotStaysPut(Test::Report &report, const std::string &target, const std::vector<uint8_t> &saveBytes)
+    {
+        Test::Context context;
+        context.report = &report;
+        context.suite = "ui";
+        context.target = target;
+        context.group = Enums::GameVersion::RBY;
+        report.setScope(target, "ui");
+        Trainer::Bank::setRootOverride("/tmp/pkse-uitest-bank");
+
+        // Plant MissingNo. (internal 0x1F) in the live copy of the current box: a new last entry, or
+        // over the last one in a full box.
+        Trainer::Trainer1RBY probeTrainer(saveBytes, "Pokemon Red.dat");
+        const size_t liveBoxOffset = probeTrainer.currentBoxFlush().liveBoxOffset;
+        const size_t boxCapacity = probeTrainer.getSlotsPerBox();
+        const int boxIndex = probeTrainer.getCurrentBox();
+        const size_t storedCount = saveBytes[liveBoxOffset];
+        if (!context.check(storedCount <= boxCapacity && !probeTrainer.party.empty(), "the Red save has no party Pokemon or a malformed current box, so the unmapped-slot journey cannot run"))
+        {
+            return;
+        }
+        const int glitchSlot = static_cast<int>(std::min(storedCount, boxCapacity - 1));
+        std::vector<uint8_t> glitchedBytes = saveBytes;
+        glitchedBytes[liveBoxOffset] = static_cast<uint8_t>(glitchSlot + 1);
+        glitchedBytes[liveBoxOffset + 1 + glitchSlot] = 0x1F;
+        glitchedBytes[liveBoxOffset + 1 + glitchSlot + 1] = 0xFF;
+        glitchedBytes[liveBoxOffset + 1 + boxCapacity + 1 + glitchSlot * Pokemon::SIZE_1STORED] = 0x1F;
+        Trainer::Trainer1RBY trainer(glitchedBytes, "Pokemon Red.dat");
+        context.trainer = &trainer;
+        context.version = trainer.getGameVersion();
+        auto glitchKept = [&]() { return !trainer.boxes[boxIndex][glitchSlot] && trainer.isBoxSlotUnmapped(static_cast<size_t>(boxIndex), static_cast<size_t>(glitchSlot)); };
+        if (!context.check(glitchKept(), "the planted MissingNo. did not load as a kept unmapped box entry"))
+        {
+            return;
+        }
+        // Fill the box around it: capacity - 1 Pokemon plus the kept entry is a full box.
+        const std::unique_ptr<Pokemon::Pokemon> donor = trainer.party[0]->clone();
+        int otherSlot = -1;
+        for (int slotIndex = 0; slotIndex < static_cast<int>(boxCapacity); ++slotIndex)
+        {
+            if (slotIndex == glitchSlot)
+                continue;
+            if (!trainer.boxes[boxIndex][slotIndex])
+                trainer.boxes[boxIndex][slotIndex] = donor->clone();
+            if (otherSlot < 0)
+                otherSlot = slotIndex;
+        }
+        int expectedBoxedCount = countBoxedPokemon(trainer);
+
+        using Screen = TrainerViewScreen;
+        TrainerViewScreen screen(trainer, target, std::string("/tmp/pkse-uitest"), 0, AccountUid{}, false);
+        Driver driver(context, screen, "unmapped-box-slot");
+        driver.step("open the storage view");
+        gotoHome(driver, screen, 2);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.detailViewActive && screen.selectedMode == Screen::ViewMode::Storage && screen.bank, "could not open the storage view"))
+        {
+            return;
+        }
+        screen.storageFocusPane = 0;
+        screen.selectedBoxIndex = boxIndex;
+        screen.stSaveSlot = glitchSlot;
+
+        driver.step("the kept entry is drawn as a '?' in its own slot and named in the info row").frame();
+        bool markInSlot = false;
+        for (const auto &touchTarget : screen.storageTouchTargets)
+        {
+            if (touchTarget.pane != 0 || touchTarget.box != boxIndex || touchTarget.slot != glitchSlot)
+                continue;
+            for (const UIHost::Draw *draw : driver.frameData().textExact(UI::Panels::UNMAPPED_SLOT_MARK))
+                markInSlot = markInSlot || (draw->centerX() >= touchTarget.hitX && draw->centerX() < touchTarget.hitX + touchTarget.hitWidth && draw->centerY() >= touchTarget.hitY && draw->centerY() < touchTarget.hitY + touchTarget.hitHeight);
+        }
+        driver.expect(markInSlot, "the kept entry's slot is not drawn with the '?' placeholder");
+        driver.see(UI::Panels::UNMAPPED_SLOT_LABEL);
+        driver.expect(screen.storageSlotLocked(0, boxIndex, glitchSlot), "the kept entry's slot is not locked");
+
+        driver.step("A on the kept entry opens neither the Pokemon menu nor the creator").press(Btn::A).frame();
+        driver.expect(!screen.storageMenuActive && !screen.creator.active && !screen.pickerActive, "A on the kept entry's slot opened a menu or the creator");
+        screen.creator.active = false;
+        screen.pickerActive = false;
+        screen.storageMenuActive = false;
+
+        driver.step("Move mode cannot grab the kept entry");
+        screen.cursorMode = Screen::CursorMode::Move;
+        screen.pickupSingle();
+        driver.expect(!screen.carrying(), "the kept entry's slot was picked up");
+
+        driver.step("a carried Pokemon cannot be dropped on the kept entry");
+        screen.stSaveSlot = otherSlot;
+        screen.pickupSingle();
+        if (driver.expect(screen.carriedCount() == 1, "could not pick up a Pokemon beside the kept entry"))
+        {
+            screen.stSaveSlot = glitchSlot;
+            screen.putDownBlock();
+            driver.frame();
+            driver.expect(screen.carriedCount() == 1 && glitchKept(), "a Pokemon was dropped on the kept entry's slot");
+            driver.press(Btn::B).frame();
+            driver.expect(!screen.carrying() && trainer.boxes[boxIndex][otherSlot] && glitchKept(), "B did not put the Pokemon back home beside the kept entry");
+        }
+
+        driver.step("a multi-select over the whole box leaves the kept entry behind, and puts back around it");
+        screen.cursorMode = Screen::CursorMode::Multi;
+        screen.currentlySelecting = true;
+        screen.selectPane = 0;
+        screen.selectBox = boxIndex;
+        screen.selectDimensions = {0, 0};
+        screen.stSaveSlot = static_cast<int>(boxCapacity) - 1;
+        screen.grabSelection(true);
+        driver.expect(screen.carriedCount() == static_cast<int>(boxCapacity) - 1 && glitchKept(), "a whole-box multi-select did not leave exactly the kept entry behind", "carried=" + std::to_string(screen.carriedCount()));
+        screen.putDownBlock();
+        driver.frame();
+        driver.expect(!screen.carrying() && countBoxedPokemon(trainer) == expectedBoxedCount && glitchKept(), "putting the box back down did not land every Pokemon around the kept entry", "boxed=" + std::to_string(countBoxedPokemon(trainer)) + " want=" + std::to_string(expectedBoxedCount));
+        screen.clearCarried();
+
+        driver.step("sorting the box pins the kept entry");
+        screen.sortStorageBox(0, boxIndex);
+        driver.frame();
+        driver.expect(countBoxedPokemon(trainer) == expectedBoxedCount && glitchKept(), "sorting moved a Pokemon onto the kept entry or lost one");
+
+        driver.step("Clone into a full box spills over the kept entry into another box");
+        screen.cursorMode = Screen::CursorMode::Menu;
+        screen.stSaveSlot = otherSlot;
+        driver.press(Btn::A).frame();
+        if (driver.expect(screen.storageMenuActive, "A on a Pokemon did not open its menu"))
+        {
+            screen.storageMenuIndex = Screen::STORAGE_MENU_ROW_CLONE;
+            driver.press(Btn::A).frame();
+            ++expectedBoxedCount;
+            driver.expect(countBoxedPokemon(trainer) == expectedBoxedCount && glitchKept(), "Clone filled the kept entry's slot (or made no copy)", "boxed=" + std::to_string(countBoxedPokemon(trainer)) + " want=" + std::to_string(expectedBoxedCount));
+        }
+        screen.storageMenuActive = false;
+
+        driver.step("Put Back whose home is the kept entry's slot finds a free slot instead");
+        screen.clearCarried();
+        screen.moveMon.push_back(donor->clone());
+        screen.moveMonOrigins.push_back(Screen::CarriedCellOrigin{0, boxIndex, glitchSlot, false});
+        screen.selectDimensions = {1, 1};
+        screen.heldPane = 0;
+        screen.heldFromBox = boxIndex;
+        screen.heldFromSlot = glitchSlot;
+        const bool returned = screen.returnHeldToOrigin();
+        ++expectedBoxedCount;
+        driver.expect(returned && countBoxedPokemon(trainer) == expectedBoxedCount && glitchKept(), "Put Back landed on the kept entry's slot (or lost the Pokemon)");
+        driver.frame();
+
+        driver.step("save and reload keep every Pokemon and the kept entry");
+        Trainer::Trainer1RBY reloadedTrainer(trainer.serialize(), "Pokemon Red.dat");
+        driver.expect(countBoxedPokemon(reloadedTrainer) == expectedBoxedCount && reloadedTrainer.isBoxSlotUnmapped(static_cast<size_t>(boxIndex), static_cast<size_t>(glitchSlot)), "a save and reload lost a Pokemon or the kept entry", "boxed=" + std::to_string(countBoxedPokemon(reloadedTrainer)) + " want=" + std::to_string(expectedBoxedCount));
+        screen.hasUnsavedChanges = false;
+    }
+
+    /**
+     * A counted Gen 2 party entry PKSE cannot read (species 252 here) keeps its party slot: the Party
+     * view shows it there as "Unknown species", A on it opens nothing, the Pokemon after it open as
+     * themselves, and a save and reload keep the whole party.
+     */
+    void testUnmappedPartySlotStaysPut(Test::Report &report, const std::string &target, const std::string &path)
+    {
+        std::vector<uint8_t> saveBytes = readFile(path);
+        if (saveBytes.empty())
+            return;
+        if (!Trainer::Trainer2GSC::detect(saveBytes))
+            Save::stripRtcFooter(saveBytes);
+        if (!Trainer::Trainer2GSC::detect(saveBytes))
+            return;
+        Test::Context context;
+        context.report = &report;
+        context.suite = "ui";
+        context.target = target;
+        context.group = Enums::GameVersion::GSC;
+        report.setScope(target, "ui");
+        Trainer::Bank::setRootOverride("/tmp/pkse-uitest-bank");
+
+        // The international party lists (Gold/Silver 0x288A, Crystal 0x2865), found by their header.
+        Trainer::Trainer2GSC probeTrainer(saveBytes, path);
+        std::vector<uint8_t> listHeader{static_cast<uint8_t>(probeTrainer.party.size())};
+        for (auto &pokemon : probeTrainer.party)
+            listHeader.push_back(static_cast<uint8_t>(pokemon->getData()[1]));
+        listHeader.push_back(0xFF);
+        size_t partyOffset = 0;
+        for (const size_t candidateOffset : {size_t{0x288A}, size_t{0x2865}})
+        {
+            if (candidateOffset + listHeader.size() <= saveBytes.size() && std::equal(listHeader.begin(), listHeader.end(), saveBytes.begin() + candidateOffset))
+                partyOffset = candidateOffset;
+        }
+        if (!context.check(partyOffset != 0 && !probeTrainer.party.empty(), "the save's party list was not found, so the unmapped party journey cannot run"))
+        {
+            return;
+        }
+        // Plant species 252 over party slot 1, then add a Pokemon so one follows it.
+        std::vector<uint8_t> glitchedBytes = saveBytes;
+        glitchedBytes[partyOffset + 1] = 0xFC;
+        glitchedBytes[partyOffset + 1 + 6 + 1] = 0xFC;
+        Trainer::Trainer2GSC trainer(glitchedBytes, path);
+        context.trainer = &trainer;
+        context.version = trainer.getGameVersion();
+        if (trainer.party.empty())
+            trainer.party.push_back(probeTrainer.party[0]->clone());
+        const size_t partyCount = trainer.party.size();
+        const uint16_t secondSpecies = trainer.party[0]->speciesID();
+        if (!context.check(trainer.getUnmappedPartySlots() == std::vector<size_t>{0}, "the planted species-252 entry did not load as a kept unmapped party entry"))
+        {
+            return;
+        }
+
+        TrainerViewScreen screen(trainer, target, std::string("/tmp/pkse-uitest"), 0, AccountUid{}, false);
+        Driver driver(context, screen, "unmapped-party-slot");
+        driver.step("open the party view");
+        gotoHome(driver, screen, 1);
+        driver.press(Btn::A).frame();
+        if (!driver.expect(screen.selectedMode == TrainerViewScreen::ViewMode::Party, "could not open the party view"))
+        {
+            return;
+        }
+        driver.see(std::string("Slot 1:  ") + UI::Panels::UNMAPPED_SLOT_LABEL);
+        driver.see(Names::getDisplayName(secondSpecies, trainer.party[0]->form(), trainer.party[0]->species(), trainer.getGameGroup()));
+
+        driver.step("A on the kept entry's slot opens nothing");
+        screen.selectedPartyIndex = 0;
+        driver.press(Btn::A).frame();
+        driver.expect(!screen.details.active, "A on the kept entry's party slot opened the details editor");
+        screen.details.active = false;
+
+        driver.step("A on party slot 2 opens the first Pokemon");
+        screen.selectedPartyIndex = 1;
+        driver.press(Btn::A).frame();
+        driver.expect(screen.details.active && screen.details.partyIndex == 0, "party slot 2 did not open the Pokemon shown there", "partyIndex=" + std::to_string(screen.details.partyIndex));
+        screen.details.active = false;
+        driver.frame();
+
+        driver.step("save and reload keep the whole party, the kept entry in slot 1");
+        Trainer::Trainer2GSC reloadedTrainer(trainer.serialize(), path);
+        driver.expect(reloadedTrainer.party.size() == partyCount && reloadedTrainer.getUnmappedPartySlots() == std::vector<size_t>{0} && reloadedTrainer.party[0]->speciesID() == secondSpecies, "a save and reload lost a party Pokemon or moved the kept entry", "party=" + std::to_string(reloadedTrainer.party.size()) + " want=" + std::to_string(partyCount));
+        screen.hasUnsavedChanges = false;
+    }
+
     void runUI(Test::Report &report, const std::string &target, Enums::GameVersion group, Trainer::Trainer &trainer, u64 titleId)
     {
         Test::Context context;
@@ -3035,6 +4014,10 @@ namespace
         report.setScope(target, "ui");
 
         std::printf("  ui  %s\n", target.c_str());
+        // Again for every target: the on-console journeys at the end of this function point the
+        // bank at their own work directory and, having no way to read the previous root, put back
+        // the default (the SD card's) when they finish.
+        Trainer::Bank::setRootOverride("/tmp/pkse-uitest-bank");
 
         // A fresh screen per test: these drive real state, and a test that inherited the previous
         // one's cursor position would pass or fail depending on what ran before it.
@@ -3112,6 +4095,26 @@ namespace
             auto screen = fresh();
             testTapIsSeenBeforeItActs(context, *screen, trainer);
         }
+        {
+            auto screen = fresh();
+            testDetailsEditCommits(context, *screen, trainer);
+        }
+        {
+            auto screen = fresh();
+            testPutBackKeepsEveryPokemon(context, *screen, trainer);
+        }
+        {
+            auto screen = fresh();
+            testBankSavedSeparately(context, *screen, trainer);
+        }
+        {
+            auto screen = fresh();
+            testPlusWaitsAndExitHints(context, *screen, trainer);
+        }
+        {
+            auto screen = fresh();
+            testGenerationLimits(context, *screen, trainer);
+        }
         // The save dialog, raised the way X raises it from the HOME menu: its keys go over its scrim.
         {
             auto screen = fresh();
@@ -3129,6 +4132,12 @@ namespace
             browserFoldersTested = true;
             auto screen = fresh();
             testBrowserFolders(context, *screen);
+        }
+        static bool namedBackupTested = false;
+        if (!namedBackupTested)
+        {
+            namedBackupTested = true;
+            testNamedBackupFolder(context, trainer);
         }
         {
             auto screen = fresh();
@@ -3693,10 +4702,13 @@ int main(int argc, char **argv)
             {
                 Trainer::Trainer1RBY trainer(red, "Pokemon Red.dat");
                 runUI(report, "Red", Enums::GameVersion::RBY, trainer, 0);
+                testUnmappedBoxSlotStaysPut(report, "Red", red);
                 ++opened;
             }
         }
         opened += openLoose<Trainer::Trainer2GSC>(report, "Gold", Enums::GameVersion::GSC, SaveTree::forTitle(saveRoot, "Gold")) ? 1 : 0;
+        testUnmappedPartySlotStaysPut(report, "Gold", SaveTree::forTitle(saveRoot, "Gold"));
+        testUnmappedPartySlotStaysPut(report, "Crystal", SaveTree::forTitle(saveRoot, "Crystal"));
         opened += openLoose<Trainer::Trainer4DP>(report, "Pearl", Enums::GameVersion::DP, SaveTree::forTitle(saveRoot, "Pearl")) ? 1 : 0;
         opened += openLoose<Trainer::Trainer4PT>(report, "Platinum", Enums::GameVersion::PT, SaveTree::forTitle(saveRoot, "Platinum")) ? 1 : 0;
         opened += openLoose<Trainer::Trainer4HGSS>(report, "SoulSilver", Enums::GameVersion::HGSS, SaveTree::forTitle(saveRoot, "SoulSilver")) ? 1 : 0;

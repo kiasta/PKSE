@@ -7,6 +7,14 @@
 #include "Trainer/Trainer.h" // Trainer::getSpeciesName
 #include "Utils/Gen2Text.h"
 #include "Utils/StringHelpers.h" // normalizeGameBoyName / utf8ToUtf16 -- shared with Gen 1
+#include "Names/NameLanguage.h"  // the name table of each language
+
+namespace Names
+{
+    // The per-language species names, for telling which language an un-nicknamed record was
+    // written in.
+    const char *getSpeciesNameLocalized(uint16_t speciesId, size_t languageIndex);
+}
 
 namespace Pokemon
 {
@@ -234,6 +242,67 @@ namespace Pokemon
         return static_cast<uint8_t>(packed / 10);
     }
 
+    namespace
+    {
+        /// The languages an international Game Boy cart shipped in, in PKHeX's search order
+        /// (Language.Languages_GB after Japanese), each with the name table it reads from.
+        struct GameBoyLanguage
+        {
+            Enums::LanguageID languageId;
+            Names::NameLanguage nameLanguage;
+        };
+        constexpr GameBoyLanguage INTERNATIONAL_GAME_BOY_LANGUAGES[] = {
+            {Enums::LanguageID::English, Names::NameLanguage::English},
+            {Enums::LanguageID::French, Names::NameLanguage::French},
+            {Enums::LanguageID::Italian, Names::NameLanguage::Italian},
+            {Enums::LanguageID::German, Names::NameLanguage::German},
+            {Enums::LanguageID::Spanish, Names::NameLanguage::Spanish},
+        };
+
+        /// A species name as an international Gen 2 cart writes it, ready to compare with a stored
+        /// name (PKHeX SpeciesName.GetSpeciesName1234): upper case, and French drops the accents on
+        /// E and I. Run through normalizeGameBoyName like the stored side.
+        std::u16string gameBoySpeciesName(uint16_t nationalSpecies, const GameBoyLanguage &language)
+        {
+            std::u16string speciesName = Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(nationalSpecies, static_cast<size_t>(language.nameLanguage)));
+            for (char16_t &character : speciesName)
+            {
+                if (character >= 0xE0 && character <= 0xFE && character != 0xF7)
+                    character = static_cast<char16_t>(character - 0x20);
+                if (language.languageId == Enums::LanguageID::French)
+                {
+                    if (character >= 0xC8 && character <= 0xCA)
+                        character = u'E';
+                    else if (character == 0xCF)
+                        character = u'I';
+                }
+            }
+            return Utils::normalizeGameBoyName(speciesName);
+        }
+    }
+
+    // Not stored, so inferred as PKHeX GBPKM.Language and GuessedLanguage do: an OT name with a
+    // German-only letter is German; otherwise the language whose species name the record still
+    // carries; otherwise English. Asking the DISPLAY language instead made every un-nicknamed
+    // English Pokemon a "nickname" under a French menu, and sent every French one out as English.
+    uint8_t Pokemon2GSC::language() const noexcept
+    {
+        if (japanese())
+            return static_cast<uint8_t>(Enums::LanguageID::Japanese);
+        for (const char16_t character : otName())
+        {
+            if (character == u'\u00C4' || character == u'\u00D6' || character == u'\u00DC' || character == u'\u00E4' || character == u'\u00F6' || character == u'\u00FC')
+                return static_cast<uint8_t>(Enums::LanguageID::German);
+        }
+        const std::u16string stored = Utils::normalizeGameBoyName(nickname());
+        for (const GameBoyLanguage &candidate : INTERNATIONAL_GAME_BOY_LANGUAGES)
+        {
+            if (!stored.empty() && stored == gameBoySpeciesName(speciesID(), candidate))
+                return static_cast<uint8_t>(candidate.languageId);
+        }
+        return static_cast<uint8_t>(Enums::LanguageID::English);
+    }
+
     bool Pokemon2GSC::isNicknamed() const noexcept
     {
         // Gen 2 has no "is nicknamed" flag either, so the test is Gen 1's: compare the stored
@@ -248,7 +317,15 @@ namespace Pokemon
         const std::u16string stored = Utils::normalizeGameBoyName(nickname());
         if (stored.empty())
             return false;
-        return stored != Utils::normalizeGameBoyName(Utils::utf8ToUtf16(species()));
+        // Compared with the species name in the record's OWN language (PKHeX IsNicknamedBank),
+        // never the display language.
+        const uint8_t recordLanguage = language();
+        for (const GameBoyLanguage &candidate : INTERNATIONAL_GAME_BOY_LANGUAGES)
+        {
+            if (static_cast<uint8_t>(candidate.languageId) == recordLanguage)
+                return stored != gameBoySpeciesName(speciesID(), candidate);
+        }
+        return true;
     }
 
     std::u16string Pokemon2GSC::readName(size_t offset) const
@@ -291,6 +368,14 @@ namespace Pokemon
             if (encodedByte == 0)
                 break;
             wr8(offset + writeIndex, encodedByte);
+        }
+        // One 0x50 always ends the text, even in a zero-padded field: the Game Boy's text printer
+        // does not stop at 0x00 (PKHeX StringConverter2.SetString writes the terminator after the
+        // text whatever the padding).
+        if (writeIndex < byteCount)
+        {
+            wr8(offset + writeIndex, Utils::GEN2_TERMINATOR);
+            ++writeIndex;
         }
         for (; writeIndex < byteCount; ++writeIndex)
             wr8(offset + writeIndex, pad);

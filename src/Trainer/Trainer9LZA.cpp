@@ -304,6 +304,11 @@ namespace Trainer
             this->saveRevisionString = "Mega Dimension";
             this->gameVersionString = "v2.0"; // Mega Dimension DLC requires v2.0.0+
             break;
+        case 2:
+            // PKHeX labels it "-EOL" (End of Life): written by 2.0.1 and later.
+            this->saveRevisionString = "End of Life";
+            this->gameVersionString = "v2.0.1+";
+            break;
         default:
             // Future DLC/updates
             this->saveRevisionString = "Rev " + std::to_string(this->saveRevision);
@@ -329,8 +334,9 @@ namespace Trainer
          * already carries the same rule. The party is re-serialized on EVERY save, so a memset(0) here
          * corrupts the party even when the edit only touched a box.
          *
-         * Z-A GAPS its party slots (stride PARTY_SLOT_SIZE9_LZA > SIZE_PARTY9_LZA), so the blank is the
-         * entity followed by a zeroed gap -- the same shape the occupied branch writes.
+         * Z-A GAPS its party slots (stride PARTY_SLOT_SIZE9_LZA > SIZE_PARTY9_LZA). A newly emptied slot
+         * is cleared whole and gets the blank plus the footer, as PKHeX's Party9a.WriteEmpty does; an
+         * occupied slot writes the entity and the footer and leaves the rest of the gap alone.
          */
         for (auto &block : blocks)
         {
@@ -395,12 +401,15 @@ namespace Trainer
                     if (slotIndex < MAX_PARTY_SLOTS && alreadyEmpty[slotIndex])
                         return;
                     std::memcpy(&block.data[offset], blankSlot.data(), partySlotStride);
+                    writeSlotFooter(&block.data[offset], true);
                 };
 
                 for (size_t partySlotIndex = 0; partySlotIndex < party.size() && partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
                 {
                     // Calculate offset (packed for S/V, gapped for Z-A)
                     const size_t offset = partySlotIndex * partySlotStride;
+                    if (slotHoldsLoadedRecord(party[partySlotIndex].get(), &block.data[offset], SIZE_PARTY9_LZA, decryptArray9LZA))
+                        continue;
 
                     if (party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
                     {
@@ -411,11 +420,8 @@ namespace Trainer
 
                         std::byte *encryptedData = encryptArray9LZA(decryptedSpan, encryptionConstant);
 
-                        // Write encrypted data to block (only SIZE_PARTY9_LZA bytes)
-                        std::memcpy(&block.data[offset], encryptedData, pokemon->getDataSize());
-
-                        // Zero out the gap after the Pokemon data (0 bytes for S/V's packed layout)
-                        std::memset(&block.data[offset + SIZE_PARTY9_LZA], 0, slotGapZero);
+                        std::memcpy(&block.data[offset], encryptedData, SIZE_PARTY9_LZA);
+                        writeSlotFooter(&block.data[offset], true);
 
                         delete[] encryptedData;
                     }
@@ -465,9 +471,13 @@ namespace Trainer
          * Process similar to updatePartyBlock, but for all boxes:
          * 1. Find the BOX block
          * 2. Ensure block is large enough (32 boxes * 30 slots * BOX_SLOT_SIZE9_LZA)
-         * 3. For each box and slot:
-         *    a. If Pokemon exists, encrypt and write
-         *    b. If slot is empty, write zeros
+         * 3. Each slot is decided from its POSITION in the file, as PKHeX writes only the slot it
+         *    sets: bytes that still hold this slot's in-memory record, or an empty slot whose bytes
+         *    already read as empty, are left alone; an occupied slot is written; anything else (a
+         *    Pokemon moved or removed from here, a zeroed slot) gets a synthesized blank. Never
+         *    zeros (a Bad Egg in-game), and never one slot's bytes harvested as "the" blank: after
+         *    a Move the first empty slot in memory can still hold the moved Pokemon in the file.
+         *    A written slot keeps its gap, apart from the footer PKHeX writes (writeSlotFooter).
          */
         for (auto &block : blocks)
         {
@@ -479,33 +489,12 @@ namespace Trainer
                     block.data.resize(requiredSize, 0);
                 }
 
-                // Empty box slots in the real save are an ENCRYPTED blank that DECRYPTS to species 0 —
-                // NOT literal zeros. The game decrypts every box slot and checks species; a zeroed slot
-                // decrypts to garbage and renders a BAD EGG. So reuse the game's own blank: copy the raw
-                // bytes of an existing empty (species-0) slot. If every box is full (no blank to copy),
-                // synthesize one from an all-zero PK9 encrypted with EC 0 (decrypts back to species 0).
+                // An all-zero PK9 encrypted with EC 0 (== PKHeX's BlankPKM).
                 std::vector<uint8_t> blankSlot;
-                for (size_t boxIndex = 0; boxIndex < BOX_COUNT9_LZA && blankSlot.empty(); ++boxIndex)
-                {
-                    for (size_t slotIndex = 0; slotIndex < BOX_SLOTS; ++slotIndex)
-                    {
-                        if (boxes[boxIndex][slotIndex] && boxes[boxIndex][slotIndex]->speciesID() == 0)
-                        {
-                            const size_t byteOffset = (boxIndex * BOX_SLOTS + slotIndex) * boxSlotStride;
-                            if (byteOffset + boxSlotStride <= block.data.size())
-                            {
-                                blankSlot.assign(block.data.begin() + byteOffset, block.data.begin() + byteOffset + boxSlotStride);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (blankSlot.empty())
                 {
                     std::vector<std::byte> zero(SIZE_PARTY9_LZA, std::byte{0});
                     std::byte *encryptedRecord = encryptArray9LZA(std::span<const std::byte>(zero.data(), SIZE_PARTY9_LZA), 0);
                     blankSlot.assign(reinterpret_cast<const uint8_t *>(encryptedRecord), reinterpret_cast<const uint8_t *>(encryptedRecord) + SIZE_PARTY9_LZA);
-                    blankSlot.resize(boxSlotStride, 0); // pad the Z-A slot gap with zeros
                     delete[] encryptedRecord;
                 }
 
@@ -513,41 +502,38 @@ namespace Trainer
                 {
                     for (size_t slot = 0; slot < BOX_SLOTS; ++slot)
                     {
-                        // Calculate offset (packed for S/V, gapped for Z-A)
                         const size_t offset = (boxIndex * BOX_SLOTS + slot) * boxSlotStride;
+                        const auto &pokemon = boxes[boxIndex][slot];
+                        if (slotHoldsLoadedRecord(pokemon.get(), &block.data[offset], SIZE_PARTY9_LZA, decryptArray9LZA))
+                            continue;
 
-                        // Gate on species, not just the pointer (matches updatePartyBlock). A slot left
-                        // holding a non-null but blank/species-0 pokemon (e.g. after a bank move) must be
-                        // zeroed to read as EMPTY in-game — re-encrypting a blank writes a bad egg.
-                        if (boxes[boxIndex][slot] && boxes[boxIndex][slot]->speciesID() != 0)
+                        if (pokemon && pokemon->speciesID() != 0)
                         {
-                            const auto &pokemon = boxes[boxIndex][slot];
-
                             uint32_t encryptionConstant = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(pokemon->getData().data()));
-
                             std::span<const std::byte> decryptedSpan(pokemon->getData().data(), pokemon->getDataSize());
-
                             std::byte *encryptedData = encryptArray9LZA(decryptedSpan, encryptionConstant);
-
-                            // Write encrypted data to block (only SIZE_PARTY9_LZA bytes)
-                            std::memcpy(&block.data[offset], encryptedData, pokemon->getDataSize());
-
-                            // Zero out the gap after the Pokemon data (0 bytes for S/V's packed layout)
-                            std::memset(&block.data[offset + SIZE_PARTY9_LZA], 0, slotGapZero);
-
+                            std::memcpy(&block.data[offset], encryptedData, SIZE_PARTY9_LZA);
                             delete[] encryptedData;
+                            writeSlotFooter(&block.data[offset], false);
                         }
-                        else
+                        else if (!slotHoldsGameBlank(&block.data[offset], SIZE_PARTY9_LZA, RECORD_SPECIES_OFFSET, decryptArray9LZA))
                         {
-                            // Empty/cleared slot: write the game's encrypted blank, NOT zeros. Zeros
-                            // decrypt to garbage in-game and show as a BAD EGG in every empty slot.
-                            std::memcpy(&block.data[offset], blankSlot.data(), boxSlotStride);
+                            std::memcpy(&block.data[offset], blankSlot.data(), SIZE_PARTY9_LZA);
+                            writeSlotFooter(&block.data[offset], false);
                         }
                     }
                 }
                 break;
             }
         }
+    }
+
+    void Trainer9LZA::writeSlotFooter(uint8_t *slotBytes, bool isPartySlot) const
+    {
+        if (saveRevision != 0)
+            slotBytes[PRESENT_FLAG_OFFSET9_LZA] = 1;
+        if (isPartySlot)
+            slotBytes[PARTY_FOOTER_OFFSET9_LZA] = 1;
     }
 
     std::unique_ptr<::Pokemon::Pokemon> Trainer9LZA::createBlankPokemon() const
@@ -583,8 +569,9 @@ namespace Trainer
         constexpr size_t ZA_ENTRY_SIZE = 0x84;
 
         int zaLangSlot(uint8_t language)
-        { // slot 6 unused, so 7+ shift down by two
-            if (language == 0 || language == 6 || language > 10)
+        { // slot 6 unused, so 7+ shift down by two; Latin American Spanish (11) is the last, slot 9
+          // (PKHeX PokeDexEntry9a.GetDexLangFlag, MaxLanguageID = SpanishL)
+            if (language == 0 || language == 6 || language > 11)
                 return -1;
             return (language >= 7) ? language - 2 : language - 1;
         }
@@ -958,6 +945,12 @@ namespace Trainer
                         // game's own "new" markers on existing items survive round-trips.
                         if (item.isNew)
                             block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] | 0x01);
+                        // IsNewNotify (bit 2) means "never held": the game shows its first-pickup
+                        // flyout while it is set, and it is always clear once any quantity is held
+                        // (PKHeX InventoryPouch9a.EnsureFlagsConsistent). An item never held before
+                        // still carries it, so it is cleared on every held item; an unedited save
+                        // has none set and stays byte for byte.
+                        block.data[offset + 8] = static_cast<uint8_t>(block.data[offset + 8] & ~0x04);
                     }
                 }
             }

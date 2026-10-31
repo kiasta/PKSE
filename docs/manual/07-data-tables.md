@@ -225,6 +225,14 @@ evolved Pokémon keeps what it learned earlier).
 `getLearnableBits` returns **`nullptr` when the species+form is absent from that game**. That is
 "unknown", not "knows nothing" — handle it explicitly.
 
+A form past the species' generated form count (`LEARN_FORM_COUNT`) reads the species' base row,
+never a neighbouring species' row. Gen 7 egg moves are indexed by FORM (PKHeX `LearnSource7SM`
+`GetFormIndex`), so Alolan Vulpix gets Freeze-Dry, and Necrozma's fused forms get Sunsteel Strike and
+Moongeist Beam. **Smeargle's row also holds every move it can Sketch** in that game (PKHeX
+`MoveInfo.IsSketchValid`): no Struggle, Chatter, Z-moves or dummied moves, nothing past the game's own
+highest move id (`MaxMoveID_6_XY`, `MaxMoveID_7`, `MaxMoveID_8` -- the game wins over the group's
+later sibling).
+
 ### A cosmetic form is present without a stats entry of its own
 
 Rows are keyed on a universal form index, and a form only gets one if the game counts it PRESENT —
@@ -615,7 +623,7 @@ The same family, one step subtler: **`utf-8` KEEPS a byte-order mark as a charac
 strips it.** `gen_locations.py` read with plain `utf-8`, so the BOM rode into entry 0 of every table
 that has a real name there — ten tables, nine languages each — and `getMetLocationName(HG, 0)`
 answered `"﻿Mystery Zone"`, an invisible glyph handed to the font for every Gen 4 Pokémon with
-no met location. It decoded "successfully" and looked right in every diff.
+no met location. It decoded "successfully" and looked right in every diff. `gen_itemnames.py` strips a U+FEFF from its text for the same reason (the Spanish Gen 3 items file).
 
 **SWAPPING A HAND-WRITTEN TABLE FOR A GENERATED ONE IS GATED ON THE ENGLISH OUTPUT BEING
 IDENTICAL.** That gate is what stops a PKHeX-internal label from shipping as user-facing text.
@@ -635,6 +643,12 @@ into `FormNamesLocalized.cpp`, and `getFormName` asks English FIRST — if Engli
 0 of most species) no language names anything, so the two can never disagree about which forms
 exist. (The diff paid for itself in the other direction too: it caught `Poke Ball` missing its
 accent, which PKHeX had right.)
+
+**Two species number their forms differently in older games**, so `getFormName` and
+`getDisplayName` have overloads taking the save-format group. In Gen 6, Pikachu forms 1-6 are ORAS's
+Cosplay outfits, not the Gen 7 caps. In Gen 4, Arceus has the ???-type plate at form 9, so Fire through
+Dark are 10-17 and there is no Fairy. The Cosplay labels are English only. A caller that knows the
+group should use the overload.
 
 **FORM LABELS COME FROM POKEAPI WHERE IT CARRIES THE GAMES' WORDING, PKHeX OTHERWISE — and PKHeX IS
 TERSE ONLY IN THE LATIN LANGUAGES.** Measured on cells where both have a label, PKHeX matches the

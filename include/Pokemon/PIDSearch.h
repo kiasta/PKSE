@@ -36,11 +36,27 @@ namespace Pokemon
         /// Which PID bit is the ability slot: 0 in Gens 3 and 4, 16 in Gen 5, -1 for none.
         int abilityBitIndex = -1;
         int wantAbilityBit = -1;
+        /// What a Wurmple evolves into, `((PID >> 16) % 10) / 5`: 0 Silcoon, 1 Cascoon. PKHeX
+        /// WurmpleUtil requires a Silcoon or Beautifly, and a Cascoon or Dustox, to carry its own.
+        int wantWurmpleEvolution = -1;
+        /// `(PID & 1) ^ (PID >> 31)`, which a wild Black/White/Black 2/White 2 encounter ties to the
+        /// trainer's ids (PKHeX MonochromeRNG.GetBitXor).
+        int wantCorrelationBit = -1;
     };
 
     /// A PID meeting every requirement, chosen at random among them. False, with `pidOut`
     /// untouched, only when no PID can meet them all.
     bool findPID(const PIDRequirements &requirements, uint32_t &pidOut) noexcept;
+
+    /// The Wurmple evolution value a PID gives (PKHeX WurmpleUtil.GetWurmpleEvoVal).
+    int wurmpleEvolutionFromPID(uint32_t pidValue) noexcept;
+
+    /// The Wurmple evolution a new PID must keep for this species: the line's own for Silcoon,
+    /// Beautifly, Cascoon and Dustox, the current one for Wurmple, and -1 for every other species.
+    int wurmpleEvolutionToHold(uint16_t speciesId, uint32_t currentPID) noexcept;
+
+    /// The Black/White PID-to-id correlation bit of a PID (see PIDRequirements::wantCorrelationBit).
+    int correlationBitFromPID(uint32_t pidValue) noexcept;
 
     /// The gender a Gen 3-5 PID gives a species: 0 male, 1 female, 2 genderless.
     uint8_t genderFromPID(uint32_t pidValue, uint8_t genderRatio) noexcept;

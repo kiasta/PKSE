@@ -1189,8 +1189,27 @@ namespace Test
             FILE *fileHandle = fopen(path.c_str(), "wb");
             if (!fileHandle) return false;
             const size_t writtenByteCount = fwrite(fileBytes.data(), 1, fileBytes.size(), fileHandle);
-            fclose(fileHandle);
-            return writtenByteCount == fileBytes.size();
+            const bool fileClosed = fclose(fileHandle) == 0;
+            return writtenByteCount == fileBytes.size() && fileClosed;
+        }
+
+        /// A loose save is replaced only whole (through a ".tmp" sibling) and only once its original
+        /// is backed up: a failed backup used to be logged and then the user's only copy truncated.
+        void checkLooseSaveWriteGuards(Context &context)
+        {
+            const std::string replacedPath = context.workDirectory + "/replaced-save";
+            const std::vector<uint8_t> firstBytes(16, 0x11);
+            const std::vector<uint8_t> secondBytes(32, 0x22);
+            const bool replaced = writeFile(replacedPath, firstBytes) && Save::replaceFileContents(replacedPath.c_str(), secondBytes);
+            context.check(replaced && readFile(replacedPath) == secondBytes && readFile(replacedPath + ".tmp").empty(), "replacing a save file did not leave exactly the new bytes", "path=\"" + replacedPath + "\"");
+            remove(replacedPath.c_str());
+
+            const std::string missingPath = context.workDirectory + "/never-written-save";
+            remove(missingPath.c_str());
+            const bool backupRefused = !Save::backupOriginalFile(missingPath.c_str());
+            const bool writeRefused = !Save::saveExternalSave(*context.trainer, missingPath.c_str(), true);
+            context.check(backupRefused && writeRefused && readFile(missingPath).empty(), "a save whose original could not be backed up was written anyway", "path=\"" + missingPath + "\"");
+            remove(missingPath.c_str());
         }
 
         void runEnvelopes(Context &context)
@@ -1207,6 +1226,7 @@ namespace Test
                 context.note("this format has no file form, so there is no envelope to test");
                 return;
             }
+            checkLooseSaveWriteGuards(context);
 
             Save::SaveEnvelope sourceEnvelope;
             std::vector<uint8_t> saveImage;

@@ -72,7 +72,7 @@ namespace UI
             // Regional/variant label ABOVE the name ("Combat Breed", "Alolan", "Hisuian", ...), so a
             // variant reads as what it is even when the pokemon is nicknamed. Only drawn when the form has a
             // name; the name drops a row to make space for it.
-            const char *variant = Names::getFormName(p->speciesID(), p->form());
+            const char *variant = Names::getFormName(p->speciesID(), p->form(), p->getGameGroup());
             int nameY = 16;
             if (variant[0] != '\0')
             {
@@ -347,7 +347,7 @@ namespace UI
             // PID-derived, so setForm is a no-op there -> exclude only Gen 3).
             if (notGen3 && Pokemon::getPersonalInfo(p->speciesID(), 0).formCount > 1)
             {
-                const char *fn = Names::getFormName(p->speciesID(), p->form());
+                const char *fn = Names::getFormName(p->speciesID(), p->form(), p->getGameGroup());
                 editRow("Form", (fn[0] != '\0') ? std::string(fn) : std::string("Base"), 26);
             }
             // Stat Nature (the mint / effective-stat nature) -- modern formats only.
@@ -378,10 +378,10 @@ namespace UI
                 originalTrainerName += (p->otGender() == 0) ? " (M)" : " (F)";
             row("OT", originalTrainerName);
             // Trainer ID in the format the game shows (six digits for Gen 7+ origins, 16-bit TID otherwise;
-            // a pokemon with no origin falls back to its own format -- only Gen 3 is 16-bit among these games).
+            // a pokemon with no origin falls back to its own format: six digits from Gen 7 on, five before).
             {
                 const uint8_t originVersion = p->originGame();
-                const bool sixDigit = (originVersion != 0) ? Enums::usesSixDigitTrainerID(originVersion) : !Enums::isGen3Group(p->getGameGroup());
+                const bool sixDigit = (originVersion != 0) ? Enums::usesSixDigitTrainerID(originVersion) : Enums::getVersionGeneration(Enums::getGroupRepVersion(p->getGameGroup())) >= 7;
                 if (sixDigit)
                     snprintf(buffer, sizeof(buffer), "%06u", p->id32() % 1000000u);
                 else
@@ -804,7 +804,7 @@ namespace UI
                     framebuffer.drawRoundedRect(rightColumnX + 14, infoRowY - 8, Rw - 28, 38, 10, Colors::Accent, 2);
                 }
                 const uint16_t heldItemId = p->hasHeldItem() ? p->heldItem() : 0;
-                const std::string iname = heldItemId ? std::string(Enums::isGen3Group(p->getGameGroup()) ? Names::getItemNameG3(heldItemId) : getItemName(heldItemId)) : std::string("None");
+                const std::string iname = heldItemId ? std::string(Names::getItemNameFor(p->getGameGroup(), heldItemId)) : std::string("None");
                 framebuffer.drawText(rightColumnX + 24, infoRowY, p->hasHeldItem() ? iname : std::string("--"), heldItemId ? Colors::Text : Colors::TextDim, TextStyle::Body);
                 // Only offer the row as a touch target where the format can actually hold an item;
                 // Gen 1 has no held-item field, so tapping it would open an editor over nothing.

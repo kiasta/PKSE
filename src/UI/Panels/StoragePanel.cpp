@@ -6,6 +6,7 @@
 
 #include "UI/Panels/StoragePanel.h"
 #include "UI/Panels/CarriedSprite.h" // drawLiftedMon -- shared with the Boxes view
+#include "UI/Panels/UnmappedSlot.h"
 #include "UI/TrainerViewScreen.h"
 #include "Trainer/OriginStamp.h" // originStampLabel -- the origin stamp on the detail strip
 #include "UI/Common.h"
@@ -205,6 +206,8 @@ namespace UI
                     if (empty)
                         framebuffer.drawCircle(centerX, cy, discR, Colors::Border, 1);
 
+                    if (empty && savePane && screen.trainer.isBoxSlotUnmapped(static_cast<size_t>(boxIndex), static_cast<size_t>(slotIndex)))
+                        drawUnmappedSlot(framebuffer, centerX, cy, discR);
                     drawSlotDisc(screen, framebuffer, pokemon, savePane, boxIndex, slotIndex, centerX, cy, discR);
 
                     // Box/Bank search: a box is a grid the player arranged, so matches
@@ -376,7 +379,7 @@ namespace UI
             {
                 // A whole group in hand: name the leader and say how many ride with it, rather than
                 // pretending one Pokemon is the whole payload.
-                std::string display = Names::getDisplayName(focus->speciesID(), focus->form(), std::string(focus->species()));
+                std::string display = Names::getDisplayName(focus->speciesID(), focus->form(), std::string(focus->species()), focus->getGameGroup());
                 std::string line = "Holding: " + display + " +" + std::to_string(screen.carriedCount() - 1) + (screen.checkPutDownBounds() ? "   A places them here" : "   won't fit here");
                 framebuffer.drawText(labelX, infoRowY + infoH / 2 - 11, line, screen.checkPutDownBounds() ? Colors::Text : Colors::Warning, TextStyle::Body);
             }
@@ -384,7 +387,7 @@ namespace UI
             {
                 std::string name(focus->species());
                 const bool shiny = focus->isShiny(focus->id32(), name);
-                std::string display = Names::getDisplayName(focus->speciesID(), focus->form(), name);
+                std::string display = Names::getDisplayName(focus->speciesID(), focus->form(), name, focus->getGameGroup());
                 // Level then dex number, matching the box Summary panel and the details page --
                 // the same pokemon should not be spelled two ways in two views of one screen.
                 std::string line = (holding ? "Holding: " : "") + display + "   Lv. " + std::to_string(focus->level()) + "   No. " + dexNumberLabel(focus->speciesID());
@@ -429,6 +432,11 @@ namespace UI
                         framebuffer.drawText(markX, infoRowY + infoH / 2 - 11, Trainer::originStampLabel(*focus, originSave), Colors::TextDim, TextStyle::Body);
                     }
                 }
+            }
+            else if (!holding && saveFocused && focusSlot >= 0 && screen.trainer.isBoxSlotUnmapped(static_cast<size_t>(screen.selectedBoxIndex), static_cast<size_t>(focusSlot)))
+            {
+                // A kept Gen 1/2 entry PKSE cannot read: named, but there is nothing to open.
+                framebuffer.drawText(labelX, infoRowY + infoH / 2 - 11, std::string(UNMAPPED_SLOT_LABEL) + " - kept as it is, can't be moved", Colors::TextDim, TextStyle::Body);
             }
             else
             {
@@ -478,11 +486,10 @@ namespace UI
         void drawStorageActionMenu(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
         {
             const Pokemon::Pokemon *pokemon = screen.storageSlot(screen.menuPane, screen.menuBox, screen.menuSlot).get();
-            const std::string title = (pokemon && pokemon->speciesID() != 0) ? Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species()) : "Pokémon";
-            // A party-linked (LGPE) slot can be edited or cloned, but not released, and not moved out of
-            // Storage -- grey those out. (Same lock rule as storageSlotLocked: save pane + a party member
-            // points here.)
-            const bool locked = screen.menuPane == 0 && screen.trainer.getPartyPosition(screen.menuBox, screen.menuSlot) > 0;
+            const std::string title = (pokemon && pokemon->speciesID() != 0) ? Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species(), pokemon->getGameGroup()) : "Pokémon";
+            // A party-linked (LGPE) or battle-team slot can be edited or cloned, but not released, and
+            // not moved out of Storage -- grey those out.
+            const bool locked = screen.storageSlotLocked(screen.menuPane, screen.menuBox, screen.menuSlot);
             uint32_t disabledRows = 0;
             for (int menuRow = 0; menuRow < TrainerViewScreen::STORAGE_MENU_ROW_COUNT; ++menuRow)
                 if (locked && TrainerViewScreen::storageMenuRowNeedsUnlockedSlot(menuRow, screen.selectedMode))
@@ -522,7 +529,7 @@ namespace UI
             else
             {
                 const Pokemon::Pokemon *pokemon = screen.storageSlot(screen.releasePane, screen.releaseBox, screen.releaseSlot).get();
-                const std::string subjectName = (pokemon && pokemon->speciesID() != 0) ? Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species()) : "this Pokémon";
+                const std::string subjectName = (pokemon && pokemon->speciesID() != 0) ? Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species(), pokemon->getGameGroup()) : "this Pokémon";
                 message = "Release " + subjectName + "?";
             }
             constexpr int dialogWidth = 540, h = 226;
@@ -801,8 +808,8 @@ namespace UI
         {
             // The bank has unsaved changes; ask before leaving (HOME-style). Bank saving is separate
             // from the game (X) save, so this is the bank's own persistence decision.
-            static const char *const items[] = {"Save & Exit", "Discard changes", "Cancel"};
-            drawPopupMenu(screen, framebuffer, "Save bank changes?", items, 3, screen.storageExitConfirmIndex);
+            const char *const items[] = {screen.storageExitConfirmLabel(TrainerViewScreen::STORAGE_EXIT_ROW_SAVE), screen.storageExitConfirmLabel(TrainerViewScreen::STORAGE_EXIT_ROW_DISCARD), screen.storageExitConfirmLabel(TrainerViewScreen::STORAGE_EXIT_ROW_CANCEL)};
+            drawPopupMenu(screen, framebuffer, "Save bank changes?", items, TrainerViewScreen::STORAGE_EXIT_ROW_COUNT, screen.storageExitConfirmIndex);
         }
     }
 }

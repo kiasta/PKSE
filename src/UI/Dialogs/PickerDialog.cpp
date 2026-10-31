@@ -15,6 +15,7 @@
 #include "Names/MoveNames.h"     // getMoveName / getMoveCount
 #include "Names/ItemNames.h"     // getItemNameFor -- every generation numbers items differently
 #include "Pokemon/Gen1Tables.h"  // getItemNameGen1
+#include "Pokemon/Gen2Tables.h"  // getItemNameGen2
 #include "Enums/Ball.h"          // getBallName + MAX_BALL_GEN7 (Hisui-ball disambiguation)
 #include "Enums/LanguageID.h"    // getLanguageName
 #include "Enums/GameVersion.h"   // getGameVersionName (Origin picker)
@@ -46,6 +47,8 @@ namespace UI
                 return static_cast<int>(Names::getItemCountG3());
             case PickerKind::ItemG1:
                 return static_cast<int>(::Pokemon::MAX_ITEM_GEN1) + 1;
+            case PickerKind::ItemG2:
+                return static_cast<int>(::Pokemon::MAX_ITEM_GEN2) + 1;
             case PickerKind::Level:
                 return 100;
             case PickerKind::Friendship:
@@ -71,6 +74,7 @@ namespace UI
             // Pouch lists are supplied through pickerOrder, so the caller sets pickerCount.
             case PickerKind::PouchItem:
             case PickerKind::PouchItemG1:
+            case PickerKind::PouchItemG2:
             case PickerKind::PouchItemG3:
                 return 0;
             }
@@ -93,6 +97,8 @@ namespace UI
                 return Names::getItemNameG3(static_cast<uint16_t>(index));
             case PickerKind::ItemG1:
                 return ::Pokemon::getItemNameGen1(static_cast<uint8_t>(index));
+            case PickerKind::ItemG2:
+                return ::Pokemon::getItemNameGen2(static_cast<uint8_t>(index));
             case PickerKind::Level:
             {
                 static std::string text;
@@ -137,6 +143,8 @@ namespace UI
                 return Names::getItemNameG3(static_cast<uint16_t>(index));
             case PickerKind::PouchItemG1:
                 return ::Pokemon::getItemNameGen1(static_cast<uint8_t>(index));
+            case PickerKind::PouchItemG2:
+                return ::Pokemon::getItemNameGen2(static_cast<uint8_t>(index));
             }
             return "?";
         }
@@ -153,6 +161,7 @@ namespace UI
                 return "Select Move";
             case PickerKind::Item:
             case PickerKind::ItemG1:
+            case PickerKind::ItemG2:
             case PickerKind::ItemG3:
                 return "Select Held Item";
             case PickerKind::Level:
@@ -179,6 +188,7 @@ namespace UI
                 return "Select Species";
             case PickerKind::PouchItem:
             case PickerKind::PouchItemG1:
+            case PickerKind::PouchItemG2:
             case PickerKind::PouchItemG3:
                 return "Add Item to Pouch";
             }
@@ -191,7 +201,7 @@ namespace UI
                 return Names::getMetLocationName(screen.pickerMetVersion, static_cast<uint16_t>(value));
             if (kind == PickerKind::Form)
             {
-                const char *formName = Names::getFormName(screen.pickerFormSpecies, static_cast<uint8_t>(value));
+                const char *formName = Names::getFormName(screen.pickerFormSpecies, static_cast<uint8_t>(value), screen.pickerFormGroup);
                 if (formName[0] != '\0')
                     return formName;
                 return value == 0 ? std::string("Base") : ("Form " + std::to_string(value));
@@ -225,7 +235,7 @@ namespace UI
 
         static bool isPouchPickerKind(PickerKind kind)
         {
-            return kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG1 || kind == PickerKind::PouchItemG3;
+            return kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG1 || kind == PickerKind::PouchItemG2 || kind == PickerKind::PouchItemG3;
         }
 
         void drawPickerDialog(TrainerViewScreen &screen, PKSEFramebuffer &framebuffer)
@@ -250,7 +260,7 @@ namespace UI
 
             // Title + position caption. A pouch picker opened to change an existing item's type says so
             // rather than "Add Item to Pouch".
-            const char *title = (screen.itemPickerReplace && (kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG3)) ? "Change Item To" : pickerTitle(kind);
+            const char *title = (screen.itemPickerReplace && (kind == PickerKind::PouchItem || kind == PickerKind::PouchItemG2 || kind == PickerKind::PouchItemG3)) ? "Change Item To" : pickerTitle(kind);
             framebuffer.drawText(panelX + 20, py + 16, title, Colors::Text, TextStyle::Heading);
             {
                 std::string position = std::to_string(matchCount == 0 ? 0 : selectedIndex + 1) + " / " + std::to_string(matchCount);

@@ -65,29 +65,25 @@ L1  name lengths (<= 12 UTF-16 chars)
 L3  encounter matching
 ```
 
-### A transferred Pokémon is checked against two learn pools, not one
+### A move is checked against every game the Pokémon could have learned it in
 
 The pool is a game's own learn methods unioned with the species' whole pre-evolution chain, and it
 stays a **Warning** rather than Invalid because it cannot express *when* a move was legal (tutors
-that came and went, event moves, trade-backs).
+that came and went, event moves, trade-backs). A fateful-encounter Pokémon's warning says so: event
+moves are not modelled.
 
-**A Pokémon that came through Poké Transporter learned its moves in Gen 1 or Gen 2, and no later
-learn pool records that** — a Yellow Pikachu really does know Surf. So such a mon is checked against
-the union of the pool it learned in and the pool it lives in now:
+**A Pokémon keeps the moves it learned in earlier games**, so checking only its current game (or only
+its current game and its origin) flagged every legitimate Chespin that kept an XY level-up move in
+Sun, and every Virtual Console move PKSE's own transfer produces. `getLearnGroups(pokemon, format)`
+is PKHeX's `LearnGroup` walk:
 
-```cpp
-const uint8_t originVersion = pk.hasOriginGame() ? pk.originGame() : 0;
-const GameVersion transferGroup =
-      (originVersion >= 35 && originVersion <= 38) ? GameVersion::RBY   // Red / Green / Blue / Yellow
-    : (originVersion >= 39 && originVersion <= 41) ? GameVersion::GSC   // Gold / Silver / Crystal
-                                                   : originGroup;
-```
+- every group of the format's generation and of each earlier one back to the origin's;
+- the Virtual Console path: a Gen 1/2 origin reaches Gen 7 through both Gen 1 and Gen 2 (the Time
+  Capsule), except a Korean Gen 2 record, which has no Gen 1 trade;
+- the HOME era: Sword/Shield looks back at every earlier group; another HOME-era game reaches the
+  other HOME-era games only when the record carries a HOME tracker.
 
-Both halves are load-bearing. Checking only the modern pool flags every legitimate Virtual Console
-move — **which PKSE's own transfer produces**, so the editor would immediately warn about its own
-output. Checking only the old pool flags every TM taught after the Pokémon arrived. The origin byte
-is what says which case this is, and it is trustworthy here: nothing but a transfer writes a Gen 1/2
-version into a modern record.
+A move is unknown only when NO group in that list knows it.
 
 ### "Optional fields that are unwired read 0 and are skipped"
 
@@ -129,6 +125,13 @@ if (pk.hasAwakeningValues()) {
     if (evTotal > 510) add(r, Severity::Invalid, …);
 }
 ```
+
+The 252 per-stat cap is Gen 6 onward; Gens 3-5 allow 255 in one stat under the same 510 total, so
+only the total is checked there. The stat-nature check is likewise Gen 8 onward, and the language
+check asks `Enums::groupHasLanguage(originGroup, language)` (Spanish-LatAm, 11, is Z-A only). The
+gender check reads `Pokemon::getGenderRatio(species, form, originGroup)`: ORAS's Cosplay Pikachu are
+female-only there although the cross-game table says the Gen 7 caps are male-only. A Gen 5 Basculin
+with Reckless as its hidden ability is legal (PKHeX `IsEdgeCaseBasculin`).
 
 Three lessons, all generalisable:
 
@@ -184,13 +187,13 @@ Helpers worth knowing before you touch this file:
 
 | Helper | Purpose |
 |---|---|
-| `isHomeRemappedLocation(loc)` | a location HOME rewrote on transfer |
+| `isHomeRemappedLocation(loc)` | a location HOME rewrote on transfer: PKHeX `LocationsHOME` 59994-60000. The check returns after its note; no encounter is looked up |
 | `isExternalTransferLocation(group, loc)` | the "came from another game" marker |
 | `hasEggLocation(loc)` | non-zero, and not BDSP's `0xFFFF` sentinel |
 | `breedable(table, species)` | the per-game breedable bitset |
 | `canHatchAt(egg, loc, versionBit)` | an egg hatches wherever the player is walking, so this is a permitted **set** |
 | `levelMatches(row, metLevel)` | resolves `ENCOUNTER_FLAG_BOOST60` etc. |
-| `highestMetLevel(row)` | the row's top met level, one above `levelMax` for `ENCOUNTER_FLAG_CATCH_COMBO` (Let's Go). The level finding's "nearest is" band uses it too |
+| `highestMetLevel(row)` / `lowestMetLevel(row)` | the row's met-level band: one above `levelMax` for `ENCOUNTER_FLAG_CATCH_COMBO` (Let's Go); ±4 for `ENCOUNTER_FLAG_FLUTE` and up to `levelMax + 33` for `ENCOUNTER_FLAG_DEXNAV` (ORAS, PKHeX `EncounterSlot6AO`; Rock Smash has no DexNav). The level finding's "nearest is" band uses them too |
 | `encounterLocationMatches(rowLoc, metLoc)` | resolves the Wild Area and roamer region sentinels |
 | `getTimeCapsuleScope(group, hasMetData, chain, …)` | which Gen 1/2 games a record can come from, and whether the other generation is asked |
 | `mergeMatchState(state, other)` | folds a second sweep into the first, keeping the further explanation |
@@ -198,6 +201,9 @@ Helpers worth knowing before you touch this file:
 
 `EggRule::eggLocation == 0` means the **format** has no such field — Gen 3 alone — which is why an
 egg there has to be inferred instead of read.
+
+**A Scarlet/Violet egg that has not hatched has origin game 0** (PKHeX `PK9.IsUnhatchedEgg`), so the
+checker reads it as the format's own game rather than reporting a missing origin.
 
 ### Which failure gets reported — and the order is a DECLARATION
 
@@ -396,7 +402,8 @@ only breeding produces. Gen 2 is the same shape one level up (Crystal: met level
 0. **Widening that row is not a safe edit** — the `EGG_RULES` tuples are positional, and adding the
 third entry turned an `EGG_RULES[game][2]` that meant "hatch level" into one that meant "second
 alternate", quietly moving BDSP's two gift eggs to met level 0. `hatch_level()` exists so the next one
-cannot happen, and the generated diff is what caught this one.
+cannot happen, and the generated diff is what caught this one. Platinum and HGSS use the second alternate too: Faraway Place (3002, PKHeX `IsEggLocationBred4`).
+BDSP's egg location is 30001, never the 60002 of the other games (`IsEggLocationBred8b`).
 
 **Every generation has a hatch-location set and PKHeX ships all of them** — `EggHatchLocation3`
 through `9`, not just 8/8b/9 as this chapter once said. Acting on that wrong reading cost two things:
@@ -477,8 +484,10 @@ clamps the origin to a game the destination format has. **Nor is a met location 
 direction**: Pal Park (Gen 3 → 4) and Poké Transfer (Gen 4 → 5) REPLACE it, in the destination's
 namespace, while the origin byte still names the game it was caught in — so an ordinary transferred
 Geodude read as *"Granite Cave is not a place Geodude can be encountered in FireRed"*, Granite Cave
-being what 55 means in Gen 3 and Pal Park what it means in Gen 4. Everything from Gen 5 on carries the
-original location across, which is why a Sword Pokémon in a Z-A box still matches its Galar encounter.
+being what 55 means in Gen 3 and Pal Park what it means in Gen 4. PKSE's own Gen 3 → later conversion
+does what those transfers left behind: met location Poké Transfer (30001) and met level the level at
+transfer. Everything from Gen 5 on carries the original location across, which is why a Sword Pokémon
+in a Z-A box still matches its Galar encounter.
 
 ### Layer 3 errs toward silence — and what a correct table must still do
 

@@ -181,25 +181,41 @@ namespace UI
                         backupScreen.reportFailure("Couldn't create the backup. Check SD card space and try again.");
                         continue;
                     }
-                    handleTrainerView(userUid, titleId, titleName, backupPath, true); // read from the live save
+                    if (!handleTrainerView(userUid, titleId, titleName, backupPath, true)) // read from the live save
+                    {
+                        backupScreen.reportFailure("Couldn't read this save - it is damaged, incomplete or was never saved in-game. Nothing was opened or written.");
+                        continue;
+                    }
                 }
                 else
                 {
                     logInfoToFile("Loading existing backup", backupScreen.getSelectedBackupPath().c_str());
-                    handleTrainerView(userUid, titleId, titleName, backupScreen.getSelectedBackupPath(), false);
+                    if (!handleTrainerView(userUid, titleId, titleName, backupScreen.getSelectedBackupPath(), false))
+                    {
+                        backupScreen.reportFailure("Couldn't read the save in that backup - it is damaged or incomplete. Nothing was opened or written.");
+                        continue;
+                    }
                 }
                 return;
             }
         }
     }
 
-    void UIManager::handleTrainerView(AccountUid userUid, u64 titleId, const std::string &titleName, const std::string &backupDir, bool loadedFromCart)
+    bool UIManager::handleTrainerView(AccountUid userUid, u64 titleId, const std::string &titleName, const std::string &backupDir, bool loadedFromCart)
     {
         logInfoToFile("Loading save from", backupDir.c_str());
 
         // Read trainer data from the specified backup directory
         // Auto-detects game version and uses appropriate reading function
         TrainerVariant trainerVariant = readTrainerInfo(backupDir.c_str(), titleId);
+        // A reader always hands back a trainer, so an unreadable save would otherwise open as an
+        // empty editor whose next save writes that emptiness over the game's real data.
+        const bool trainerIsValid = std::visit([](auto &trainer) { return trainer.isValid(); }, trainerVariant);
+        if (!trainerIsValid)
+        {
+            logErrorToFile("The save did not parse; refusing to open it", backupDir.c_str());
+            return false;
+        }
 
         // Use std::visit to extract reference and create TrainerViewScreen
         std::visit([&](auto &trainer)
@@ -226,6 +242,7 @@ namespace UI
                 running = false;
             }
         }, trainerVariant);
+        return true;
     }
 
     // The automated self test. Driven exactly like every other screen -- one update/draw per frame --

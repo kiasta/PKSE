@@ -10,6 +10,12 @@
  * PKHeX code points and NOT expanded: expanding one stored byte into two characters
  * cannot round-trip, because re-encoding would have to guess which pair to recombine.
  * Preserving the byte keeps the round trip exact. Rendering the pair is deferred.
+ *
+ * INTERNATIONAL MEANS ENGLISH, as in PKHeX. StringConverter2 also has TableFRE (French and
+ * German) and TableITA (Italian and Spanish), but a Gen 2 save does not record its language,
+ * and PKHeX loads every international one as English (SaveUtil: new SAV2(data, English)). So
+ * PKSE uses only the English table too. PKSM guesses the language from the OT name; PKSE
+ * deliberately does not.
  */
 #ifndef UTILS_GEN2TEXT_H
 #define UTILS_GEN2TEXT_H

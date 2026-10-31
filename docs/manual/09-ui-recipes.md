@@ -232,19 +232,21 @@ In the `pickerActive` block, where each kind's `A` press is applied:
 ```cpp
 case Dialogs::PickerKind::DynamaxLevel:
     pkPick->setDynamaxLevel(static_cast<uint8_t>(pickerSelectedValue()));   // NEVER pickerSel: see recipe 3
-    pkPick->refreshChecksum();        // + recalculateStats() FIRST if the field affects stats
-    hasUnsavedChanges = true;
-    mirrorEditedPartyMember();        // keep an LGPE party member's box/party copies in sync
     break;
+// ...after the switch, once for every kind:
+commitTargetEdit(statsChanged);       // true for kinds that affect the stats (Nature, Level, Form, Species)
 ```
 
-**Three things must happen on every edit** and forgetting any one is a distinct bug:
+Every details edit ends in **`commitTargetEdit(bool statsChanged)`**, never in the calls below
+written out by hand. Edits that wrote them out by hand skipped the checksum on most paths, and the
+bank (which stores the live bytes and drops a record whose checksum fails on load) lost the Pokemon
+on the next launch. The helper makes these calls in this order, and forgetting any one is a distinct bug:
 
 | Call | Why | Forgetting it means |
 |---|---|---|
 | `recalculateStats()` (stat-affecting fields only) | derive battle stats | the stored stats disagree with the IVs/EVs the details page shows |
 | `refreshChecksum()` | the game validates the record | the game rejects the Pokémon or shows a Bad Egg |
-| `hasUnsavedChanges = true` | drives the save prompt | the edit is silently lost on exit |
+| `hasUnsavedChanges = true` (not for a bank Pokemon: `details.source == EditSource::Bank`) | drives the save prompt | the edit is silently lost on exit; set for a bank edit, an unchanged game save asks to be saved |
 | `mirrorEditedPartyMember()` | Let's Go stores party members twice | the edit vanishes on save for an LGPE party member |
 
 ### 6. Add the picker kind
@@ -580,11 +582,16 @@ Place it in the same relative order in `draw()` as in `update()`. **They must ag
 
 ### 5. Nav hint
 
+Add an entry to `TrainerViewScreen::overlayNavHint()`, at the same precedence as the input block:
+
 ```cpp
-} else if (myDialogActive) {
-    instructions = "A: Confirm  |  B: Cancel";
-}
+if (myDialogActive)
+    return "A: Confirm  |  B: Cancel";
 ```
+
+That entry also makes `overlayOwnsInput()` true while the dialog is open, which is what keeps `+`
+(quit) from raising the exit prompt over it. A dialog with no entry has its keys drawn under its own
+scrim, and `+` acts behind it.
 
 The keys go in the **screen's** nav bar — never in a strip inside the card. There is no
 `drawDialogFooter()`, and a dialog that can appear over the details page names its keys through
@@ -811,6 +818,7 @@ use — not about behaviour:
 
 ```cpp
 pickerKind = (pokemon->getGameGroup() == GameVersion::RBY)   ? Dialogs::PickerKind::ItemG1
+           : (pokemon->getGameGroup() == GameVersion::GSC)   ? Dialogs::PickerKind::ItemG2
            : Enums::isGen3Group(pokemon->getGameGroup())     ? Dialogs::PickerKind::ItemG3
                                                              : Dialogs::PickerKind::Item;
 ```
@@ -825,7 +833,7 @@ exactly why `pouchPickerKind()` and `Names::getItemNameFor()` exist:
 
 ```cpp
 /// Which item-id space the pouch picker should offer. Asked in one place because the answer is
-/// per generation and there are now three of them -- a ternary at each call site was already the
+/// per generation and there are now four of them (Gen 1, Gen 2, Gen 3, modern) -- a ternary at each call site was already the
 /// wrong shape, and the id spaces name each other's items without erroring.
 Dialogs::PickerKind pouchPickerKind() const;
 ```

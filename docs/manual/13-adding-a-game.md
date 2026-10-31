@@ -324,8 +324,8 @@ For a loose-file format the save path is not this chain: add one row to `LOOSE_F
 `case` to `Save::saveExternalSave`'s group switch, both in `GetSaveFileContents.cpp`. That function
 takes the **file path**, has no title id, account or inject flag, **backs up the original bytes
 before writing** (`Save::backupOriginalFile` — the user pointed PKSE at a file it did not create and
-may have no other copy of) and puts back any save envelope the file came in. `saveTrainerInfoRBY` is
-the oldest example of the same contract.
+may have no other copy of, and a failed backup stops the write), replaces the file whole through a
+`.tmp` sibling (`Save::replaceFileContents`) and puts back any save envelope the file came in.
 
 ---
 

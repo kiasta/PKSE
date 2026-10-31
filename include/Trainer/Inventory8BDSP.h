@@ -32,6 +32,11 @@ namespace Trainer
 
     // Offset of the Count field (int32) within an item record
     constexpr size_t ITEM_COUNT_OFFSET8BDSP = 0x0;
+    // "Seen" (int32) -- 0 means the bag shows the NEW marker (PKHeX InventoryItem8b: IsNew = value == 0)
+    constexpr size_t ITEM_SEEN_OFFSET8BDSP = 0x4;
+    // Bag position (u16), 1-based within the pouch; 0 = not in the bag, whatever the count says
+    // (PKHeX InventoryItem8b.IsValidSaveSortNumberCount)
+    constexpr size_t ITEM_SORT_ORDER_OFFSET8BDSP = 0xC;
 
     constexpr size_t MAX_ITEM_ID8BDSP = ITEM_BLOCK_SIZE8BDSP / ITEM_ENTRY_SIZE8BDSP; // 3000
 

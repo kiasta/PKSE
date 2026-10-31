@@ -190,7 +190,13 @@ Three methods. That is the whole interface. Implementers:
 
 `TrainerViewScreen` additionally exposes `hasRequestedExit()` (the `+` button = quit the app) as a
 separate signal from `shouldExit()` (`B` = go back one screen), because they unwind different
-distances.
+distances. `+` does nothing while `overlayOwnsInput()` is true (any dialog, menu, page or picker with
+an `overlayNavHint()` entry, the details page, the inject confirm): it is not an answer to whatever
+is open. It also waits for a carried Pokemon to go home (`returnHeldToOrigin()`), and for the bank
+prompt when the bank changed (chapter 10, "Leaving with unsaved bank changes").
+
+`handleTrainerView` (`src/UI/UI.cpp`) refuses a trainer whose `isValid()` is false: the screen is
+never built on a save that failed to read, and the backup list reports the failure instead.
 
 ### Golden rules for `update()` and `draw()`
 

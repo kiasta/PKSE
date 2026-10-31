@@ -7,7 +7,8 @@
  * FULL-WIDTH forms. Reading a Gen 4 name as UTF-16 yields CJK punctuation.
  *
  * GEN 5 MUST NOT USE THIS. Gen 5 stores real UTF-16 and needs no table; routing it
- * through here mangles every name in a way that still looks like text.
+ * through here mangles every name in a way that still looks like text. Only the two
+ * gender-sign helpers apply to Gen 5, which stores the same half-width code points.
  *
  * The sibling of Gen1Text.h / Gen3Text.h: one table, one header, and every Gen 4 name
  * call site routes through it. The Gen 3 charset once existed as four ad-hoc subsets
@@ -304,6 +305,25 @@ namespace Utils {
             if (GEN4_KOR[i] == unicode) return static_cast<uint16_t>(i + GEN4_KOR_START);
         }
         return GEN4_TERMINATOR;
+    }
+
+    inline constexpr uint16_t GEN4_HALF_WIDTH_MALE = 0x246D;
+    inline constexpr uint16_t GEN4_HALF_WIDTH_FEMALE = 0x246E;
+
+    /// The half-width gender glyphs read as the ordinary signs (PKHeX
+    /// StringConverter4Util.NormalizeGenderSymbol). Gen 5's raw UTF-16 uses the same code points.
+    inline uint16_t gen4NormalizeGenderSymbol(uint16_t unicode) noexcept {
+        if (unicode == GEN4_HALF_WIDTH_MALE) return 0x2642;
+        if (unicode == GEN4_HALF_WIDTH_FEMALE) return 0x2640;
+        return unicode;
+    }
+
+    /// The ordinary signs written back as the half-width glyphs, for a half-width name (PKHeX
+    /// StringConverter4Util.UnNormalizeGenderSymbol).
+    inline uint16_t gen4UnNormalizeGenderSymbol(uint16_t unicode) noexcept {
+        if (unicode == 0x2642) return GEN4_HALF_WIDTH_MALE;
+        if (unicode == 0x2640) return GEN4_HALF_WIDTH_FEMALE;
+        return unicode;
     }
 
     /// True when every character of `text` has a Gen 4 glyph. The editor asks this BEFORE accepting

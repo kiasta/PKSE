@@ -96,24 +96,24 @@ namespace Utils {
 
     /// Gen 1 byte -> UTF-16 code unit for the selected character set; 0 when the byte has no
     /// glyph. A 0 return MUST end the name -- see trap 1 in the file comment.
-    inline char16_t gen1ToChar(uint8_t b, bool japanese) noexcept {
-        return japanese ? GEN1_JP[b] : GEN1_EN[b];
+    inline char16_t gen1ToChar(uint8_t storedByte, bool japanese) noexcept {
+        return japanese ? GEN1_JP[storedByte] : GEN1_EN[storedByte];
     }
 
     /// UTF-16 code unit -> Gen 1 byte, or GEN1_TERMINATOR when the character has no Gen 1 glyph.
     /// Neither table contains a duplicate glyph, so the reverse lookup is unambiguous.
-    inline uint8_t charToGen1(char16_t c, bool japanese) noexcept {
-        if (c == 0) return GEN1_TERMINATOR;   // must precede the scan -- index 0 holds 0, not a glyph
+    inline uint8_t charToGen1(char16_t character, bool japanese) noexcept {
+        if (character == 0) return GEN1_TERMINATOR;   // must precede the scan -- index 0 holds 0, not a glyph
         if (japanese) {
             // PKHeX's user-friendly remap. The JP table carries KATAKANA in four slots where the
             // hiragana is what a user would type, so the hiragana forms have no direct entry:
             // be, pe, he and ri. Katakana sits 0x60 above hiragana in Unicode.
-            if (c == u'\u3079' || c == u'\u307A' || c == u'\u3078' || c == u'\u308A')
-                c = static_cast<char16_t>(c + 0x60);
+            if (character == u'\u3079' || character == u'\u307A' || character == u'\u3078' || character == u'\u308A')
+                character = static_cast<char16_t>(character + 0x60);
         }
-        const char16_t* tbl = japanese ? GEN1_JP : GEN1_EN;
-        for (int i = 0; i < 256; ++i) {
-            if (tbl[i] == c) return static_cast<uint8_t>(i);
+        const char16_t* glyphTable = japanese ? GEN1_JP : GEN1_EN;
+        for (int byteValue = 0; byteValue < 256; ++byteValue) {
+            if (glyphTable[byteValue] == character) return static_cast<uint8_t>(byteValue);
         }
         return GEN1_TERMINATOR;
     }

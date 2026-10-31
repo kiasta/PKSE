@@ -16,11 +16,12 @@
  *     only when EVERY otherwise-matching row violates it.
  *
  * It stays informational, and deliberately errs toward silence:
- *   - Event / Mystery Gift distributions are not in the tables at all, so a Pokemon flagged as a fateful encounter has
- * its verdict softened to a Warning.
- *   - An origin game PKSE has no tables for (anything pre-Gen 3, Pokemon GO, a version byte PKSE does not know)
- * produces one Info note and no findings.
- *   - Cross-game transfers are NOT judged.
+ *   - The Mystery Gift distributions PKHeX archives (its mgdb pickles, for the games that have them) ARE in the tables,
+ * but a card PKHeX never archived, or a game with no pickle at all, is not -- so a fateful encounter that matches
+ * nothing has its verdict softened to a Warning.
+ *   - An origin game PKSE has no tables for (Pokemon GO, Colosseum/XD, a version byte PKSE does not know) produces
+ * one Info note and no findings.
+ *   - A Pokemon that left Gen 3 or Gen 4 is not judged: Pal Park and Poke Transfer replaced its met location.
  */
 
 #ifndef LEGALITY_ENCOUNTER_MATCH_H

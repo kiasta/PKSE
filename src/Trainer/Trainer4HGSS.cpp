@@ -265,6 +265,12 @@ namespace Trainer
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
+            // Unchanged since load: keep the bytes (a Bad Egg keeps its bad checksum, as in PKHeX).
+            if (slotHoldsLoadedRecord(party[partySlotIndex].get(), g + ofsParty() + written * Encryption::SIZE_PARTY4_HGSS, Encryption::SIZE_PARTY4_HGSS, Encryption::decryptArray4HGSS))
+            {
+                ++written;
+                continue;
+            }
             party[partySlotIndex]->refreshChecksum(); // BEFORE encrypting -- the checksum is the crypt key
             // Staged through a party-length buffer rather than encrypted in place. Every entity
             // that reaches the party should already be party size (makeEntity grows box records
@@ -294,6 +300,9 @@ namespace Trainer
             {
                 const size_t offset = ofsBox(boxIndex) + slotIndex * Encryption::SIZE_STORED4_HGSS;
                 auto &pokemon = boxes[boxIndex][slotIndex];
+                // Unchanged since load (an empty slot or a Bad Egg included): keep the file's bytes.
+                if (slotHoldsLoadedRecord(pokemon.get(), sourceBytes + offset, Encryption::SIZE_STORED4_HGSS, Encryption::decryptArray4HGSS))
+                    continue;
                 if (pokemon && pokemon->speciesID() != 0)
                 {
                     pokemon->refreshChecksum();
@@ -369,7 +378,15 @@ namespace Trainer
     {
         updateItemBlock();
         updatePartyBlock();
+        // HeartGold/SoulSilver copy only the boxes flagged in ofsBoxContentChanged() when they next
+        // save, keeping the checksum of the new data over the old: an edited box the game was not
+        // told about reads back corrupt. PKHeX flags all 18 on every export; doing it only when the
+        // box data actually changed gives the game the same guarantee and keeps an unedited save
+        // byte-exact.
+        const std::vector<uint8_t> boxDataBefore(storageBlock(), storageBlock() + ofsCurrentBox());
         updateBoxBlock();
+        if (!std::equal(boxDataBefore.begin(), boxDataBefore.end(), storageBlock()))
+            writeUInt32LittleEndian(storageBlock() + ofsBoxContentChanged(), BOX_CONTENT_CHANGED_ALL4_HGSS);
         updateBoxNameBlock();
         updateCurrentBoxBlock();
         updateTrainerInfoBlock();

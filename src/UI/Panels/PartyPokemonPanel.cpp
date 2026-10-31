@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "UI/Panels/PartyPokemonPanel.h"
 #include "UI/PKSEFramebuffer.h"
 #include "UI/Common.h"
 #include "UI/SpriteManager.h"
+#include "UI/Panels/UnmappedSlot.h"
 #include "Trainer/Trainer.h"
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/PokemonTypes.h"
@@ -31,6 +34,7 @@ namespace UI
         void drawPartyPokemon(PKSEFramebuffer &framebuffer, const Trainer::Trainer &trainer, int partyPokemonX, int partyPokemonY, int partyPokemonWidth, int partyPokemonHeight, int selectedIndex)
         {
             const auto &party = trainer.party;
+            const std::vector<size_t> unmappedPartySlots = trainer.getUnmappedPartySlots();
 
             framebuffer.drawCard(partyPokemonX, partyPokemonY, partyPokemonWidth, partyPokemonHeight);
             framebuffer.drawText(partyPokemonX + 16, partyPokemonY + 12, "Party", Colors::Text, TextStyle::Heading);
@@ -62,11 +66,15 @@ namespace UI
                 framebuffer.drawRoundedRect(cardX, cardY, colW, slotH, slotR, selected ? Colors::Accent : Colors::Border, selected ? 2 : 1);
 
                 constexpr int pad = 14;
-                const Pokemon::Pokemon *pokemon = (index < static_cast<int>(party.size())) ? party[index].get() : nullptr;
+                // A Gen 1/2 party can hold a kept entry PKSE cannot read; it keeps its slot, and the
+                // Pokemon after it shift down one (partyIndexAtSlot).
+                const int partyIndex = trainer.partyIndexAtSlot(static_cast<size_t>(index));
+                const Pokemon::Pokemon *pokemon = partyIndex >= 0 ? party[partyIndex].get() : nullptr;
 
                 if (!pokemon || pokemon->speciesID() == 0)
                 {
-                    framebuffer.drawText(cardX + pad, cardY + slotH / 2 - 12, "Slot " + std::to_string(index + 1) + ":  Empty", Colors::TextDim);
+                    const bool unmapped = std::find(unmappedPartySlots.begin(), unmappedPartySlots.end(), static_cast<size_t>(index)) != unmappedPartySlots.end();
+                    framebuffer.drawText(cardX + pad, cardY + slotH / 2 - 12, "Slot " + std::to_string(index + 1) + ":  " + (unmapped ? UNMAPPED_SLOT_LABEL : "Empty"), Colors::TextDim);
                     continue;
                 }
 
@@ -83,7 +91,7 @@ namespace UI
                 framebuffer.measureText(slotNumberText, numW, numH);
                 headerX += numW + 10;
 
-                std::string species = Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species());
+                std::string species = Names::getDisplayName(pokemon->speciesID(), pokemon->form(), pokemon->species(), pokemon->getGameGroup());
                 framebuffer.drawText(headerX, headerY, species, Colors::Text);
                 int spriteTextWidth, spH;
                 framebuffer.measureText(species, spriteTextWidth, spH);
@@ -100,7 +108,7 @@ namespace UI
                     framebuffer.drawShinyMark(headerX, headerY, 16, Colors::ShinyStar);
                     headerX += 20;
                 }
-                if (trainer.isPartyPokemonStarter(index))
+                if (trainer.isPartyPokemonStarter(static_cast<size_t>(partyIndex)))
                 {
                     framebuffer.drawSymbol(headerX, headerY, "♥", Colors::PartnerHeart);
                     headerX += 20;

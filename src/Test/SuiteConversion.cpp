@@ -236,7 +236,10 @@ namespace Test
             }
             if (converted.hasHeldItem() && converted.heldItem() != 0)
             {
-                context.check(Names::isHeldItemPresent(converted.heldItem(), destination), "conversion left a held item the destination cannot hold", whereLabel + " item=" + std::to_string(converted.heldItem()));
+                // The held-item tables have no Sun/Moon or Ultra Sun/Ultra Moon rows ("no data", not
+                // "cannot hold"), so those two are judged by PKHeX's Legal.MaxItemID_7 and _7_USUM.
+                const bool heldItemExists = destination == Enums::GameVersion::SM ? converted.heldItem() <= 920 : destination == Enums::GameVersion::USUM ? converted.heldItem() <= 959 : Names::isHeldItemPresent(converted.heldItem(), destination);
+                context.check(heldItemExists, "conversion left a held item the destination cannot hold", whereLabel + " item=" + std::to_string(converted.heldItem()));
             }
             else if (!converted.hasHeldItem())
             {
@@ -281,6 +284,14 @@ namespace Test
 
             // Met data is entirely invented: a Poke Ball, the arrival level, and the one hardcoded
             // location Bank stamps -- "Kanto region" out of Gen 1, "Johto region" out of Gen 2.
+            // Bank's link-trade memory draws its feeling below 10 from the set the MemoryVerifier
+            // allows (PKHeX SetTradeMemoryHT6(bank: true), GetRandomFeeling6(4, 10)).
+            if (converted.htMemory() != 0)
+            {
+                const uint8_t memoryFeeling = converted.htMemoryFeeling();
+                const bool feelingPermitted = memoryFeeling < 10 && memoryFeeling != 1;
+                context.check(feelingPermitted, "a transferred Pokemon's handler memory carries a feeling Bank does not give", whereLabel + " feeling=" + std::to_string(memoryFeeling));
+            }
             context.check(converted.ball() == 4, "a transferred Pokemon did not arrive in a Poke Ball", whereLabel + " ball=" + std::to_string(converted.ball()));
             context.check(converted.metLocation() == (fromGen2 ? 30017 : 30013), "a transferred Pokemon has the wrong met location", whereLabel + " location=" + std::to_string(converted.metLocation()));
             context.check(converted.metLevel() == converted.level(), "a transferred Pokemon's met level is not the level it arrived at", whereLabel + " met=" + std::to_string(converted.metLevel()) + " level=" + std::to_string(converted.level()));
@@ -435,13 +446,13 @@ namespace Test
                 const uint8_t expectedLanguage = viaTransporter ? 0 : Enums::safeLanguageForGroup(destination, receivingTrainer.language);
                 context.check(converted.htLanguage() == expectedLanguage, "the handler's language is not the receiving save's", whereLabel + " htLanguage=" + std::to_string(converted.htLanguage()) + " expected=" + std::to_string(expectedLanguage));
             }
-            // Gen 8 on clears the old handler's memories and leaves the new one's to the game; Gen 6/7
-            // keeps a memory it already has and writes the link-trade one otherwise. Either way a
-            // Gen 6/7 handler has a memory and a Gen 8+ one has none.
-            if (converted.hasHandlerMemories())
+            // Gen 8 on clears the old handler's memories and leaves the new one's to the game, so a
+            // Gen 8+ handler has none. Poke Transporter writes Bank's link-trade memory. A Gen 7 trade
+            // writes no memory of its own and clears none (PKHeX PK7.TradeHT), so it is not asserted.
+            if (converted.hasHandlerMemories() && (viaTransporter || converted.hasHandlerLanguage()))
             {
-                const bool memoryExpected = viaTransporter || !converted.hasHandlerLanguage();
-                context.check((converted.htMemory() != 0) == memoryExpected, memoryExpected ? "a Gen 6/7 Pokemon arrived with a new handler and no handler memory" : "a Gen 8+ Pokemon kept the previous handler's memory under a new handler", whereLabel + " htMemory=" + std::to_string(converted.htMemory()));
+                const bool memoryExpected = viaTransporter;
+                context.check((converted.htMemory() != 0) == memoryExpected, memoryExpected ? "a Poke Transporter Pokemon arrived with a new handler and no handler memory" : "a Gen 8+ Pokemon kept the previous handler's memory under a new handler", whereLabel + " htMemory=" + std::to_string(converted.htMemory()));
             }
         }
 
@@ -1161,6 +1172,255 @@ namespace Test
         return (int)samples().size() + 1;
     }
 
+    /// A blank entity of `group`, built the way the bank builds one: an all-zero decrypted record,
+    /// encrypted and wrapped.
+    std::unique_ptr<Pokemon::Pokemon> blankEntity(Enums::GameVersion group)
+    {
+        std::vector<std::byte> decryptedRecord(Trainer::Bank::recordSizeFor(group), std::byte{0});
+        std::byte *encryptedRecord = Trainer::Bank::encryptRecord(group, decryptedRecord, 0);
+        if (!encryptedRecord)
+            return nullptr;
+        auto pokemon = Trainer::Bank::makePokemon(group, std::span<const std::byte>(encryptedRecord, decryptedRecord.size()));
+        delete[] encryptedRecord;
+        return pokemon;
+    }
+
+    uint8_t recordByte(const Pokemon::Pokemon &pokemon, size_t byteOffset)
+    {
+        return static_cast<uint8_t>(pokemon.getData()[byteOffset]);
+    }
+
+    uint32_t recordWord(const Pokemon::Pokemon &pokemon, size_t byteOffset)
+    {
+        return static_cast<uint32_t>(recordByte(pokemon, byteOffset)) | (static_cast<uint32_t>(recordByte(pokemon, byteOffset + 1)) << 8) | (static_cast<uint32_t>(recordByte(pokemon, byteOffset + 2)) << 16) | (static_cast<uint32_t>(recordByte(pokemon, byteOffset + 3)) << 24);
+    }
+
+    bool sameRecordBytes(const Pokemon::Pokemon &firstPokemon, const Pokemon::Pokemon &secondPokemon, size_t &firstDifferenceOffset)
+    {
+        const auto firstBytes = firstPokemon.getData();
+        const auto secondBytes = secondPokemon.getData();
+        firstDifferenceOffset = 0;
+        if (firstBytes.size() != secondBytes.size())
+            return false;
+        for (size_t byteOffset = 0; byteOffset < firstBytes.size(); ++byteOffset)
+        {
+            if (firstBytes[byteOffset] != secondBytes[byteOffset])
+            {
+                firstDifferenceOffset = byteOffset;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Groups that share one entity format, and the Gen 3 -> later route, each checked against
+     * PKHeX's own converter output.
+     *
+     * Siblings: Ruby/Sapphire/Emerald and FireRed/LeafGreen store the same PK3, so a move between
+     * them is the same record re-wrapped -- nickname, PID, ribbons, fateful flag and markings
+     * included. The narrower sibling refuses what it has no entry for.
+     *
+     * Gen 3 -> Gen 8 follows Pal Park and the later transfers (PKHeX PK3.ConvertToPK4,
+     * PK4.ConvertToPK5, PK5.ConvertToPK6, PK6.ConvertToPK7): met location Poke Transfer (30001),
+     * met level the current level, IsNicknamed set only for a real nickname and the species name
+     * otherwise in proper case, the PID's bit 31 flipped where Gen 6's shiny window would otherwise
+     * make it shiny (the EC keeps the original), the carried ribbons and the contest and battle
+     * memory counts, markings blue, and an egg hatched.
+     */
+    void formatSiblingAndPalParkSynthetic(Context &context)
+    {
+        using Enums::GameVersion;
+        constexpr uint16_t pikachuSpeciesId = 25;
+        constexpr uint32_t level20Exp = 8000; // medium-fast, exactly level 20
+        constexpr uint32_t shinyWindowPID = 0x0000000C; // xor with TID/SID 0 is 12: shiny in Gen 6, not Gen 3
+
+        auto makeFireRedPikachu = [&](const std::u16string &nickname, bool egg)-> std::unique_ptr<Pokemon::Pokemon>
+        {
+            auto pokemon = blankEntity(GameVersion::FRLG);
+            if (!pokemon)
+                return nullptr;
+            pokemon->setPID(shinyWindowPID);
+            pokemon->setSpecies(pikachuSpeciesId);
+            pokemon->setLevel(20); // the Gen 3 class writes EXP through its level, and has no setExp
+            pokemon->setLanguage(static_cast<uint8_t>(Enums::LanguageID::English));
+            pokemon->setOriginGame(static_cast<uint8_t>(GameVersion::FR));
+            pokemon->setBall(4);
+            pokemon->setMetLevel(5);
+            pokemon->setMetLocation(89); // Viridian Forest
+            pokemon->setNickname(nickname);
+            pokemon->setOTName(u"RED");
+            pokemon->setEgg(egg);
+            auto recordBytes = pokemon->getData();
+            // Ribbons: Cool count 3, Beauty count 4, Champion (bit 15), Winning (16), Victory (17),
+            // Effort (19), and the fateful flag (31).
+            const uint32_t ribbonWord = 3u | (4u << 3) | (1u << 15) | (1u << 16) | (1u << 17) | (1u << 19) | (1u << 31);
+            for (size_t byteIndex = 0; byteIndex < 4; ++byteIndex)
+                recordBytes[0x4C + byteIndex] = static_cast<std::byte>((ribbonWord >> (byteIndex * 8)) & 0xFF);
+            recordBytes[0x1B] = std::byte{0x09}; // circle and heart: the two marks Gen 3 does not reorder
+            pokemon->recalculateStats();
+            pokemon->refreshChecksum();
+            return pokemon;
+        };
+
+        // 1. FireRed -> Emerald and back: the same record, untouched.
+        if (auto fireRedPikachu = makeFireRedPikachu(u"SPARKY", false))
+        {
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            Conversion::ReceivingTrainer receivingTrainer{u"Other", 0, static_cast<uint8_t>(Enums::LanguageID::English)};
+            auto emeraldPikachu = Conversion::convert(*fireRedPikachu, GameVersion::RSE, conversionResult, static_cast<uint8_t>(GameVersion::EM), &receivingTrainer);
+            if (context.check(emeraldPikachu != nullptr && conversionResult == Conversion::Result::Ok, "a FireRed Pokemon could not be moved into Emerald", std::string("result=") + resultName(conversionResult)))
+            {
+                size_t firstDifferenceOffset = 0;
+                context.check(emeraldPikachu->getGameGroup() == GameVersion::RSE, "a FireRed Pokemon moved into Emerald is not an Emerald entity");
+                context.check(sameRecordBytes(*fireRedPikachu, *emeraldPikachu, firstDifferenceOffset), "a FireRed Pokemon's record changed moving into Emerald (nickname, PID, ribbons, fateful flag and markings are the same bytes)", "offset=" + std::to_string(firstDifferenceOffset));
+            }
+        }
+
+        // 2. The narrower sibling refuses what it has no entry for.
+        {
+            auto refusalFor = [&](GameVersion sourceGroup, uint16_t speciesId, uint8_t form, GameVersion destination)
+            {
+                auto pokemon = blankEntity(sourceGroup);
+                if (!pokemon)
+                    return Conversion::Result::Unsupported;
+                pokemon->setSpecies(speciesId);
+                pokemon->setForm(form);
+                pokemon->setExp(level20Exp);
+                pokemon->refreshChecksum();
+                Conversion::Result gateResult = Conversion::Result::Ok;
+                Conversion::canConvert(*pokemon, destination, gateResult);
+                Conversion::Result convertResult = Conversion::Result::Ok;
+                auto converted = Conversion::convert(*pokemon, destination, convertResult);
+                context.check(converted == nullptr && convertResult == gateResult, "canConvert and convert disagree about a sibling move", Enums::getGameVersionName(sourceGroup) + " -> " + Enums::getGameVersionName(destination) + " species=" + std::to_string(speciesId));
+                return gateResult;
+            };
+            context.check(refusalFor(GameVersion::PT, 487, 1, GameVersion::DP) == Conversion::Result::NotInDex, "Origin Forme Giratina was let into Diamond/Pearl, which has no such form");
+            context.check(refusalFor(GameVersion::USUM, 803, 0, GameVersion::SM) == Conversion::Result::NotInDex, "Poipole was let into Sun/Moon, which predates the Ultra Sun/Ultra Moon additions");
+        }
+
+        // 3. FireRed -> Sword/Shield, and back.
+        for (const bool nicknamed : {false, true})
+        {
+            auto fireRedPikachu = makeFireRedPikachu(nicknamed ? u"SPARKY" : u"PIKACHU", false);
+            if (!fireRedPikachu)
+                continue;
+            const std::string whereLabel = std::string("synthetic FireRed Pikachu nicknamed=") + (nicknamed ? "1" : "0");
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto swordPikachu = Conversion::convert(*fireRedPikachu, GameVersion::SWSH, conversionResult);
+            if (!context.check(swordPikachu != nullptr && conversionResult == Conversion::Result::Ok, "a synthetic FireRed Pikachu could not be converted into Sword/Shield", whereLabel + " result=" + resultName(conversionResult)))
+                continue;
+            context.check(swordPikachu->metLocation() == 30001, "a Gen 3 Pokemon did not arrive met at Poke Transfer (PKHeX Locations.Transfer4)", whereLabel + " location=" + std::to_string(swordPikachu->metLocation()));
+            context.check(swordPikachu->metLevel() == 20, "a Gen 3 Pokemon's met level is not its level at transfer (PKHeX PK3.ConvertToPK4)", whereLabel + " metLevel=" + std::to_string(swordPikachu->metLevel()) + " level=" + std::to_string(swordPikachu->level()) + " sourceExp=" + std::to_string(fireRedPikachu->exp()) + " sourceLevel=" + std::to_string(fireRedPikachu->level()));
+            context.check(swordPikachu->pid() == (shinyWindowPID ^ 0x80000000u) && swordPikachu->encryptionConstant() == shinyWindowPID, "a Gen 3 PID in Gen 6's wider shiny window did not get bit 31 flipped, with the EC keeping the original (PKHeX PK5.GetTransferPID)", whereLabel + " pid=" + std::to_string(swordPikachu->pid()) + " ec=" + std::to_string(swordPikachu->encryptionConstant()));
+            context.check(swordPikachu->isNicknamed() == nicknamed, "a Gen 3 Pokemon's IsNicknamed flag does not follow whether its name is the species name", whereLabel);
+            context.check(swordPikachu->nickname() == (nicknamed ? u"SPARKY" : u"Pikachu"), "a Gen 3 Pokemon arrived with the wrong name (a species name is rewritten in proper case, a nickname is kept)", whereLabel + " nick=\"" + Utils::utf16ToUtf8(swordPikachu->nickname()) + "\"");
+            // PK8 ribbon bits (PKHeX G8PKM): ChampionG3 0x34 bit 1, Effort 0x34 bit 7. Memory counts
+            // at 0x3C (contest: 3 + 4) and 0x3D (battle: Winning + Victory), their flags 0x38 bits 5 and 6.
+            context.check((recordByte(*swordPikachu, 0x34) & 0x82) == 0x82, "a Gen 3 Pokemon lost its Champion or Effort ribbon", whereLabel + " 0x34=" + std::to_string(recordByte(*swordPikachu, 0x34)));
+            context.check(recordByte(*swordPikachu, 0x3C) == 7 && recordByte(*swordPikachu, 0x3D) == 2 && (recordByte(*swordPikachu, 0x38) & 0x60) == 0x60, "a Gen 3 Pokemon's contest and battle ribbons did not become memory ribbons", whereLabel + " contest=" + std::to_string(recordByte(*swordPikachu, 0x3C)) + " battle=" + std::to_string(recordByte(*swordPikachu, 0x3D)));
+            context.check((recordByte(*swordPikachu, 0x22) & 0x01) != 0, "a Gen 3 Pokemon lost its fateful-encounter flag", whereLabel);
+            context.check((recordWord(*swordPikachu, 0x18) & 0xFFFF) == 0x0041, "a Gen 3 Pokemon's markings did not arrive as blue marks (PKHeX PK6.ConvertToPK7)", whereLabel + " markings=" + std::to_string(recordWord(*swordPikachu, 0x18) & 0xFFFF));
+
+            // A Sun/Moon withdrawal keeps the held item: the held-item tables have no Gen 7 rows,
+            // which is "no data", not "cannot hold".
+            swordPikachu->setHeldItem(17); // Potion
+            swordPikachu->refreshChecksum();
+            Conversion::Result moonResult = Conversion::Result::Ok;
+            auto moonPikachu = Conversion::convert(*swordPikachu, GameVersion::SM, moonResult);
+            if (context.check(moonPikachu != nullptr && moonResult == Conversion::Result::Ok, "a Sword/Shield Pikachu could not be converted into Sun/Moon", whereLabel))
+                context.check(moonPikachu->heldItem() == 17, "a Pokemon converted into Sun/Moon lost a held item Sun/Moon has", whereLabel + " item=" + std::to_string(moonPikachu->heldItem()));
+            swordPikachu->setHeldItem(0);
+            swordPikachu->refreshChecksum();
+
+            // And back into Gen 3: the original PID, ribbons, fateful flag and markings, and no mail.
+            Conversion::Result backResult = Conversion::Result::Ok;
+            auto backPikachu = Conversion::convert(*swordPikachu, GameVersion::FRLG, backResult, static_cast<uint8_t>(GameVersion::FR));
+            if (!context.check(backPikachu != nullptr && backResult == Conversion::Result::Ok, "a converted Pikachu could not be converted back into FireRed", whereLabel + " result=" + resultName(backResult)))
+                continue;
+            context.check(backPikachu->pid() == shinyWindowPID, "a Gen 3 Pokemon did not get its original PID back on its way home", whereLabel + " pid=" + std::to_string(backPikachu->pid()));
+            context.check(recordWord(*backPikachu, 0x4C) == ((1u << 31) | (1u << 19) | (1u << 15)), "a Gen 3 Pokemon's ribbons or fateful flag did not survive a trip to Gen 8 and back", whereLabel + " read=" + std::to_string(recordWord(*backPikachu, 0x4C)) + " pk8=" + std::to_string(recordWord(*swordPikachu, 0x34)) + "/" + std::to_string(recordWord(*swordPikachu, 0x38)));
+            context.check(recordByte(*backPikachu, 0x1B) == 0x09, "a Gen 3 Pokemon's markings did not survive a trip to Gen 8 and back", whereLabel + " markings=" + std::to_string(recordByte(*backPikachu, 0x1B)));
+            context.check(recordByte(*backPikachu, 0x55) == 0xFF, "a converted Gen 3 party record names a mail slot (0xFF is no mail; PKHeX SAV3.SetPartyValues)", whereLabel + " mail=" + std::to_string(recordByte(*backPikachu, 0x55)));
+            context.check(backPikachu->nickname() == fireRedPikachu->nickname(), "a Gen 3 Pokemon's name did not survive a trip to Gen 8 and back", whereLabel + " nick=\"" + Utils::utf16ToUtf8(backPikachu->nickname()) + "\"");
+        }
+
+        // 4. A Gen 3 egg hatches on the way out (PKHeX EntityConverter force-hatches).
+        if (auto fireRedEgg = makeFireRedPikachu(u"PIKACHU", true))
+        {
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto swordEgg = Conversion::convert(*fireRedEgg, GameVersion::SWSH, conversionResult);
+            if (context.check(swordEgg != nullptr && conversionResult == Conversion::Result::Ok, "a synthetic Gen 3 egg could not be converted", std::string("result=") + resultName(conversionResult)))
+                context.check(!swordEgg->isEgg(), "a Gen 3 egg arrived in a later game still an egg");
+        }
+
+        // 5. Sun/Moon ribbons cross Gen 8 and come back (PK7 0x30-0x36 is PK8 0x34-0x3A).
+        if (auto moonPikachu = blankEntity(GameVersion::SM))
+        {
+            moonPikachu->setSpecies(pikachuSpeciesId);
+            moonPikachu->setExp(level20Exp);
+            moonPikachu->setEncryptionConstant(0x12345678);
+            moonPikachu->setOriginGame(static_cast<uint8_t>(GameVersion::MN));
+            auto recordBytes = moonPikachu->getData();
+            const uint8_t ribbonPattern[7] = {0xA5, 0x5A, 0x00, 0x0F, 0x90, 0x81, 0x03}; // 0x34 bits 5-6 are the memory-ribbon flags, clear with counts 0
+            for (size_t byteIndex = 0; byteIndex < 7; ++byteIndex)
+                recordBytes[0x30 + byteIndex] = static_cast<std::byte>(ribbonPattern[byteIndex]);
+            moonPikachu->recalculateStats();
+            moonPikachu->refreshChecksum();
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto swordPikachu = Conversion::convert(*moonPikachu, GameVersion::SWSH, conversionResult);
+            if (context.check(swordPikachu != nullptr && conversionResult == Conversion::Result::Ok, "a synthetic Sun/Moon Pikachu could not be converted into Sword/Shield", std::string("result=") + resultName(conversionResult)))
+            {
+                bool ribbonsCarried = true;
+                for (size_t byteIndex = 0; byteIndex < 7; ++byteIndex)
+                    ribbonsCarried = ribbonsCarried && recordByte(*swordPikachu, 0x34 + byteIndex) == ribbonPattern[byteIndex];
+                context.check(ribbonsCarried, "a Sun/Moon Pokemon's ribbons were dropped converting into Sword/Shield");
+                Conversion::Result backResult = Conversion::Result::Ok;
+                auto backPikachu = Conversion::convert(*swordPikachu, GameVersion::SM, backResult);
+                if (context.check(backPikachu != nullptr && backResult == Conversion::Result::Ok, "a converted Pikachu could not be converted back into Sun/Moon", std::string("result=") + resultName(backResult)))
+                {
+                    bool ribbonsReturned = true;
+                    for (size_t byteIndex = 0; byteIndex < 7; ++byteIndex)
+                        ribbonsReturned = ribbonsReturned && recordByte(*backPikachu, 0x30 + byteIndex) == ribbonPattern[byteIndex];
+                    context.check(ribbonsReturned, "a Sun/Moon Pokemon's ribbons did not survive a trip to Sword/Shield and back");
+                }
+            }
+        }
+
+        // 6. A Game Boy record's language comes from its names, never the display language
+        //    (PKHeX GBPKM.Language and TransferLanguage).
+        {
+            Pokemon::Pokemon1RBY frenchClefairy(false);
+            frenchClefairy.setSpecies(35);
+            frenchClefairy.setExp(8000);
+            frenchClefairy.setNickname(u"MELOFEE");
+            frenchClefairy.setOTName(u"SACHA");
+            context.check(frenchClefairy.language() == static_cast<uint8_t>(Enums::LanguageID::French), "a Gen 1 Clefairy named MELOFEE is not read as French", "language=" + std::to_string(frenchClefairy.language()));
+            context.check(!frenchClefairy.isNicknamed(), "a French Gen 1 Clefairy carrying its French species name reads as nicknamed");
+
+            Pokemon::Pokemon2GSC germanPikachu(false);
+            germanPikachu.setSpecies(pikachuSpeciesId);
+            germanPikachu.setExp(8000);
+            germanPikachu.setNickname(u"BLITZ");
+            germanPikachu.setOTName(u"JÖRG");
+            context.check(germanPikachu.language() == static_cast<uint8_t>(Enums::LanguageID::German), "a Gen 2 Pokemon whose OT has a German-only letter is not read as German", "language=" + std::to_string(germanPikachu.language()));
+
+            // A nickname says nothing about language, so Transporter takes the receiving save's.
+            Pokemon::Pokemon1RBY nicknamedPikachu(false);
+            nicknamedPikachu.setSpecies(pikachuSpeciesId);
+            nicknamedPikachu.setExp(8000);
+            nicknamedPikachu.setTID16(12345);
+            nicknamedPikachu.setNickname(u"ECLAIR");
+            nicknamedPikachu.setOTName(u"SACHA");
+            nicknamedPikachu.recalculateStats();
+            const Conversion::ReceivingTrainer frenchTrainer{u"SACHA", 0, static_cast<uint8_t>(Enums::LanguageID::French)};
+            Conversion::Result conversionResult = Conversion::Result::Ok;
+            auto transported = Conversion::convert(nicknamedPikachu, GameVersion::USUM, conversionResult, 0, &frenchTrainer);
+            if (context.check(transported != nullptr && conversionResult == Conversion::Result::Ok, "a synthetic nicknamed Gen 1 Pikachu could not be transferred", std::string("result=") + resultName(conversionResult)))
+                context.check(transported->language() == static_cast<uint8_t>(Enums::LanguageID::French), "a Gen 1 Pokemon whose names say no language did not take the receiving save's language through Poke Transporter", "language=" + std::to_string(transported->language()));
+        }
+    }
+
     void conversionRun(Context &context, int chunk)
     {
         if (chunk == (int)samples().size())
@@ -1186,6 +1446,7 @@ namespace Test
             transporterSynthetic(context);
             gen3LanguageSynthetic(context);
             receivingHandlerSynthetic(context);
+            formatSiblingAndPalParkSynthetic(context);
             return;
         }
         if (chunk > (int)samples().size())

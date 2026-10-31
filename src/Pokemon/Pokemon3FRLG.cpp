@@ -5,6 +5,7 @@
 #include "Pokemon/PersonalInfoTable.h"  // getPersonalInfo -- the cross-game index (gender ratio)
 #include "Pokemon/PersonalInfo3FRLG.h"    // this group's own per-species data
 #include "Pokemon/Experience.h"        // getLevelFromExp / getExpForLevel / getGrowthRate
+#include "Pokemon/PIDSearch.h"         // wurmpleEvolutionToHold / wurmpleEvolutionFromPID
 #include "Utils/Gen3Text.h"            // the Gen 3 character set, shared with Trainer3FRLG + Convert
 
 namespace Names
@@ -19,45 +20,6 @@ namespace Names
 
 namespace Pokemon
 {
-
-    namespace
-    {
-        // Nature stat modifier (order Atk,Def,Spe,SpA,SpD): 0 = -10% (90), 1 = neutral (100), 2 = +10% (110).
-        constexpr int8_t NATURE_STAT_MODIFIERS[25][5] = {
-            {1, 1, 1, 1, 1},
-            {2, 0, 1, 1, 1},
-            {2, 1, 0, 1, 1},
-            {2, 1, 1, 0, 1},
-            {2, 1, 1, 1, 0},
-            {0, 2, 1, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 2, 0, 1, 1},
-            {1, 2, 1, 0, 1},
-            {1, 2, 1, 1, 0},
-            {0, 1, 2, 1, 1},
-            {1, 0, 2, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 2, 0, 1},
-            {1, 1, 2, 1, 0},
-            {0, 1, 1, 2, 1},
-            {1, 0, 1, 2, 1},
-            {1, 1, 0, 2, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 1, 2, 0},
-            {0, 1, 1, 1, 2},
-            {1, 0, 1, 1, 2},
-            {1, 1, 0, 1, 2},
-            {1, 1, 1, 0, 2},
-            {1, 1, 1, 1, 1},
-        };
-        inline int natureMod(uint8_t nature, int statIndex /*0=Atk..4=SpD*/)
-        {
-            if (nature >= 25 || statIndex < 0 || statIndex >= 5)
-                return 100;
-            const int modifier = NATURE_STAT_MODIFIERS[nature][statIndex];
-            return modifier == 0 ? 90 : (modifier == 2 ? 110 : 100);
-        }
-    }
 
     const char *Pokemon3FRLG::species() const noexcept { return Names::getSpeciesName(speciesID()); }
 
@@ -212,7 +174,7 @@ namespace Pokemon
         const int common = (2 * base[index] + individualValues[index] + evValue[index] / 4) * levelValue / 100;
         // HP formula
         if (index == 0) return static_cast<uint16_t>(common + levelValue + 10);
-        return static_cast<uint16_t>((common + 5) * natureMod(nature(), index - 1) / 100);
+        return static_cast<uint16_t>((common + 5) * natureStatPercent(nature(), index - 1) / 100);
     }
 
     uint16_t Pokemon3FRLG::statHPMax() const noexcept { return computeStat(0); }
@@ -258,6 +220,15 @@ namespace Pokemon
         wr16(0x62, computeStat(5)); // SPD
     }
 
+    void Pokemon3FRLG::setExp(uint32_t value) noexcept
+    {
+        // The level is not stored in a box record; level() derives it from EXP, and the party
+        // level byte is restamped by recalculateStats().
+        wr32(0x24, value);
+        recalculateStats();
+        refreshChecksum();
+    }
+
     void Pokemon3FRLG::setLevel(uint8_t levelValue) noexcept
     {
         if (levelValue < 1)
@@ -286,6 +257,8 @@ namespace Pokemon
         // the letter's bits are overwritten on each candidate with a pattern that already yields the
         // wanted letter, so every candidate tested is a letter match and the search costs what it did
         // before. The other 24 bits still come from the walk, so nature/gender/shiny stay uniform.
+        // Wurmple: which line it evolves into is part of the PID too (PKHeX WurmpleUtil), so it is held.
+        const int wantWurmpleEvolution = wurmpleEvolutionToHold(speciesID(), pidValue);
         const bool isUnown = (speciesID() == 201);
         const int wantLetter = isUnown ? static_cast<int>(form()) : -1;
         uint32_t letterPatterns[10] = {}; // 8-bit values v with v % 28 == wantLetter (at most 10)
@@ -317,6 +290,8 @@ namespace Pokemon
             if (wantAbilityBit >= 0 && static_cast<int>(pidValue & 1u) != wantAbilityBit)
                 continue;
             if (wantNature >= 0 && static_cast<int>(pidValue % 25) != wantNature)
+                continue;
+            if (wantWurmpleEvolution >= 0 && wurmpleEvolutionFromPID(pidValue) != wantWurmpleEvolution)
                 continue;
             if (wantGender >= 0)
             {

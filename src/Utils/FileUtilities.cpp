@@ -127,7 +127,11 @@ namespace Utils
                     continue;
                 }
 
-                if (fwrite(data, 1, size, out) != size)
+                const bool fileWritten = fwrite(data, 1, size, out) == size;
+                // The final flush happens in fclose: on a full SD card or a full save journal it is
+                // the call that fails, so a copy is complete only when both succeed.
+                const bool fileClosed = fclose(out) == 0;
+                if (!fileWritten || !fileClosed)
                 {
                     logErrorToFile("Failed to write complete file", destFilePath);
                     overallSuccess = false;
@@ -137,7 +141,6 @@ namespace Utils
                     logInfoToFile("Successfully copied file", entry->d_name);
                     logInfoToFile("File size (bytes)", std::to_string(size).c_str());
                 }
-                fclose(out);
                 delete[] data;
             }
         }
@@ -176,18 +179,18 @@ namespace Utils
             return false;
         }
 
-        bool success = true;
-        if (fwrite(data, 1, size, out) != size)
+        const bool fileWritten = fwrite(data, 1, size, out) == size;
+        const bool fileClosed = fclose(out) == 0; // the final flush can fail here, not in fwrite
+        const bool success = fileWritten && fileClosed;
+        if (!success)
         {
             logErrorToFile("Failed to write complete file", destPath);
-            success = false;
         }
         else
         {
             logInfoToFile("Successfully copied file to", destPath);
         }
 
-        fclose(out);
         delete[] data;
         return success;
     }
@@ -296,6 +299,15 @@ namespace Utils
         {
             logErrorToFile("Failed to create game directory", gameDirectory);
             logErrorToFile("mkdir error", strerror(errno));
+            return "";
+        }
+        // The reused Working folder is emptied first. A copy only adds files, so anything a
+        // previous session left there -- another user's companion file, one the game no longer
+        // writes -- would otherwise survive, and restoring this backup would inject it as part of it.
+        struct stat workingStatus{};
+        if (!timestamped && stat(backupDirectory, &workingStatus) == 0 && !deleteDirectoryRecursive(backupDirectory))
+        {
+            logErrorToFile("Failed to clear the previous Working backup", backupDirectory);
             return "";
         }
         if (mkdir(backupDirectory, 0777) != 0 && errno != EEXIST)

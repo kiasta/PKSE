@@ -135,7 +135,9 @@ SDL_PKGCONFIG	:=	$(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 SDL_CFLAGS	:=	$(shell $(SDL_PKGCONFIG) --cflags sdl2)
 SDL_LIBS	:=	$(shell $(SDL_PKGCONFIG) --libs --static sdl2)
 
-CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
+# -ffp-contract=off: no fused multiply-add. The games round a multiply and the add after it
+# separately, and PKHeX compares the Let's Go and Legends: Arceus size floats bit for bit.
+CFLAGS	:=	-g -Wall -O2 -ffunction-sections -ffp-contract=off \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(SDL_CFLAGS)

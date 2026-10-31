@@ -10,11 +10,12 @@
 #include <string>
 
 #include "Legality/EncounterMatch.h" // Layer 3 -- encounter templates
+#include "Enums/LanguageID.h"
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PersonalInfoTable.h"
 #include "Pokemon/AbilityInfo.h" // getAbilitySlots -> per-generation ability slots
-#include "Pokemon/FormInfo.h"    // isFormGenderSpecific -> gender stored as the form index
+#include "Pokemon/FormInfo.h"    // isFormGenderSpecific, getGenderRatio
 #include "Pokemon/LearnsetTable.h"
 #include "Trainer/Trainer.h" // Trainer::getSpeciesName / getItemName (name-table sentinels)
 #include "Names/MoveNames.h" // Names::getMoveName
@@ -55,6 +56,170 @@ namespace Legality
                 return 0;
             }
         }
+
+        /// Generation of a save-format group (1-9), 0 when it is not one.
+        int groupGeneration(Enums::GameVersion group)
+        {
+            return Enums::getVersionGeneration(Enums::getGroupRepVersion(group));
+        }
+
+        constexpr int MAX_LEARN_GROUPS = 24;
+
+        struct LearnGroups
+        {
+            Enums::GameVersion groups[MAX_LEARN_GROUPS];
+            int groupCount = 0;
+
+            void add(Enums::GameVersion group)
+            {
+                for (int groupIndex = 0; groupIndex < groupCount; ++groupIndex)
+                {
+                    if (groups[groupIndex] == group)
+                        return;
+                }
+                if (groupCount < MAX_LEARN_GROUPS)
+                    groups[groupCount++] = group;
+            }
+
+            /// Every save-format group of one 3DS-or-older generation. A Pokemon that lived in a
+            /// generation may have been traded between its games, so their pools all count
+            /// (PKHeX LearnGroup3-7 each check every game of their generation).
+            void addGeneration(int generation)
+            {
+                switch (generation)
+                {
+                case 1:
+                    add(Enums::GameVersion::RBY);
+                    break;
+                case 2:
+                    add(Enums::GameVersion::GSC);
+                    break;
+                case 3:
+                    add(Enums::GameVersion::RSE);
+                    add(Enums::GameVersion::FRLG);
+                    break;
+                case 4:
+                    add(Enums::GameVersion::DP);
+                    add(Enums::GameVersion::PT);
+                    add(Enums::GameVersion::HGSS);
+                    break;
+                case 5:
+                    add(Enums::GameVersion::BW);
+                    add(Enums::GameVersion::B2W2);
+                    break;
+                case 6:
+                    add(Enums::GameVersion::XY);
+                    add(Enums::GameVersion::ORAS);
+                    break;
+                case 7:
+                    add(Enums::GameVersion::SM);
+                    add(Enums::GameVersion::USUM);
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            /// The generations a Pokemon of `originGeneration` passed through on its way up to
+            /// `lastGeneration`, inclusive. Gen 1/2 Virtual Console Pokemon skip straight to Gen 7
+            /// through Poke Transporter, and the Game Boy games trade with each other through the
+            /// Time Capsule (PKHeX LearnGroup7.GetPrevious, LearnGroup1/2.GetPrevious).
+            void addPath(int originGeneration, int lastGeneration)
+            {
+                if (originGeneration == 1 || originGeneration == 2)
+                {
+                    addGeneration(1);
+                    addGeneration(2);
+                    if (lastGeneration >= 7)
+                        addGeneration(7);
+                    return;
+                }
+                if (originGeneration < 3)
+                    return;
+                for (int generation = originGeneration; generation <= lastGeneration && generation <= 7; ++generation)
+                    addGeneration(generation);
+            }
+        };
+
+        /// Every learn pool a Pokemon in `formatGroup` can have taken its moves from -- PKHeX walks
+        /// each generation the Pokemon visited (LearnGroup*.GetPrevious), and a pool of one game
+        /// alone called every move it learned before a transfer unlearnable: an X/Y Chespin's Tackle
+        /// in Sun, a Johto Articuno's Red/Blue Peck, a White Pokemon's Black 2/White 2 tutor move.
+        LearnGroups getLearnGroups(const Pokemon::Pokemon &pokemon, Enums::GameVersion formatGroup)
+        {
+            constexpr uint8_t koreanLanguage = 8;
+            constexpr uint8_t pokemonGoVersion = 34;
+            LearnGroups learnGroups;
+            learnGroups.add(formatGroup);
+            const int formatGeneration = groupGeneration(formatGroup);
+            const uint8_t originVersion = pokemon.hasOriginGame() ? pokemon.originGame() : 0;
+            const int originGeneration = (originVersion == 0 || originVersion == pokemonGoVersion) ? 0 : Enums::getVersionGeneration(originVersion);
+
+            if (formatGroup == Enums::GameVersion::GG)
+                return learnGroups; // Let's Go has no earlier game to have learned anything in (LearnGroup7b)
+            if (formatGeneration == 1 || formatGeneration == 2)
+            {
+                // The Time Capsule; Korean Gold/Silver has none, so a Korean Gen 2 Pokemon never
+                // saw Red/Blue/Yellow (LearnGroup2.GetPrevious).
+                learnGroups.addGeneration(formatGeneration);
+                if (formatGeneration == 1 || pokemon.language() != koreanLanguage)
+                    learnGroups.addPath(1, formatGeneration);
+                return learnGroups;
+            }
+            if (formatGeneration >= 3 && formatGeneration <= 7)
+            {
+                learnGroups.addGeneration(formatGeneration);
+                if (originGeneration != 0 && originGeneration < formatGeneration)
+                    learnGroups.addPath(originGeneration, formatGeneration);
+                return learnGroups;
+            }
+
+            // The HOME era. Sword/Shield is the one Switch game a 3DS Pokemon reaches with its
+            // earlier moves still judged (LearnGroup8.GoBackwards); every HOME game reaches the
+            // others only through HOME, so only a Pokemon carrying a HOME tracker has visited them
+            // (LearnGroupHOME; PKHeX's default HOMETransferTrackerNotPresent is Invalid).
+            const bool hasVisitedHome = pokemon.hasHomeTracker();
+            if (originGeneration != 0 && originGeneration <= 7 && (formatGroup == Enums::GameVersion::SWSH || hasVisitedHome))
+            {
+                if (originVersion == static_cast<uint8_t>(Enums::GameVersion::GP) || originVersion == static_cast<uint8_t>(Enums::GameVersion::GE))
+                    learnGroups.add(Enums::GameVersion::GG);
+                else
+                    learnGroups.addPath(originGeneration, 7);
+            }
+            if (hasVisitedHome)
+            {
+                learnGroups.add(Enums::GameVersion::SWSH);
+                learnGroups.add(Enums::GameVersion::BDSP);
+                learnGroups.add(Enums::GameVersion::PLA);
+                learnGroups.add(Enums::GameVersion::SV);
+                learnGroups.add(Enums::GameVersion::ZA);
+            }
+            return learnGroups;
+        }
+
+        bool isLearnableInAny(const LearnGroups &learnGroups, uint16_t species, uint8_t form, uint16_t moveId)
+        {
+            for (int groupIndex = 0; groupIndex < learnGroups.groupCount; ++groupIndex)
+            {
+                if (Pokemon::isLearnable(species, form, learnGroups.groups[groupIndex], moveId))
+                    return true;
+            }
+            return false;
+        }
+
+        /// Gen 5's Blue-Striped Basculin is the one ability PKHeX lets disagree with the personal
+        /// table (AbilityVerifier.IsEdgeCaseBasculin): Black/White read the wrong personal entry
+        /// and gave wild and bred ones Reckless, and Black 2/White 2 did the same to bred ones.
+        /// Rock Head is right for the rest. Which encounter it came from is Layer 3's question, so
+        /// both are accepted here.
+        bool isGenerationFiveBasculinReckless(const Pokemon::Pokemon &pokemon, Enums::GameVersion formatGroup)
+        {
+            constexpr uint16_t basculinSpecies = 550;
+            constexpr uint8_t blueStripedForm = 1;
+            constexpr uint16_t recklessAbility = 120;
+            constexpr uint8_t hiddenAbilityNumber = 4;
+            return groupGeneration(formatGroup) == 5 && pokemon.speciesID() == basculinSpecies && pokemon.form() == blueStripedForm && pokemon.ability() == recklessAbility && pokemon.abilityNumber() != hiddenAbilityNumber;
+        }
     }
 
     Report analyze(const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup)
@@ -64,18 +229,18 @@ namespace Legality
         // empty slot — nothing to validate
         if (species == 0) return report;
 
-        // LGPE (group GG) is the only pre-Gen8 supported group; the rest have mint/stat nature.
-        const bool gen8plus = (originGroup != Enums::GameVersion::GG);
-
-        // Species/form personal data (abilities / gender ratio / per-game presence) for the L2 checks.
+        // Species/form personal data (per-game presence) for the L2 checks.
         const Pokemon::PersonalInfo &pi = Pokemon::getPersonalInfo(species, pokemon.form());
+        const int formatGeneration = groupGeneration(originGroup);
 
         if (std::string(Trainer::getSpeciesName(species)) == "Unknown")
             add(report, Severity::Invalid, "Unknown species id " + std::to_string(species));
 
         if (pokemon.nature() > 24)
             add(report, Severity::Invalid, "Nature out of range (" + std::to_string(pokemon.nature()) + ")");
-        if (gen8plus && pokemon.statNature() > 24)
+        // The stat nature (mints) is its own field from Gen 8 on; every older format answers it with
+        // the nature itself, already checked above.
+        if (formatGeneration >= 8 && pokemon.statNature() > 24)
             add(report, Severity::Invalid, "Stat nature out of range (" + std::to_string(pokemon.statNature()) + ")");
 
         const uint8_t evValue[6] = {pokemon.evHP(),  pokemon.evATK(), pokemon.evDEF(),
@@ -126,11 +291,13 @@ namespace Legality
         }
         else
         {
-            // Everywhere else: <=252 per stat, <=510 total.
-            for (int index = 0; index < 6; ++index)
+            // Everywhere else: <=510 total, and <=252 per stat from Gen 6 on. Gens 3-5 cap a stat
+            // at 255, which is the ordinary result of vitamins and training there, not an edit
+            // (PKHeX EffortValueVerifier applies the 252 cap only for format >= 6).
+            for (int statIndex = 0; statIndex < 6 && formatGeneration >= 6; ++statIndex)
             {
-                if (evValue[index] > 252)
-                    add(report, Severity::Invalid, std::string(statName(index)) + " EV over 252 (" + std::to_string(evValue[index]) + ")");
+                if (evValue[statIndex] > 252)
+                    add(report, Severity::Invalid, std::string(statName(statIndex)) + " EV over 252 (" + std::to_string(evValue[statIndex]) + ")");
             }
             if (evTotal > 510)
                 add(report, Severity::Invalid, "EV total over 510 (" + std::to_string(evTotal) + ")");
@@ -159,7 +326,7 @@ namespace Legality
             // problems and invents fake ones. PKHeX encodes "single ability" as ability2 == ability1,
             // so that set collapses naturally. In Legends: Z-A the slot may still hold what the
             // Pokemon had BEFORE it evolved -- see Pokemon::isAbilityLegal.
-            if (!Pokemon::isAbilityLegal(pokemon))
+            if (!Pokemon::isAbilityLegal(pokemon) && !isGenerationFiveBasculinReckless(pokemon, originGroup))
                 add(report, Severity::Invalid, "Ability not legal for this species");
         }
 
@@ -177,32 +344,27 @@ namespace Legality
                     }
         }
 
-        // The pool is that game's own learn methods unioned with the species' whole pre-evolution chain,
-        // so an inherited move no longer false-flags. Still a Warning rather than Invalid: the pool can't
-        // express *when* a move was legal (move tutors that came and went, event moves, trade-backs).
-        // All seven games have a table now, but keep the nullptr guard honest -- if a group ever lacks one,
-        // getLearnableBits() returns nullptr meaning "unknown", which must not be reported as illegal.
+        // The pool is each game's own learn methods unioned with the species' whole pre-evolution
+        // chain, so an inherited move does not false-flag, and then unioned across every game the
+        // Pokemon can have visited -- see getLearnGroups. Still a Warning rather than Invalid: the
+        // pools cannot express *when* a move was legal (tutors that came and went), and they hold no
+        // move a specific encounter handed out (an event's, the Odd Egg's Dizzy Punch).
         //
-        // A Pokemon that came through Poke Transporter learned its moves in Gen 1 or Gen 2, and no
-        // later learn pool records that -- a Yellow Pikachu really does know Surf. So a transferred
-        // pokemon is checked against the UNION of the two pools: the one it learned in and the one it
-        // lives in now. Both halves are needed. Checking only the modern pool flags every legitimate
-        // Virtual Console move, which PKSE's own transfer produces; checking only the old one flags
-        // every TM taught after it arrived. The origin byte is what says so, and it is trustworthy
-        // here -- nothing but a transfer writes a Gen 1/2 version into a modern record.
-        const uint8_t originVersion = pokemon.hasOriginGame() ? pokemon.originGame() : 0;
-        const Enums::GameVersion transferGroup = (originVersion >= 35 && originVersion <= 38) ? Enums::GameVersion::RBY : (originVersion >= 39 && originVersion <= 41) ? Enums::GameVersion::GSC : originGroup;
-        const bool transferPool = transferGroup != originGroup && Pokemon::getLearnableBits(species, pokemon.form(), transferGroup) != nullptr;
+        // A missing pool for the save's own game means "unknown", not "cannot learn", so the check
+        // only runs when that one exists.
         if (Pokemon::getLearnableBits(species, pokemon.form(), originGroup) != nullptr)
         {
+            const LearnGroups learnGroups = getLearnGroups(pokemon, originGroup);
             for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
             {
                 const uint16_t moveId = pokemon.move(moveIndex);
-                if (moveId == 0 || Pokemon::isLearnable(species, pokemon.form(), originGroup, moveId))
+                if (moveId == 0 || isLearnableInAny(learnGroups, species, pokemon.form(), moveId))
                     continue;
-                if (transferPool && Pokemon::isLearnable(species, pokemon.form(), transferGroup, moveId))
-                    continue;
-                add(report, Severity::Warning, "Move may not be learnable: " + std::string(Names::getMoveName(moveId)));
+                const std::string moveName = Names::getMoveName(moveId);
+                if (pokemon.isFatefulEncounter())
+                    add(report, Severity::Warning, "Move may not be learnable: " + moveName + " (event moves are not modelled)");
+                else
+                    add(report, Severity::Warning, "Move may not be learnable: " + moveName);
             }
         }
 
@@ -217,7 +379,9 @@ namespace Legality
 
         if (pokemon.ball() != 0 && pokemon.ball() > 37)
             add(report, Severity::Invalid, "Ball id out of range (" + std::to_string(pokemon.ball()) + ")");
-        if (pokemon.language() != 0 && (pokemon.language() > 10 || pokemon.language() == 6))
+        // Judged against the save's own format: Korean arrived in Gens 2 and 4, the Chinese scripts
+        // in Gen 7 and Latin American Spanish with Legends: Z-A (PKHeX Legal.GetMaxLanguageID).
+        if (pokemon.language() != 0 && !Enums::groupHasLanguage(originGroup, pokemon.language()))
             add(report, Severity::Invalid, "Invalid language id (" + std::to_string(pokemon.language()) + ")");
 
         const uint8_t expLevel = Pokemon::getLevelFromExp(pokemon.exp(), Pokemon::getGrowthRate(species));
@@ -234,6 +398,7 @@ namespace Legality
 
         {
             const uint8_t genderValue = pokemon.gender();
+            const uint8_t genderRatio = Pokemon::getGenderRatio(species, pokemon.form(), originGroup);
             if (genderValue > 2)
                 add(report, Severity::Invalid, "Gender value out of range (" + std::to_string(genderValue) + ")");
             // Meowstic, Indeedee, Basculegion and Oinkologne keep the gender in the form index, so
@@ -248,16 +413,16 @@ namespace Legality
                 else if ((pokemon.form() & 1) != genderValue)
                     add(report, Severity::Invalid, "Form " + std::to_string(pokemon.form()) + " is the " + ((pokemon.form() & 1) ? "female" : "male") + " form but the gender is " + (genderValue ? "female" : "male"));
             }
-            else if (pi.genderRatio == 255)
+            else if (genderRatio == 255)
             {
                 if (genderValue != 2)
                     add(report, Severity::Invalid, "Genderless species but a gender is set");
             }
             else if (genderValue == 2)
                 add(report, Severity::Invalid, "Gendered species marked genderless");
-            else if (pi.genderRatio == 254 && genderValue != 1)
+            else if (genderRatio == 254 && genderValue != 1)
                 add(report, Severity::Invalid, "Female-only species set to male");
-            else if (pi.genderRatio == 0 && genderValue != 0)
+            else if (genderRatio == 0 && genderValue != 0)
                 add(report, Severity::Invalid, "Male-only species set to female");
         }
 

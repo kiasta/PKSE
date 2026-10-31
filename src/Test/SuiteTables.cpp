@@ -632,6 +632,7 @@ namespace Test
                         {48, Trainer::OriginMark::Gen8Trio, "Brilliant Diamond"},
                         {50, Trainer::OriginMark::Gen9Paldea, "Scarlet"},
                         {52, Trainer::OriginMark::Gen9ZA, "Legends Z-A"},
+                        {56, Trainer::OriginMark::GameBoyAdvance, "FireRed (Switch)"},
                     };
                     const uint8_t originalOriginGame = entity->originGame();
                     for (const MarkCase &markCase : markCases)
@@ -861,7 +862,12 @@ namespace Test
             // And the title itself must name itself, because that is the folder the user is told
             // to create and the string the plan row prints.
             context.check(!Enums::getGameVersionName(title).empty() && Enums::getGameVersionName(title) != "Unknown", "a tested title has no name of its own", where);
+            // A plain game name: renaming BU to PKHeX's "Blue (JP)" made the Blue row look for a
+            // "Blue (JP)" folder, and the user's Blue save silently stopped being tested.
+            const std::string titleName = Enums::getGameVersionName(title);
+            context.check(titleName.find_first_of("/()") == std::string::npos, "a tested title's name is not a plain folder name", where);
         }
+        context.check(Enums::getGameVersionName(Enums::GameVersion::BU) == "Blue", "the Blue title is not named \"Blue\", so its save folder moved", Enums::getGameVersionName(Enums::GameVersion::BU));
     }
 
     /**
@@ -1106,6 +1112,11 @@ namespace Test
             partner.consoleCountry = 0x31;
             partner.consoleRegion = 0x07;
 
+            // Only Gen 6 writes a trade memory and geolocation (PKHeX PK6.TradeHT). Gen 7 stores both
+            // fields and writes neither (PK7.TradeHT), so there they must come through untouched.
+            const bool writesTradeHistory = entity->hasGeolocation() && !entity->hasHyperTraining();
+            const uint8_t memoryBeforeTrade = entity->hasHandlerMemories() ? entity->htMemory() : 0;
+            const uint8_t countryBeforeTrade = entity->hasGeolocation() ? entity->geolocationCountry(0) : 0;
             const bool tradeApplied = applyTradeRoundTrip(*entity, partner);
 
             // A FORMAT WITH NO HANDLER MUST REFUSE. Before Gen 6 a trade writes nothing at all, so
@@ -1144,7 +1155,11 @@ namespace Test
 
             if (entity->hasHandlerMemories())
             {
-                if (entity->hasGeolocation())
+                if (entity->hasGeolocation() && !writesTradeHistory)
+                {
+                    context.check(entity->htMemory() == memoryBeforeTrade, "a Gen 7 trade wrote a handler memory", groupLabel + " memory=" + std::to_string(entity->htMemory()) + " before=" + std::to_string(memoryBeforeTrade));
+                }
+                else if (entity->hasGeolocation())
                 {
                     context.check(entity->htMemory() == 4 && entity->htMemoryVariable() == 9 && entity->htMemoryIntensity() == 1, "the trade did not write a link-trade memory", groupLabel + " memory=" + std::to_string(entity->htMemory()) + " variable=" + std::to_string(entity->htMemoryVariable()) + " intensity=" + std::to_string(entity->htMemoryIntensity()));
                 }
@@ -1154,7 +1169,11 @@ namespace Test
                 }
             }
 
-            if (entity->hasGeolocation())
+            if (entity->hasGeolocation() && !writesTradeHistory)
+            {
+                context.check(entity->geolocationCountry(0) == countryBeforeTrade, "a Gen 7 trade pushed the partner's console region", groupLabel + " country=" + std::to_string(entity->geolocationCountry(0)) + " before=" + std::to_string(countryBeforeTrade));
+            }
+            if (writesTradeHistory)
             {
                 context.check(entity->geolocationCountry(0) == 0x31 && entity->geolocationRegion(0) == 0x07, "the trade did not record the partner's console region", groupLabel + " country=" + std::to_string(entity->geolocationCountry(0)) + " region=" + std::to_string(entity->geolocationRegion(0)));
 
@@ -1200,6 +1219,7 @@ namespace Test
                     returnHolder->setSpecies(pikachuSpeciesId);
                     returnHolder->setForm(0);
                     returnHolder->setLevel(20);
+                    returnHolder->setCurrentHandler(0); // the OT holds it: friendship() is the current handler's in Gen 6/7
                     returnHolder->setFriendship(probeFriendship);
                     returnHolder->setMove(0, returnMoveId);
                     applyTradeRoundTrip(*returnHolder, partner);
@@ -1477,6 +1497,193 @@ namespace Test
             fletchinder->setAbility(stenchAbilityId);
             context.check(!Pokemon::isAbilityLegal(*fletchinder), "an ability no species in the chain has is called legal", Enums::getGameVersionName(group) + " ability=Stench");
         }
+    }
+
+    /// The legality rules the 1.2.2 audit found answering wrongly on legitimate Pokemon, each posed
+    /// on a synthetic record and asserted through the analyzer by the finding's own wording, so an
+    /// unrelated finding about the synthetic record cannot mask or fake a result.
+    void checkLegalityRuleFixes(Context &context)
+    {
+        auto makeRecord = [&](Enums::GameVersion group) -> std::unique_ptr<Pokemon::Pokemon>
+        {
+            // A zeroed DECRYPTED record, so every field starts blank; zero stored bytes decrypt to noise.
+            const std::vector<std::byte> decryptedRecord(Trainer::Bank::recordSizeFor(group), std::byte{0});
+            std::byte *encryptedRecord = Trainer::Bank::encryptRecord(group, decryptedRecord, 0);
+            if (!context.check(encryptedRecord != nullptr, "no entity class for a supported save group", Enums::getGameVersionName(group))) return nullptr;
+            auto pokemon = Trainer::Bank::makePokemon(group, std::span<const std::byte>(encryptedRecord, decryptedRecord.size()));
+            delete[] encryptedRecord;
+            if (!context.check(pokemon != nullptr, "no entity class for a supported save group", Enums::getGameVersionName(group))) return nullptr;
+            return pokemon;
+        };
+        auto pose = [](Pokemon::Pokemon &pokemon, uint16_t speciesId, uint8_t formId, uint8_t originVersion, uint8_t level)
+        {
+            pokemon.setSpecies(speciesId);
+            pokemon.setForm(formId);
+            pokemon.setOriginGame(originVersion);
+            pokemon.setLevel(level);
+            pokemon.setOTName(Utils::utf8ToUtf16("PKSE"));
+            pokemon.setLanguage(2);
+            for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
+            {
+                pokemon.setMove(moveIndex, 0);
+            }
+            for (int statIndex = 0; statIndex < 6; ++statIndex)
+            {
+                pokemon.setEV(statIndex, 0);
+            }
+            pokemon.recalculateStats();
+        };
+        auto findingsAbout = [](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const std::string &needle)
+        {
+            std::string matching;
+            for (const auto &issue : Legality::analyze(pokemon, group).issues)
+            {
+                if (issue.text.find(needle) != std::string::npos)
+                {
+                    matching += (matching.empty() ? "" : "; ") + issue.text;
+                }
+            }
+            return matching;
+        };
+        auto expectSilent = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const std::string &needle, const char *what, const std::string &detail)
+        {
+            const std::string found = findingsAbout(pokemon, group, needle);
+            context.check(found.empty(), what, detail + " -- " + found);
+        };
+        auto expectFinding = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const std::string &needle, const char *what, const std::string &detail)
+        {
+            context.check(!findingsAbout(pokemon, group, needle).empty(), what, detail);
+        };
+
+        // Latin American Spanish is a Legends: Z-A language and no earlier game's.
+        constexpr uint8_t spanishLatinAmericaLanguage = 11;
+        if (auto pokemon = makeRecord(Enums::GameVersion::ZA))
+        {
+            pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::ZA), 10);
+            pokemon->setLanguage(spanishLatinAmericaLanguage);
+            expectSilent(*pokemon, Enums::GameVersion::ZA, "Invalid language", "a Z-A Pokemon in Latin American Spanish is called an invalid language", "language=11");
+        }
+        if (auto pokemon = makeRecord(Enums::GameVersion::SV))
+        {
+            pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::SL), 10);
+            pokemon->setLanguage(spanishLatinAmericaLanguage);
+            expectFinding(*pokemon, Enums::GameVersion::SV, "Invalid language", "a Scarlet Pokemon in Latin American Spanish is not flagged", "language=11");
+        }
+
+        // 255 EVs in one stat is ordinary before Gen 6; the 252 cap arrived with X/Y.
+        for (const Enums::GameVersion group : {Enums::GameVersion::RSE, Enums::GameVersion::B2W2, Enums::GameVersion::XY})
+        {
+            auto pokemon = makeRecord(group);
+            if (!pokemon) continue;
+            pose(*pokemon, 25, 0, Enums::getGroupRepVersion(group), 50);
+            pokemon->setEV(0, 255);
+            const bool capsAt252 = group == Enums::GameVersion::XY;
+            const std::string found = findingsAbout(*pokemon, group, "EV over 252");
+            context.check(found.empty() != capsAt252, capsAt252 ? "a Gen 6 EV of 255 is not flagged" : "a pre-Gen 6 EV of 255 is called over the 252 cap", Enums::getGameVersionName(group) + " HP EV 255");
+        }
+
+        // A move learned in an earlier generation stays legal after the transfer. X/Y's Chespin learns
+        // Tackle; Sun/Moon's does not.
+        constexpr uint16_t chespinSpeciesId = 650;
+        constexpr uint16_t tackleMoveId = 33;
+        context.check(!Pokemon::isLearnable(chespinSpeciesId, 0, Enums::GameVersion::SM, tackleMoveId) && Pokemon::isLearnable(chespinSpeciesId, 0, Enums::GameVersion::XY, tackleMoveId), "the transferred-move case no longer poses the question it was written for", "Chespin Tackle: SM must lack it, XY must have it");
+        if (auto pokemon = makeRecord(Enums::GameVersion::SM))
+        {
+            pose(*pokemon, chespinSpeciesId, 0, static_cast<uint8_t>(Enums::GameVersion::X), 10);
+            pokemon->setMove(0, tackleMoveId);
+            expectSilent(*pokemon, Enums::GameVersion::SM, "learnable: Tackle", "a move learned in X/Y is called unlearnable after the move to Sun/Moon", "Chespin from X with Tackle in Sun");
+            pokemon->setOriginGame(static_cast<uint8_t>(Enums::GameVersion::SN));
+            expectFinding(*pokemon, Enums::GameVersion::SM, "learnable: Tackle", "a Sun-native Chespin with Tackle is not flagged", "Chespin from Sun with Tackle in Sun");
+        }
+
+        // Smeargle can know whatever Sketch copies, and nothing Sketch cannot.
+        constexpr uint16_t smeargleSpeciesId = 235;
+        context.check(Pokemon::isLearnable(smeargleSpeciesId, 0, Enums::GameVersion::XY, 147), "Smeargle's sketched Spore is unlearnable", "XY");
+        context.check(!Pokemon::isLearnable(smeargleSpeciesId, 0, Enums::GameVersion::XY, 165), "Smeargle can learn Struggle", "XY");
+        context.check(!Pokemon::isLearnable(smeargleSpeciesId, 0, Enums::GameVersion::SV, 464), "Smeargle can sketch Dark Void in Scarlet/Violet", "SV");
+
+        // Gen 7's egg moves are per FORM, and Necrozma's fusion moves come from its fused forms.
+        context.check(Pokemon::isLearnable(37, 1, Enums::GameVersion::SM, 573) && !Pokemon::isLearnable(37, 0, Enums::GameVersion::SM, 573), "Gen 7 egg moves are read by species rather than form", "Freeze-Dry: Alolan Vulpix yes, Kantonian no");
+        context.check(Pokemon::isLearnable(800, 2, Enums::GameVersion::USUM, 714) && !Pokemon::isLearnable(800, 0, Enums::GameVersion::USUM, 714), "Dawn Wings Necrozma's Moongeist Beam is missing", "USUM");
+
+        // A form past the species' count reads the base row, not the next species' rows.
+        context.check(Pokemon::getLearnableBits(1, 5, Enums::GameVersion::SV) == Pokemon::getLearnableBits(1, 0, Enums::GameVersion::SV), "an out-of-range form reads another species' learnset", "Bulbasaur form 5");
+
+        // ORAS's Cosplay Pikachu are female; the caps sharing their form numbers in Gen 7+ are male.
+        context.check(Pokemon::getGenderRatio(25, 1, Enums::GameVersion::ORAS) == 254 && Pokemon::getGenderRatio(25, 1, Enums::GameVersion::USUM) == 0, "the gender ratio ignores what a form means in its game", "Pikachu form 1");
+        if (auto pokemon = makeRecord(Enums::GameVersion::ORAS))
+        {
+            pose(*pokemon, 25, 1, static_cast<uint8_t>(Enums::GameVersion::OR), 20);
+            pokemon->setGender(1);
+            expectSilent(*pokemon, Enums::GameVersion::ORAS, "Male-only", "a female Cosplay Pikachu is called a male-only species", "ORAS Pikachu form 1");
+        }
+        context.check(std::string(Names::getFormName(25, 1, Enums::GameVersion::ORAS)) == "Rock Star" && std::string(Names::getFormName(493, 9, Enums::GameVersion::DP)) == "???" && std::string(Names::getFormName(493, 10, Enums::GameVersion::DP)) == Names::getTypeName(9), "a form is named by the Gen 7+ numbering in a game that numbers it differently", "ORAS Pikachu 1, Gen 4 Arceus 9 and 10");
+
+        // ORAS: the Flutes and DexNav move a wild slot's level.
+        if (auto pokemon = makeRecord(Enums::GameVersion::ORAS))
+        {
+            constexpr uint16_t slakothSpeciesId = 287;
+            constexpr uint16_t petalburgWoodsLocation = 282;
+            pose(*pokemon, slakothSpeciesId, 0, static_cast<uint8_t>(Enums::GameVersion::OR), 20);
+            pokemon->setMetLocation(petalburgWoodsLocation);
+            pokemon->setMetLevel(15);
+            expectSilent(*pokemon, Enums::GameVersion::ORAS, "No encounter for", "a DexNav-boosted ORAS met level is reported", "Slakoth met at Petalburg Woods at 15");
+            pokemon->setLevel(80);
+            pokemon->setMetLevel(70);
+            expectFinding(*pokemon, Enums::GameVersion::ORAS, "No encounter for", "an ORAS met level past even a DexNav chain is accepted", "Slakoth met at Petalburg Woods at 70");
+        }
+
+        // Bred-egg locations: BD/SP's traded egg is 30001; Platinum and HGSS also accept Faraway4.
+        if (auto pokemon = makeRecord(Enums::GameVersion::BDSP))
+        {
+            pose(*pokemon, 387, 0, static_cast<uint8_t>(Enums::GameVersion::BD), 5);
+            pokemon->setEggLocation(30001);
+            pokemon->setMetLevel(1);
+            expectSilent(*pokemon, Enums::GameVersion::BDSP, "Egg location", "a BD/SP link-traded egg (30001) is flagged", "Turtwig hatched from a traded egg");
+        }
+        for (const Enums::GameVersion version : {Enums::GameVersion::Pt, Enums::GameVersion::D})
+        {
+            auto pokemon = makeRecord(Enums::GameVersion::PT);
+            if (!pokemon) continue;
+            pose(*pokemon, 387, 0, static_cast<uint8_t>(version), 5);
+            pokemon->setEggLocation(3002);
+            const bool faraway = version == Enums::GameVersion::Pt;
+            const std::string found = findingsAbout(*pokemon, Enums::GameVersion::PT, "Egg location");
+            context.check(found.empty() == faraway, faraway ? "a Platinum egg from a faraway place (3002) is flagged" : "a Diamond egg from a faraway place (3002) is accepted", Enums::getGameVersionName(version) + " " + found);
+        }
+
+        // Scarlet/Violet writes an egg's version when it hatches, so an unhatched one has none.
+        if (auto pokemon = makeRecord(Enums::GameVersion::SV))
+        {
+            pose(*pokemon, 443, 0, 0, 1);
+            pokemon->setEgg(true);
+            pokemon->setEggLocation(30023);
+            expectSilent(*pokemon, Enums::GameVersion::SV, "Origin game ID 0", "an unhatched Scarlet/Violet egg reads as an unknown origin", "Gible egg, version 0");
+        }
+
+        // Gen 5's Blue-Striped Basculin may carry Reckless.
+        if (auto pokemon = makeRecord(Enums::GameVersion::BW))
+        {
+            pose(*pokemon, 550, 1, static_cast<uint8_t>(Enums::GameVersion::W), 20);
+            pokemon->setAbility(120);
+            pokemon->setAbilityNumber(1);
+            expectSilent(*pokemon, Enums::GameVersion::BW, "Ability not legal", "Gen 5 Blue-Striped Basculin with Reckless is called illegal", "White");
+        }
+
+        // HOME's met-location sentinels end the encounter check -- including the Switch FR/LG ones.
+        if (auto pokemon = makeRecord(Enums::GameVersion::SWSH))
+        {
+            pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::SH), 20);
+            pokemon->setMetLocation(59994);
+            pokemon->setMetLevel(20);
+            expectFinding(*pokemon, Enums::GameVersion::SWSH, "HOME replaced the met location", "the Switch FireRed/LeafGreen HOME sentinel is not recognised", "met 59994");
+            expectSilent(*pokemon, Enums::GameVersion::SWSH, "is not a place", "the encounter sweep still runs after a HOME sentinel", "met 59994");
+        }
+
+        // The origin-version metadata for the ids PKHeX added (FRX/LGX, Champions, Winds, Waves).
+        context.check(Enums::getVersionGeneration(56) == 3 && Enums::getVersionGeneration(57) == 3 && Enums::getVersionGeneration(53) == 9 && Enums::getVersionGeneration(54) == 0, "a new origin version has the wrong generation", "56/57/53/54");
+        context.check(Enums::getOriginGameName(56) != "Unknown" && Enums::getOriginGameName(55) != "Unknown", "a new origin version has no name", "55/56");
+        context.check(Enums::usesSixDigitTrainerID(34) && !Enums::usesSixDigitTrainerID(56) && !Enums::usesSixDigitTrainerID(53) && Enums::usesSixDigitTrainerID(52) && !Enums::usesSixDigitTrainerID(41), "the trainer-id format disagrees with PKHeX's generation rule", "34/56/53/52/41");
     }
 
     namespace
@@ -1764,6 +1971,7 @@ namespace Test
             break;
         case EncounterRulesChunk:
             checkEncounterRules(context);
+            checkLegalityRuleFixes(context);
             break;
         case RibbonDefinitionsChunk:
             checkRibbonDefinitions(context);

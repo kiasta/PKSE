@@ -85,12 +85,13 @@ namespace Legality
             VIOLATION_NOT_ALPHA = 1 << 7,
         };
 
-        /// HOME rewrited the met location of anything it moves INTO SWSH to one
-        /// of the five per-origin sentinels (PKHeX LocationsHOME). The real location is gone,
-        /// so there is nothing left to check against.
+        /// HOME rewrites the met location of anything it moves INTO SWSH from a game Sword/Shield
+        /// cannot name to one of seven per-origin sentinels (PKHeX LocationsHOME): Legends:
+        /// Arceus, BD/SP and S/V, and -- the lowest two -- the Switch FireRed/LeafGreen (SHLG
+        /// 59994, SWFR 59995). The real location is gone, so there is nothing left to check against.
         bool isHomeRemappedLocation(uint16_t location)
         {
-            return location >= 59996 && location <= 60000;
+            return location >= 59994 && location <= 60000;
         }
 
         /// Met locations that mean "this arrived from outside the game" rather than naming a place in
@@ -204,21 +205,36 @@ namespace Legality
             }
         }
 
+        constexpr int FLUTE_LEVEL_SHIFT = 4;
+        constexpr int DEXNAV_LEVEL_BOOST = 33;
+
         /// The highest met level a row admits. Let's Go's catch combo spawns a slot's Pokemon one
         /// level above its range (PKHeX EncounterSlot7b.CatchComboBonus), so a level past the table's
-        /// own maximum is still that slot's.
-        uint8_t highestMetLevel(const EncounterRow &row)
+        /// own maximum is still that slot's. ORAS's Black Flute adds 4 and a DexNav chain up to 33
+        /// (EncounterSlot6AO.IsMatchExact).
+        int highestMetLevel(const EncounterRow &row)
         {
-            return (row.flags & ENCOUNTER_FLAG_CATCH_COMBO) != 0 ? static_cast<uint8_t>(row.levelMax + 1) : row.levelMax;
+            if ((row.flags & ENCOUNTER_FLAG_DEXNAV) != 0)
+                return row.levelMax + DEXNAV_LEVEL_BOOST;
+            if ((row.flags & ENCOUNTER_FLAG_FLUTE) != 0)
+                return row.levelMax + FLUTE_LEVEL_SHIFT;
+            return (row.flags & ENCOUNTER_FLAG_CATCH_COMBO) != 0 ? row.levelMax + 1 : row.levelMax;
+        }
+
+        /// The lowest met level a row admits: ORAS's White Flute lowers a slot by 4.
+        int lowestMetLevel(const EncounterRow &row)
+        {
+            return (row.flags & ENCOUNTER_FLAG_FLUTE) != 0 ? row.levelMin - FLUTE_LEVEL_SHIFT : row.levelMin;
         }
 
         /// Does the level a Pokemon was met at fall inside the template's span?
-        /// SWSH's Wild Area is the one exception: after the post-game the
-        /// whole area is boosted to exactly 60 regardless of the slot's own
-        /// range (PKHeX EncounterArea8.BoostLevel).
+        /// Two games widen it. SWSH's Wild Area: after the post-game the whole area is boosted
+        /// to exactly 60 regardless of the slot's own range (PKHeX EncounterArea8.BoostLevel).
+        /// ORAS: the Flutes move a slot 4 levels either way and a DexNav chain up to 33 above it
+        /// (EncounterSlot6AO.IsMatchExact).
         bool levelMatches(const EncounterRow &row, uint8_t metLevel)
         {
-            if (metLevel >= row.levelMin && metLevel <= highestMetLevel(row))
+            if (metLevel >= lowestMetLevel(row) && metLevel <= highestMetLevel(row))
                 return true;
             return (row.flags & ENCOUNTER_FLAG_BOOST60) != 0 && metLevel == 60;
         }
@@ -726,10 +742,11 @@ namespace Legality
         ///
         /// Two things are decidable here and one is not. DECIDABLE: a relearn slot holding a move
         /// the species can never learn at all, and the same move in two slots -- neither is
-        /// reachable in-game. NOT decidable: whether a legitimately learnable move was legal to
-        /// have as an EGG move specifically, which needs per-species egg-move tables PKSE does not
-        /// carry. So the learnable pool is the same one Layer 2 uses for the current moveset, and a
-        /// move inside it is left alone rather than guessed at.
+        /// reachable in-game. NOT decidable: whether a learnable move was legal as the ENCOUNTER's
+        /// move specifically -- the egg moves are folded into the learnable pool by
+        /// gen_learnsets.py, not kept apart, and no encounter row records its moves. So the pool is
+        /// the same one Layer 2 uses for the current moveset, and a move inside it is left alone
+        /// rather than guessed at.
         void checkRelearnMoves(const Pokemon::Pokemon &pokemon, Report &report, Enums::GameVersion originGroup, uint16_t species)
         {
             uint16_t relearn[4] = {0, 0, 0, 0};
@@ -941,7 +958,12 @@ namespace Legality
         // one answer available: the group whose format it is in. And because it cannot name WHICH
         // of that group's games, every one of them counts -- a mask of all bits, so a row for any
         // of Red, Green, Blue or Yellow is a row this Pokemon could have come from.
-        const bool originIsFormatGroup = !pokemon.hasOriginGame();
+        //
+        // A GEN 9 EGG THAT HAS NOT HATCHED has no origin yet either: the game writes the
+        // version when it hatches (PKHeX PK9.IsUnhatchedEgg is `Version == 0 && IsEgg`). Its game
+        // is the save's own, so it takes the same fallback rather than "origin game ID 0".
+        const bool unhatchedEggWithoutOrigin = pokemon.isEgg() && originRaw == 0 && formatGeneration == 9;
+        const bool originIsFormatGroup = !pokemon.hasOriginGame() || unhatchedEggWithoutOrigin;
         const EncounterTable *table = originIsFormatGroup ? getEncounterTable(pokemon.getGameGroup()) : getEncounterTable(originVersion);
         const uint8_t versionBit = originIsFormatGroup ? 0xFF : encounterVersionBit(originVersion);
 
@@ -974,9 +996,12 @@ namespace Legality
         const uint8_t locationNameVersion = originIsFormatGroup ? Enums::getGroupRepVersion(originGroup) : originRaw;
 
         const uint16_t metLocation = pokemon.metLocation();
+        // The sentinel replaced the met location, so the sweep below would be measuring a number the
+        // origin game never wrote: it has to stop here, not merely say so and carry on.
         if (isHomeRemappedLocation(metLocation))
         {
             add(report, Severity::Info, "HOME replaced the met location on transfer — encounter check skipped");
+            return;
         }
         const bool arrivedFromOutside = isExternalTransferLocation(originGroup, metLocation);
 

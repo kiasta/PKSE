@@ -187,6 +187,12 @@ false positive. Writing proceeds; the anomaly is surfaced.
   message the storage view shows. If even the rename fails, `save()` refuses to write over the file.
   Before this, a failed read looked like a first run: the legacy banks were migrated again,
   `hasChanged()` read false, and the next save truncated the file with every Pokémon in it.
+- **A damaged RECORD in a good file** (an unknown tag, or a record `isStructurallyValid()` refuses)
+  is dropped from the slot, so the next save writes the bank without it. `load()` therefore copies
+  the file as it read it to `bank.dat.damaged` and says so in `lastLoadProblem()`; if the copy cannot
+  be written, `save()` refuses to write over the file. `verifyImage()` applies the same
+  `isStructurallyValid()` test at save time, so a record cannot pass verification and then be
+  dropped by the next load.
 - **A save goes through `bank.dat.tmp`.** The new image is written and flushed there, the old file is
   removed, and the temporary file is renamed into place. A FAT rename does not replace an existing
   file, so the removal comes first. A save cut short leaves either the old file or a complete
@@ -249,11 +255,12 @@ ways (Gen 6/7, Let's Go, Gen 8+):
 | | What is written |
 |---|---|
 | Always | `CurrentHandler = 1` |
-| HT is someone else | HT name and gender = the receiver. Handler language = the receiving save's (Gen 8+). HT friendship = the species' base friendship, except Let's Go, which copies the friendship it had (its CP depends on it). Gen 6/7 keeps a memory it already has and otherwise writes the link-trade memory; Gen 8+ clears the old handler's memories. |
+| HT is someone else | HT name and gender = the receiver. Handler language = the receiving save's (Gen 8+). HT friendship = the species' base friendship, except Let's Go, which copies the friendship it had (its CP depends on it). Gen 6 keeps a memory it already has and otherwise writes the link-trade memory, Gen 7 writes none and clears none (PKHeX `PK7.TradeHT`), and Gen 8+ clears the old handler's memories. Poké Transporter writes Bank's memory, its feeling drawn below 10 from the legal set. |
 | HT is already the receiver | nothing else: the block, memories and friendship included, is kept (PKHeX `PKH.IsHandlerSame` compares name and gender only) |
 
-**The one pairing left alone is Sun/Moon ↔ Ultra Sun/Ultra Moon.** They share one record format, so
-a move between them is not a transfer into another game.
+**Groups that share a format are left alone** (RSE↔FRLG, the Gen 4 trio, both Gen 5, Gen 6 and Gen 7
+3DS pairs). A move between them re-wraps the same record (see the table below), so it is not a
+transfer into another game.
 
 **A Gen 1/2 Pokémon going on into Gen 8+ keeps its Transporter block.** The handler was stamped in
 the Gen 7 step and is the same player, so the block rides on: no handler language and the Bank
@@ -307,9 +314,9 @@ legal moves and drops only the illegal ones.
 | PK8↔PK9 | field remap: gender bit position, Version/Language/FormArg/AffixedRibbon offsets, height/weight/scale, HOME-tracker offset, record-flag / Tera / ObedienceLevel regions. Tera type is **imported from the species' primary type** (PK8 has none). |
 | PA8 (Arceus) | whole Block B/C/D at different offsets — a full field relocation routed through PK8. PA8-only data (GVs, Alpha, move-mastery) is dropped; LA-only balls collapse to a Poké Ball. |
 | PB7 (Let's Go) | relocates through PK8, but **stat training is NOT cross-converted**: AVs/EVs are dropped, so a mon entering LGPE gets AVs = 0 and one leaving gets EVs = 0. Level/stats/CP tail is recomputed. |
-| PK7 (Sun/Moon ↔ Ultra Sun/Moon) | siblings: the same record byte for byte, so nothing is nulled. The two differ only in how far their dex, move and item spaces run, which the gate already handles. |
-| PK7 ↔ PK8 | the PB7 remap plus everything Let's Go dropped — held item, EVs, contest stats, both trainers' memories, the ribbon memory counts. Gen-7-only regions have nowhere to go and are dropped: Super Training, the Poké Pelago resort state, the 3DS geolocation block (plus Country/Region/ConsoleRegion), and affection. Ribbons are dropped too — Gen 8 reordered the bits and added marks, so the blocks are not a byte copy and a wrong one would hand out ribbons nobody earned. Coming back down, Gen 8's own additions (TR flags, Dynamax, Sociability, height/weight scalars, AffixedRibbon, marks, and the **mint** — PK7 has `Nature` but no `StatNature`) have no home. |
-| PK3 (FRLG, RSE) | the most divergent. No EC (EC := PID); nature/gender/shiny are all PID-derived; ability is a slot **bit** resolved via the personal table; species/items/text use Gen-3 id spaces; IVs pack the ability bit at 31. Item ids convert via `Item3to4`, names transcode Gen-3↔Unicode, level/stats recomputed. Going **to** Gen 3, nature and gender become PID-derived and custom nicknames collapse to the species name. A Gen 3 destination is a **rebuild**, not a carry — see "Rules: Poké Transporter and the Gen 3 rebuild" below. |
+| Groups that share a format (RSE↔FRLG, DP↔Pt↔HGSS, BW↔B2W2, XY↔ORAS, SM↔USUM) | **not converted**: the same record is re-wrapped as the destination group's own class (`rewrapForSibling` in `Convert.cpp`), every byte unchanged, no handler stamped. The narrower sibling refuses a species or form it has no entry for (`NotInDex`: Origin Giratina into Diamond/Pearl, Poipole into Sun/Moon) and drops a move or held item past its own range. This is also what withdrawing a banked Ruby, Diamond, Black, X or Sun Pokémon back into its own game runs: the bank reads it back as the format's representative group (see "Bank tags"), and before this path existed that withdrawal was refused as unsupported (Gen 4–6) or rebuilt through the hub, losing the nickname and ribbons (Gen 3). |
+| PK7 ↔ PK8 | the PB7 remap plus everything Let's Go dropped — held item, EVs, contest stats, both trainers' memories, the ribbon memory counts. Gen-7-only regions have nowhere to go and are dropped: Super Training, the Poké Pelago resort state, the 3DS geolocation block (plus Country/Region/ConsoleRegion), and affection. **Ribbons are a byte copy**: Gen 8 keeps the Gen 6/7 ribbon bits in the same order four bytes later (PK7 0x30–0x36 is PK8 0x34–0x3A) and only appends its own from 0x3A bit 2, which the way down masks off. Coming back down, Gen 8's own additions (TR flags, Dynamax, Sociability, height/weight scalars, AffixedRibbon, marks, and the **mint** — PK7 has `Nature` but no `StatNature`) have no home. |
+| PK3 (FRLG, RSE) | the most divergent. No EC (EC := PID); nature/gender/shiny are all PID-derived; ability is a slot **bit** resolved via the personal table; species/items/text use Gen-3 id spaces; IVs pack the ability bit at 31. Item ids convert via `Item3to4`, names transcode Gen-3↔Unicode, level/stats recomputed. Coming **from** Gen 3 follows Pal Park and the later transfers (PKHeX `PK3.ConvertToPK4` … `PK6.ConvertToPK7`): met location Poké Transfer (30001) and met level the level at transfer; IsNicknamed set only for a real nickname, a species name rewritten in proper case; the PID's bit 31 flipped where Gen 6's wider shiny window would make it shiny (EC keeps the original); the ten ribbons later games still have kept, the contest ranks folded into the contest memory count and Winning/Victory into the battle one; markings blue; an egg hatched. Going **to** Gen 3, nature and gender become PID-derived; a nickname is kept and an un-nicknamed Pokémon gets its language's species name; a Gen 3-origin Pokémon gets its original PID, fateful flag, markings and carried ribbons back (the contest ranks cannot be unfolded), and a Poké Transfer met location becomes a Gen 3 landing. Every Gen 3 party record carries mail id 0xFF (no mail). A Gen 3 destination is a **rebuild**, not a carry — see "Rules: Poké Transporter and the Gen 3 rebuild" below. |
 
 The result: any of the interconverting games ↔ any other, **full two-way** — deliberately beyond
 HOME's one-way Let's Go limit — bounded only by destination dex presence.
@@ -362,7 +369,12 @@ itself, and with only the old pool every TM taught after arrival would.
    species name an un-nicknamed Pokémon arrives holding, and the substituted in-game-trade OT — are
    written in the **record's** language rather than the display one: a Japanese Pikachu transfers as
    ピカチュウ and the trade OT as トレーナー. An English-only name would both read wrong and make the
-   Pokémon look deliberately nicknamed to anything comparing the two.)
+   Pokémon look deliberately nicknamed to anything comparing the two.) An international record stores
+   no language, so `language()` infers it as PKHeX `GBPKM` does: a German-only letter in the OT name
+   is German, otherwise the language whose species name the record carries, otherwise English; and
+   Transporter takes the receiving save's language where the record cannot rule it out
+   (`virtualConsoleTransferLanguage`, PKHeX `TransferLanguage`). Whether it is nicknamed is judged
+   against that language's species name, never the display language's.
 3. **The 3DS locale block stays 0** (Country / Region / ConsoleRegion, `0xE0`–`0xE2`). PKSE reads no
    console region off the receiving save, and inventing one would be worse than blank.
 
@@ -390,9 +402,11 @@ if (!(inFamily(from) || isVirtualConsole(from))
 ```
 
 `RBY` and `GSC` are in the family as a **source only** — see the Poké Transporter section above.
-Every other pre-Switch group (`DP`/`PT`/`HGSS`, `BW`/`B2W2`, `XY`/`ORAS`) is absent entirely, so a
-transfer to or from one returns `Unsupported` and `convertForPane` declines it with a message.
-Depositing any of them into PKSE's own bank is fine — that is storage, not conversion.
+Every other pre-Switch group (`DP`/`PT`/`HGSS`, `BW`/`B2W2`, `XY`/`ORAS`) is absent from the family,
+so a transfer to or from one returns `Unsupported` and `convertForPane` declines it with a message —
+**except between two groups that share its format**, which `gate()` checks first and answers from
+the destination's dex and forms alone (the sibling re-wrap). That is what lets a banked Diamond, Black
+or X Pokémon, which reloads as HeartGold, Black 2 or Omega Ruby, be withdrawn back into its own game.
 
 Then three checks, in order:
 
@@ -637,7 +651,7 @@ The bank is its own file and gets its own decision.
 
 ```cpp
 bool storageExitConfirmActive;
-int  storageExitConfirmIndex;   // 0 = Save & Exit, 1 = Discard & Exit, 2 = Cancel
+int  storageExitConfirmIndex;   // STORAGE_EXIT_ROW_SAVE / _DISCARD / _CANCEL
 bool exitAfterBankChoice;       // set when + (exit app) raised the prompt
 ```
 
@@ -645,9 +659,10 @@ Pressing `+` (quit the app) **is not an answer to "save the bank?"**, so it asks
 the exit once Save or Discard has been picked:
 
 ```cpp
-if (kDown & HidNpadButton_Plus) {
-    if (storageExitConfirmActive) return;      // answer that first
-    returnHeldToOrigin();                      // a carried mon goes home before anything is weighed
+if ((buttonsDown & HidNpadButton_Plus) && overlayOwnsInput())
+    buttonsDown &= ~HidNpadButton_Plus;        // any open dialog or menu is answered first
+if (buttonsDown & HidNpadButton_Plus) {
+    if (!returnHeldToOrigin()) return;         // a carried mon goes home first; one with nowhere to go keeps the app open
     if (bank && bank->hasChanged()) {
         storageExitConfirmActive = true;
         storageExitConfirmIndex = 0;
@@ -662,9 +677,32 @@ if (kDown & HidNpadButton_Plus) {
 Writing the bank on the way out was a real bug: it committed every transfer even when the user then
 **declined** the game save, and the two files disagreed. A deposit became a permanent **clone** (the
 bank has it, the save still has it); a withdrawal a permanent **loss** (the bank no longer has it,
-the save was never written). Asking lets Discard rewind both sides and write nothing.
+the save was never written).
+
+**The bank and the game save are separate and are saved separately. This is a design rule; do not
+change it.** Leaving the bank with changes prompts **Save & Exit / Discard changes / Cancel**, and Save
+writes the bank only. The game save (X, `performSave`) writes the game only and never the bank.
+Saving the bank from the game save, or replacing the prompt's Save with a "keep until the game is
+saved" row, has been tried and reverted: it is not the behaviour users expect from this screen.
+uihost's `testBankSavedSeparately` pins it.
+
+**Discard is the bank's alone, too.** The prompt's **Discard changes** calls `Bank::load()` and
+nothing else: it never touches the save's boxes or party. A Pokemon withdrawn from the bank and then
+discarded stays in the save box, and the bank gets its saved copy back. Whether the save keeps it is
+the GAME save's own Save/Discard decision. Rewinding the save's boxes from the bank's Discard (a
+"transfer journal") has been tried and removed: Discard must not undo a move into or out of the Box.
+
+Because the two saves are separate decisions, saving one and discarding the other after a transfer
+leaves the two files disagreeing: a deposit becomes a clone, a withdrawal a loss. That is the
+accepted cost of keeping the saves separate; the game's own "Unsaved changes" prompt is the warning.
 
 `Bank::load()` doubles as "discard": it clears every slot and re-reads the on-disk state.
+
+Put Back (`returnHeldToOrigin()`) sends each carried cell to its own origin
+(`moveMonOrigins`), drops a copy (its original never left), keeps a save slot to the save's own
+format, falls back to any free slot in the same pane and then, for a save Pokemon, the bank. A cell
+that fits nowhere stays in hand and the function returns false, which calls off the exit or the save
+that asked for it.
 
 ## Pokémon files (`.pk1` … `.pa9`, `.ek3` … `.ea9`)
 
@@ -708,10 +746,11 @@ plausible-looking corruption rather than an error**:
   below.
 
 PKSM stores *box* records, so each is grown to PKSE's party size and — for PK8, whose level lives in
-that tail — seeded from EXP before `recalculateStats()`. **Every one of PKSM's nine generation tags
-has a PKSE format**, so nothing a real bank can hold is refused; `PKSMImportReport::unsupported` is a
-counter that no longer fires, kept because it is the honest answer if PKSM ever adds a tag, and
-because a silently dropped record is the one outcome the importer must never produce.
+that tail — seeded from EXP before `recalculateStats()`; a Gen 3 record's party tail gets mail id
+0xFF (no mail). **Every one of PKSM's Gen 1–8 tags has a PKSE format.** Its Gen 9 tag (`9`) has none
+and is counted in `PKSMImportReport::unsupported` rather than as damaged, because a silently dropped
+record is the one outcome the importer must never produce. For the same reason a file cut short
+inside its last box still imports the whole records before the cut.
 
 **A private list of supported formats went stale once, and it is the shape to watch for.** The
 importer carried its own set of supported generations — Gen 1, Gen 3, Let's Go, Gen 8 — written when
@@ -997,9 +1036,10 @@ Six rules do the work, each found as a real defect on that bank:
 
 **Moves follow the same supported/unsupported split.** The Poké Transporter rule stands, but a Gen 3
 destination is a rebuild rather than a carry, so a move the fabricated encounter could never have
-taught is dropped. **Gen 3's own two groups are exempt**: RSE and FR/LG trade on real hardware and
-trading does not revalidate a moveset, so an Emerald Battle Frontier tutor move survives a move into a
-FireRed save even though FireRed's pool is narrower.
+taught is dropped. **Gen 3's own two groups are exempt**: RSE and FR/LG share one format, so a move
+between them is the sibling re-wrap above, not a conversion, and an Emerald Battle Frontier tutor move
+survives a move into a FireRed save even though FireRed's pool is narrower (trading does not revalidate
+a moveset either).
 
 **Unown's letter is the PID in Gen 3** — see `unownFormFromPID` / `withUnownFormValue` in
 `Pokemon3FRLG.h`, which the entity layer and the conversion share (there were FIVE copies of that bit

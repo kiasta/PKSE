@@ -64,6 +64,7 @@ namespace Pokemon
         void setSpecies(uint16_t species) noexcept override
         {
             writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + 0x08), species);
+            resetSizeAbsolutes();
             recalculateStats();
             refreshChecksum();
         }
@@ -121,6 +122,7 @@ namespace Pokemon
         {
             uint8_t packedByte = (static_cast<uint8_t>(data[0x1D]) & 0x07) | ((formValue & 0x1F) << 3);
             data[0x1D] = static_cast<std::byte>(packedByte);
+            resetSizeAbsolutes();
             recalculateStats();
             refreshChecksum();
         }
@@ -755,6 +757,29 @@ namespace Pokemon
             return static_cast<uint8_t>(data[0x3B]);
         }
 
+        /// The spirit and mood a Pokemon arrives in the game with (PKHeX PB7.InitialSpiritMood).
+        static constexpr uint8_t INITIAL_SPIRIT_MOOD = 100;
+        uint8_t spirit() const noexcept { return static_cast<uint8_t>(data[0xAC]); }
+        uint8_t mood() const noexcept { return static_cast<uint8_t>(data[0xAD]); }
+        /// PKHeX PB7.ResetSpiritMood. The caller refreshes the checksum.
+        void resetSpiritMood() noexcept
+        {
+            data[0xAC] = static_cast<std::byte>(INITIAL_SPIRIT_MOOD);
+            data[0xAD] = static_cast<std::byte>(INITIAL_SPIRIT_MOOD);
+        }
+        /// When the Pokemon arrived in this save (PKHeX PB7.ReceivedDate/ReceivedTime, 0xCB-0xD0):
+        /// years since 2000, then month, day, hour, minute, second. The caller refreshes the checksum.
+        void setReceivedDateTime(uint8_t receivedYear, uint8_t receivedMonth, uint8_t receivedDay, uint8_t receivedHour, uint8_t receivedMinute, uint8_t receivedSecond) noexcept
+        {
+            data[0xCB] = static_cast<std::byte>(receivedYear);
+            data[0xCC] = static_cast<std::byte>(receivedMonth);
+            data[0xCD] = static_cast<std::byte>(receivedDay);
+            data[0xCE] = static_cast<std::byte>(receivedHour);
+            data[0xCF] = static_cast<std::byte>(receivedMinute);
+            data[0xD0] = static_cast<std::byte>(receivedSecond);
+        }
+        uint8_t receivedYear() const noexcept { return static_cast<uint8_t>(data[0xCB]); }
+
         float heightAbsolute() const noexcept
         {
             uint32_t bits = readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x2C));
@@ -770,6 +795,19 @@ namespace Pokemon
             std::memcpy(&result, &bits, sizeof(float));
             return result;
         }
+
+        /**
+         * The absolute height and weight a PB7 stores (0x2C, 0xE4) for a species, form and pair of
+         * size scalars, exactly as PKHeX PB7.GetHeightAbsolute / GetWeightAbsolute compute them --
+         * which MiscVerifierPB7 compares bit for bit. Two things decide the last bit: the weight is
+         * `heightRatio * (weightRatio * baseWeight)`, in that grouping, and no multiply may be fused
+         * into the following add (aarch64 `fmadd` rounds once where the game rounds twice).
+         * Every writer of those floats goes through these.
+         */
+        static float heightAbsoluteFor(uint16_t speciesId, uint8_t formId, uint8_t heightScalarValue) noexcept;
+        static float weightAbsoluteFor(uint16_t speciesId, uint8_t formId, uint8_t heightScalarValue, uint8_t weightScalarValue) noexcept;
+        /// Rewrites both stored absolutes from the current species, form and scalars.
+        void resetSizeAbsolutes() noexcept;
     };
 }
 

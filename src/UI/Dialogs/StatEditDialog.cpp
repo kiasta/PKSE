@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <string>
 
 #include "UI/Dialogs/StatEditDialog.h"
@@ -10,6 +11,7 @@
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/Experience.h"
 #include "Globals.h"
+#include "Enums/GameVersion.h"
 
 using namespace Trainer;
 
@@ -17,6 +19,17 @@ namespace UI
 {
     namespace Dialogs
     {
+        int legalEffortValueCap(const Pokemon::Pokemon &pokemon)
+        {
+            constexpr int modernEffortValueCap = 252;
+            constexpr int firstGenerationWithModernCap = 6;
+            const int fieldMaxEffortValue = pokemon.maxEV();
+            const int formatGeneration = Enums::getVersionGeneration(Enums::getGroupRepVersion(pokemon.getGameGroup()));
+            if (formatGeneration < firstGenerationWithModernCap)
+                return fieldMaxEffortValue;
+            return std::min(fieldMaxEffortValue, modernEffortValueCap);
+        }
+
         std::string getHyperTrainBlockedReason(const Pokemon::Pokemon &pokemon, int individualValue)
         {
             if (!pokemon.isHyperTrainingAvailable())
@@ -97,7 +110,7 @@ namespace UI
             framebuffer.drawText(labelX, centerY + 2, evLabel, secondMode ? Colors::Text : Colors::TextDim);
             framebuffer.drawText(valX, centerY + 2, std::to_string(usesAV ? screen.statEdit.currentAV : screen.statEdit.currentEV), secondMode ? Colors::Accent : Colors::Text);
             {
-                const std::string evRange = usesAV ? (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 200)")) : gbStats ? ("(0 - " + std::to_string(fmtMaxEV) + ")") : (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 252)"));
+                const std::string evRange = usesAV ? (g_allowIllegalEdits ? std::string("(0 - 255)") : std::string("(0 - 200)")) : ("(0 - " + std::to_string(g_allowIllegalEdits ? fmtMaxEV : legalEffortValueCap(*pokemon)) + ")");
                 framebuffer.drawText(rangeX, centerY + 4, evRange, Colors::TextDim, TextStyle::Caption);
             }
             screen.touchButtons.push_back({11, dialogX + 16, centerY - 4, dialogWidth - 32, 34});

@@ -24,6 +24,7 @@ namespace Trainer
 {
 
     constexpr size_t MY_STATUS9_SV = 0xE3E89BD1;   // Trainer Details
+    constexpr size_t TEAM_INDEXES9_SV = 0x33F39467; // battle-team box pointers (TeamIndexes8)
     constexpr size_t PARTY9_SV = 0x3AA1A9AD;
     constexpr size_t MONEY9_SV = 0x4F35D0DD;       // Money (u32)
     constexpr size_t PLAY_TIME9_SV = 0xEDAFF794;
@@ -90,6 +91,8 @@ namespace Trainer
         void updateBoxNameBlock() override;
         void updateCurrentBoxBlock() override;
         bool supportsBoxNames() const noexcept override { return true; }
+        /// A member of a battle team (PKHeX GetBoxSlotFlags: overwrite-protected).
+        bool isBoxSlotLocked(size_t boxIndex, size_t slotIndex) const noexcept override { return battleTeamBlockHoldsSlot(TEAM_INDEXES9_SV, boxIndex, slotIndex); }
         size_t getMaxBoxNameLength() const noexcept override { return BOX_NAME_LENGTH9_SV / 2 - 1; }
 
         void updateItemBlock() override;

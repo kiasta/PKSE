@@ -338,6 +338,8 @@ int main(int argc, char **argv)
     size_t roundTripFailCount = 0;
     size_t checksumFailCount = 0;
     size_t liveCount = 0;
+    size_t gen3Count = 0;
+    size_t gen3MailFailCount = 0;
     for (size_t boxIndex = 0; boxIndex < Trainer::Bank::BANK_BOX_COUNT; ++boxIndex)
     {
         for (size_t slotIndex = 0; slotIndex < Trainer::Bank::BANK_SLOTS_PER_BOX; ++slotIndex)
@@ -348,6 +350,15 @@ int main(int argc, char **argv)
                 continue;
             }
             ++liveCount;
+            // The Gen 3 party tail's mail id must read "no mail" (0xFF), as the game writes it.
+            if (Enums::isGen3Group(pokemon->getGameGroup()))
+            {
+                ++gen3Count;
+                if (pokemon->getData()[0x55] != std::byte{0xFF})
+                {
+                    ++gen3MailFailCount;
+                }
+            }
             if (pokemon->checksum() != pokemon->calculateChecksum())
             {
                 ++checksumFailCount;
@@ -362,6 +373,8 @@ int main(int argc, char **argv)
     checkEq<size_t>(liveCount, placedCount, "bank holds exactly the placed count");
     checkEq<size_t>(checksumFailCount, static_cast<size_t>(0), "every placed Pokemon has a valid checksum");
     checkEq<size_t>(roundTripFailCount, static_cast<size_t>(0), "every placed Pokemon survives encrypt/decrypt byte-exact");
+    check(gen3Count > 0, "the bank holds Gen 3 Pokemon to check the mail id on");
+    checkEq<size_t>(gen3MailFailCount, static_cast<size_t>(0), "every Gen 3 import carries mail id 0xFF (no mail)");
 
     // Placement contract: each SOURCE box that holds anything lands whole in the next empty
     // destination box, at the SAME slot positions, with its sidecar name. Rebuilt independently
@@ -489,7 +502,7 @@ int main(int argc, char **argv)
                 // An all-zero PK6 payload: the tag is one PKSE now houses, so it is no longer counted
                 // as "unsupported" -- but species 0 is not a Pokemon, so it lands in `damaged`. That
                 // is the honest outcome and it keeps a record of the distinction: `unsupported` means
-                // "PKSE has no format for this generation", which is now true of no tag at all.
+                // "PKSE has no format for this generation", which is true only of PKSM's Gen 9 tag.
                 {2, {2u, std::vector<uint8_t>(232, 0)}},   // tag 2 = Gen 6: a supported tag, empty payload
                 {3, {99u, std::vector<uint8_t>(4, 0)}},    // nonsense tag: damaged, not a crash
             });
@@ -497,7 +510,7 @@ int main(int argc, char **argv)
         check(syntheticImporter.scan(std::span<const uint8_t>(syntheticBankBytes.data(), syntheticBankBytes.size())), "synthetic bank parses");
         const auto &syntheticReport = syntheticImporter.report();
         checkEq<size_t>(syntheticReport.importable, static_cast<size_t>(2), "2 importable (PK8 + PB7)");
-        checkEq<size_t>(syntheticReport.unsupported, static_cast<size_t>(0), "no tag is unsupported any more");
+        checkEq<size_t>(syntheticReport.unsupported, static_cast<size_t>(0), "no supported tag is counted unsupported");
         checkEq<size_t>(syntheticReport.damaged, static_cast<size_t>(2), "2 damaged (bogus tag + species-0 PK6)");
         checkEq<size_t>(syntheticReport.occupied, static_cast<size_t>(4), "a bogus tag still counts as an occupied slot");
         checkEq<size_t>(syntheticReport.importable + syntheticReport.unsupported + syntheticReport.damaged, syntheticReport.occupied, "the three outcomes still add up to occupied");
@@ -637,6 +650,25 @@ int main(int argc, char **argv)
         Utils::writeUInt32LittleEndian(futureBytes.data() + 12, 1);
         Trainer::PKSMBankImport futureImporter;
         check(!futureImporter.scan(std::span<const uint8_t>(futureBytes.data(), futureBytes.size())), "a future version is refused");
+    }
+
+    // PKSM-Core's Gen 9 tag is a generation PKSE cannot house, not a damaged record. And a file cut
+    // short inside its last box still holds the whole records before the cut.
+    std::printf("\n--- Gen 9 tag and a partial last box ---\n");
+    {
+        auto bulbasaurRecord = makeSyntheticPK8(1, 5);
+        auto charmanderRecord = makeSyntheticPK8(4, 5);
+        auto fullBankBytes = makeBank(2, {{0, {9u, std::vector<uint8_t>(16, 0)}}, {1, {5u, bulbasaurRecord}}, {31, {5u, charmanderRecord}}});
+        // Keep box 1 whole and the first five records of box 2: the header still says two boxes.
+        fullBankBytes.resize(16 + (30 + 5) * 0x150);
+        Trainer::PKSMBankImport partialImporter;
+        check(partialImporter.scan(std::span<const uint8_t>(fullBankBytes.data(), fullBankBytes.size())), "a bank cut short inside its last box still parses");
+        const auto &partialReport = partialImporter.report();
+        checkEq<size_t>(partialReport.unsupported, static_cast<size_t>(1), "a Gen 9 record is unsupported");
+        checkEq<size_t>(partialReport.damaged, static_cast<size_t>(0), "  ... not damaged");
+        checkEq<size_t>(partialReport.perGen[9], static_cast<size_t>(1), "  ... and counted under its own tag");
+        checkEq<size_t>(partialReport.importable, static_cast<size_t>(2), "the record in the partial last box is imported");
+        checkEq<size_t>(partialReport.sourceBoxes, static_cast<size_t>(2), "the partial last box counts as a box");
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "PASSED", g_failures, g_failures == 1 ? "" : "s");

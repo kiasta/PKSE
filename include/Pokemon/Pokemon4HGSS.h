@@ -13,7 +13,8 @@
  *  3. THE EGG AND NICKNAMED FLAGS LIVE IN THE IV WORD at 0x38, bits 30 and 31. Rebuilding IV32
  *     from six IV values clears both. Always read-modify-write.
  *  4. THERE ARE TWO BALL FIELDS. 0x83 is the DP/Pt ball; 0x86 is the one HGSS added for Apricorn
- *     balls, and DP/Pt leave it zero. ball() prefers 0x86 when non-zero; setBall() writes both.
+ *     balls, and DP/Pt leave it zero. ball() prefers 0x86 when non-zero; setBall() writes 0x86
+ *     only for a Pokemon created in HGSS, and clamps 0x83 to the balls D/P/Pt know.
  *  5. THERE IS NO HYPER TRAINING and no handler (HT). hasHyperTraining() stays false and the
  *     HT accessors report absence, so effectiveIV() is the raw IV and the details view hides the
  *     HT row rather than inventing an empty one.
@@ -27,6 +28,7 @@
 #include <span>
 #include <string>
 
+#include "Enums/GameVersion.h"
 #include "Pokemon/Pokemon.h"
 #include "Pokemon/PersonalInfo4HGSS.h"
 #include "Encryption/Encryption4HGSS.h"
@@ -96,20 +98,32 @@ namespace Pokemon
         {
             return (offset + 3 < dataSize) ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
+        // Every write into the checksummed blocks refreshes the checksum, so no setter leaves the
+        // entity holding a stale one until the next save. The bank stores the live bytes as they
+        // are, and its loader drops any record whose checksum fails.
         void wr8(size_t offset, uint8_t value) noexcept
         {
             if (offset < dataSize)
+            {
                 data[offset] = static_cast<std::byte>(value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr16(size_t offset, uint16_t value) noexcept
         {
             if (offset + 1 < dataSize)
+            {
                 Utils::writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr32(size_t offset, uint32_t value) noexcept
         {
             if (offset + 3 < dataSize)
+            {
                 Utils::writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
 
         bool isPartySize() const noexcept { return dataSize >= Encryption::SIZE_PARTY4_HGSS; }
@@ -141,6 +155,9 @@ namespace Pokemon
         void setOTFriendship(uint8_t value) noexcept override { wr8(0x14, value); }
         uint16_t ability() const noexcept override { return rd8(0x15); }
         void setAbility(uint16_t value) noexcept override { wr8(0x15, static_cast<uint8_t>(value)); }
+        /// The slot is the PID's bit 0 (PKHeX G4PKM.AbilityNumber => 1 << PIDAbility), so 1 or 2
+        /// rebuilds the PID to hold that bit. Gen 4 has no hidden ability, so 4 changes nothing.
+        void setAbilityNumber(uint8_t abilityNumber) noexcept override;
         uint8_t language() const noexcept override { return rd8(0x17); }
         void setLanguage(uint8_t value) noexcept override { wr8(0x17, value); }
 
@@ -251,19 +268,23 @@ namespace Pokemon
         void setMetYear(uint8_t value) noexcept override { wr8(0x7B, value); }
         void setMetMonth(uint8_t value) noexcept override { wr8(0x7C, value); }
         void setMetDay(uint8_t value) noexcept override { wr8(0x7D, value); }
-        /// Whether this game WRITES the extended location fields at all: Platinum and
-        /// HeartGold/SoulSilver do, Diamond and Pearl do not.
-        static constexpr bool PT_HGSS_LOCATIONS = true;
+        /// Whether the game the Pokemon came FROM writes the extended location fields: Platinum
+        /// and HeartGold/SoulSilver do, Diamond and Pearl do not. This is the record's origin, not
+        /// the save it sits in (PKHeX G4PKM.PtHGSS).
+        bool originWritesExtendedLocation() const noexcept
+        {
+            const uint8_t originVersion = originGame();
+            return originVersion == static_cast<uint8_t>(Enums::GameVersion::Pt) || originVersion == static_cast<uint8_t>(Enums::GameVersion::HG) || originVersion == static_cast<uint8_t>(Enums::GameVersion::SS);
+        }
 
         /**
          * Write a location into BOTH Gen 4 fields, the way the games do.
          *
          * A place Diamond and Pearl have no id for goes in the extended field with "Faraway place"
          * left in the DP one; anything they do have goes in the DP field, and into the extended
-         * field as well only when this game is one that writes it. PKHeX G4PKM.MetLocation's
-         * setter, whose `PtHGSS` flag is this class's PT_HGSS_LOCATIONS.
+         * field as well only when `writesExtended`. PKHeX G4PKM.MetLocation / EggLocation setters.
          */
-        void writeLocationPair(size_t extendedOffset, size_t dpOffset, uint16_t value) noexcept
+        void writeLocationPair(size_t extendedOffset, size_t dpOffset, uint16_t value, bool writesExtended) noexcept
         {
             constexpr uint16_t FARAWAY_PLACE = 3002; // PKHeX Locations.Faraway4
             if (value == 0)
@@ -279,7 +300,7 @@ namespace Pokemon
             else
             {
                 wr16(dpOffset, value);
-                wr16(extendedOffset, PT_HGSS_LOCATIONS ? value : 0);
+                wr16(extendedOffset, writesExtended ? value : 0);
             }
         }
 
@@ -301,13 +322,19 @@ namespace Pokemon
             const uint16_t extended = rd16(0x44);
             return extended != 0 ? extended : rd16(0x7E);
         }
-        void setEggLocation(uint16_t value) noexcept override { writeLocationPair(0x44, 0x7E, value); }
+        void setEggLocation(uint16_t value) noexcept override { writeLocationPair(0x44, 0x7E, value, originWritesExtendedLocation()); }
         uint16_t metLocation() const noexcept override
         {
             const uint16_t extended = rd16(0x46);
             return extended != 0 ? extended : rd16(0x80);
         }
-        void setMetLocation(uint16_t value) noexcept override { writeLocationPair(0x46, 0x80, value); }
+        /// A Pal Park arrival from Gen 3 keeps the extended field when the transfer wrote one
+        /// (PKHeX G4PKM.ShouldSetMetLocationExtended).
+        void setMetLocation(uint16_t value) noexcept override
+        {
+            const bool fromGen3 = Enums::getVersionGeneration(originGame()) == 3;
+            writeLocationPair(0x46, 0x80, value, fromGen3 ? rd16(0x46) != 0 : originWritesExtendedLocation());
+        }
 
         bool isPokerusInfected() const noexcept override { return (rd8(0x82) & 0xF) != 0; }
         bool isPokerusCured() const noexcept override { return (rd8(0x82) & 0xF) == 0 && (rd8(0x82) >> 4) != 0; }
@@ -322,13 +349,11 @@ namespace Pokemon
             const uint8_t hgss = rd8(0x86);
             return hgss != 0 ? hgss : rd8(0x83);
         }
-        void setBall(uint8_t value) noexcept override
-        {
-            wr8(0x83, value);
-            // Write both, as PKHeX's HGSS path does: a record that keeps a stale 0x86 would read
-            // back as the old ball through the preference above.
-            wr8(0x86, value);
-        }
+        /// PKHeX G4PKM.Ball: 0x83 takes the ball when D/P/Pt can show it (up to the Cherish Ball)
+        /// and a Poke Ball otherwise; 0x86 takes it (up to the Sport Ball) only for a Pokemon
+        /// created in HeartGold/SoulSilver, and is 0 for everything else. The origin game, met
+        /// location, egg location and fateful flag decide that, so set them before the ball.
+        void setBall(uint8_t value) noexcept override;
 
         uint8_t metLevel() const noexcept override { return rd8(0x84) & 0x7F; }
         void setMetLevel(uint8_t value) noexcept override
@@ -395,8 +420,17 @@ namespace Pokemon
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
 
     private:
+        /// The checksum covers the four blocks: 0x08 up to the stored size.
+        static constexpr size_t CHECKSUM_START_OFFSET = 0x08;
+        void refreshChecksumAfterWrite(size_t offset) noexcept
+        {
+            if (offset >= CHECKSUM_START_OFFSET && offset < Encryption::SIZE_STORED4_HGSS)
+                refreshChecksum();
+        }
+        /// PKHeX G4PKM.WasCreatedInHGSS: whether 0x86 carries the ball.
+        bool wasCreatedInHGSS() const noexcept;
         // A new PID holding what the caller does not change (-1 = either); false when none can.
-        bool rerollPID(int wantShiny, int wantGender, int wantNature, uint32_t trainerID32) noexcept;
+        bool rerollPID(int wantShiny, int wantGender, int wantNature, int wantAbilityBit, uint32_t trainerID32) noexcept;
         void writeStoredGender(uint8_t genderValue) noexcept
         {
             wr8(0x40, static_cast<uint8_t>((rd8(0x40) & ~0x06) | ((genderValue & 3) << 1)));

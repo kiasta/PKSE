@@ -31,7 +31,7 @@ namespace Trainer
         {"Key Items", 0x640, 96, 1},
         {"TMs/HMs", 0x7c0, 106, 1},
         {"Medicine", 0x968, 64, 999},
-        {"Berries", 0xa68, 72, 999},
+        {"Berries", 0xa68, 67, 999}, // PKHeX ItemStorage6XY.Berry: the bytes after it are not the pouch
     };
 
 }

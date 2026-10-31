@@ -24,6 +24,7 @@ namespace UI
             ItemG3,      // held-item list for a Gen 3 pokemon -- SEPARATE, much smaller id space
             ItemG1,      // held-item list for a Gen 1 pokemon. Gen 1 has no held items, so this exists
                          //   only so the pouch kind below has a sibling; it is never opened.
+            ItemG2,      // held-item list for a Gen 2 pokemon -- its own one-byte id space and names
             Level,       // level 1-100
             Friendship,  // 0-255
             Ball,        // ball ids
@@ -37,10 +38,11 @@ namespace UI
             StatNature,  // 25 natures, applied to the STAT (mint) nature rather than the real one
             Species,     // 0-1025 (creator: choose the species for a new pokemon)
             // Item creation: the ids that legally belong in the pouch being viewed, supplied
-            // through pickerOrder. Two kinds because Gen 3 has its own item id space and name table.
+            // through pickerOrder. One kind per item id space: modern, Gen 1, Gen 2 and Gen 3.
             PouchItem,   // add-to-pouch list, modern item ids
             PouchItemG1, // add-to-pouch list, Gen 1 item ids (its TMs are ordinary bag items)
-            PouchItemG3  // add-to-pouch list, Gen 3 item ids (FireRed/LeafGreen)
+            PouchItemG3, // add-to-pouch list, Gen 3 item ids (all five GBA games)
+            PouchItemG2  // add-to-pouch list, Gen 2 item ids
         };
 
         int pickerOptionCount(PickerKind kind);

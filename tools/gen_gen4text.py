@@ -15,9 +15,13 @@ Two tables are emitted:
 
 plus a reverse map built at load time for encoding. The terminator is 0xFFFF.
 
-PKHeX also normalises the gender glyphs on the way out (the half-width MALE/FEMALE signs against
-the circled forms this page stores at U+246D/U+246E); that is done in Gen4Text.h's helpers rather
-than baked into the table, so the raw round trip stays exact.
+The page has two pairs of gender signs: the ordinary full-width ones (0x0EE/0x0EF, U+2642/U+2640)
+and half-width ones (0x1BB/0x1BC), which PKHeX decodes to U+246D/U+246E. PKHeX shows both as the
+ordinary signs, and writes the half-width pair back whenever the name is half-width
+(StringConverter4Util Normalize/UnNormalizeGenderSymbol). The table keeps the raw mapping so the
+raw round trip stays exact; gen4NormalizeGenderSymbol / gen4UnNormalizeGenderSymbol do the
+swapping, and the Pokemon4DP/4PT/4HGSS and Pokemon5BW/5B2W2 string readers and writers call them
+(Gen 5 stores the same two code points as raw UTF-16).
 """
 from __future__ import annotations
 
@@ -97,7 +101,8 @@ def main() -> int:
     h.append(" * FULL-WIDTH forms. Reading a Gen 4 name as UTF-16 yields CJK punctuation.\n")
     h.append(" *\n")
     h.append(" * GEN 5 MUST NOT USE THIS. Gen 5 stores real UTF-16 and needs no table; routing it\n")
-    h.append(" * through here mangles every name in a way that still looks like text.\n")
+    h.append(" * through here mangles every name in a way that still looks like text. Only the two\n")
+    h.append(" * gender-sign helpers apply to Gen 5, which stores the same half-width code points.\n")
     h.append(" *\n")
     h.append(" * The sibling of Gen1Text.h / Gen3Text.h: one table, one header, and every Gen 4 name\n")
     h.append(" * call site routes through it. The Gen 3 charset once existed as four ad-hoc subsets\n")
@@ -141,6 +146,25 @@ def main() -> int:
             if (GEN4_KOR[i] == unicode) return static_cast<uint16_t>(i + GEN4_KOR_START);
         }
         return GEN4_TERMINATOR;
+    }
+
+    inline constexpr uint16_t GEN4_HALF_WIDTH_MALE = 0x246D;
+    inline constexpr uint16_t GEN4_HALF_WIDTH_FEMALE = 0x246E;
+
+    /// The half-width gender glyphs read as the ordinary signs (PKHeX
+    /// StringConverter4Util.NormalizeGenderSymbol). Gen 5's raw UTF-16 uses the same code points.
+    inline uint16_t gen4NormalizeGenderSymbol(uint16_t unicode) noexcept {
+        if (unicode == GEN4_HALF_WIDTH_MALE) return 0x2642;
+        if (unicode == GEN4_HALF_WIDTH_FEMALE) return 0x2640;
+        return unicode;
+    }
+
+    /// The ordinary signs written back as the half-width glyphs, for a half-width name (PKHeX
+    /// StringConverter4Util.UnNormalizeGenderSymbol).
+    inline uint16_t gen4UnNormalizeGenderSymbol(uint16_t unicode) noexcept {
+        if (unicode == 0x2642) return GEN4_HALF_WIDTH_MALE;
+        if (unicode == 0x2640) return GEN4_HALF_WIDTH_FEMALE;
+        return unicode;
     }
 
     /// True when every character of `text` has a Gen 4 glyph. The editor asks this BEFORE accepting
