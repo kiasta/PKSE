@@ -25,6 +25,7 @@
 
 #include "Pokemon/Pokemon.h"
 #include "Enums/LanguageID.h" // the egg placeholder's language, and the default save language
+#include "Pokemon/Evolution.h" // speciesNameAsStored, for a hatched egg
 #include "Pokemon/SpeciesConverter3.h" // the real Gen 3 internal <-> National tables (PKHeX-derived)
 #include "Encryption/Encryption3RSE.h"
 
@@ -55,6 +56,8 @@ namespace Pokemon
             std::byte *encryptedRecord = Encryption::encryptArray3RSE(std::span<const std::byte>(data.data(), dataSize));
             auto copiedPokemon = std::make_unique<Pokemon3RSE>(std::span<const std::byte>(encryptedRecord, dataSize));
             delete[] encryptedRecord;
+            // Not in the bytes, so it has to be carried: an egg's OT renders through it.
+            copiedPokemon->setSaveLanguage(saveLanguage);
             return copiedPokemon;
         }
 
@@ -253,14 +256,21 @@ namespace Pokemon
         {
             return Encryption::checksum3RSE(std::span<const std::byte>(data.data(), dataSize));
         }
-        void refreshChecksum() noexcept override { wr16(0x1C, calculateChecksum()); }
+        /// Clears the Bad Egg flag (0x13 bit 0) too, as PKHeX PK3.RefreshChecksum does: a record
+        /// whose checksum is made good is no longer a Bad Egg.
+        void refreshChecksum() noexcept override
+        {
+            wr8(0x13, static_cast<uint8_t>(rd8(0x13) & ~0x01));
+            wr16(0x1C, calculateChecksum());
+        }
         bool checksumValid() const noexcept override { return checksum() == calculateChecksum(); }
 
         void setSpecies(uint16_t national) noexcept override
         {
-            wr16(0x20, gen3NationalToInternal(national));
-            // set HasSpecies flag
-            if (national != 0) wr8(0x13, rd8(0x13) | 0x02);
+            const uint16_t internalSpecies = gen3NationalToInternal(national);
+            wr16(0x20, internalSpecies);
+            // HasSpecies follows the stored species both ways (PKHeX PK3.Species).
+            wr8(0x13, static_cast<uint8_t>(internalSpecies != 0 ? (rd8(0x13) | 0x02) : (rd8(0x13) & ~0x02)));
             recalculateStats();
             refreshChecksum();
         }
@@ -334,6 +344,7 @@ namespace Pokemon
         }
         void setEgg(bool isEgg) noexcept override
         {
+            const bool wasPlaceholder = !isEgg && eggTextIsPlaceholder() && nickname() == EGG_NICKNAME_JAPANESE;
             uint32_t ivValue = iv32();
             if (isEgg)
                 ivValue |= (1u << 30);
@@ -352,9 +363,17 @@ namespace Pokemon
                 setLanguage(static_cast<uint8_t>(Enums::LanguageID::Japanese));
                 setNickname(EGG_NICKNAME_JAPANESE);
             }
+            else if (wasPlaceholder)
+            {
+                // Hatching replaces the placeholder: the language becomes the save's and the name
+                // the species' own, as the game stores it.
+                setLanguage(saveLanguage);
+                setNickname(speciesNameAsStored(speciesID(), getGameGroup(), saveLanguage));
+            }
             refreshChecksum();
         }
         void setLevel(uint8_t level) noexcept override;   // writes EXP for the level, recalcs
+        void setExp(uint32_t value) noexcept override;    // writes EXP (the level derives from it), recalcs
         void setNature(uint8_t nature) noexcept override; // re-rolls PID to the nature (keeps gender + shiny)
         void setGender(uint8_t gender) noexcept override; // re-rolls PID to the gender (keeps nature + shiny)
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;

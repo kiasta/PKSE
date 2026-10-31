@@ -249,6 +249,7 @@ namespace Pokemon
             data[0x13E] = static_cast<std::byte>(value);
             refreshChecksum();
         }
+        bool isHyperTrainingAvailable() const noexcept override { return homeTracker() != 0; }
 
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xEE]); }
         void setOriginGame(uint8_t version) noexcept override
@@ -614,10 +615,8 @@ namespace Pokemon
 
         bool isShiny(uint32_t trainerID32, std::string species) const noexcept override
         {
-            if (trainerID32 == 0)
-            {
-                return false;
-            }
+            // No guard for an id of 0: PKHeX has none, and that is a real (if rare) trainer id.
+            // Callers skip empty slots, whose all-zero PID would otherwise read as shiny.
             uint32_t xorComponent = (pid() ^ trainerID32);
             uint32_t xorResult = (xorComponent ^ (xorComponent >> 16)) & 0xFFFF;
             return xorResult < 16;
@@ -645,10 +644,17 @@ namespace Pokemon
 
         /**
          * Alpha flag -- bit 5 of 0x16, the byte that also holds AbilityNumber in bits 0-2 (PA8).
-         * Read-only: nothing in PKSE creates an Alpha, but a save can already contain one and the
-         * Pokedex records Alpha sightings in their own slot.
+         * The Pokedex records Alpha sightings in their own slot.
          */
         bool isAlpha() const noexcept override { return (static_cast<uint8_t>(data[0x16]) & 0x20) != 0; }
+        bool hasAlphaFlag() const noexcept override { return true; }
+
+        /**
+         * A wild Alpha has height, weight and scale all at 255 (PKHeX LegendsArceusVerifier and
+         * MiscScaleVerifier), and its absolutes follow the scalars. Defined in the .cpp beside
+         * resetSizeAbsolutes().
+         */
+        void setAlpha(bool alpha) noexcept override;
 
         /**
          * Absolute height / weight -- IEEE-754 floats at 0xAC / 0xB0 (PA8), in the game's own units.

@@ -95,20 +95,32 @@ namespace Pokemon
         {
             return (offset + 3 < dataSize) ? Utils::readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + offset)) : 0;
         }
+        // Every write into the checksummed blocks refreshes the checksum, so no setter leaves the
+        // entity holding a stale one until the next save. The bank stores the live bytes as they
+        // are, and its loader drops any record whose checksum fails.
         void wr8(size_t offset, uint8_t value) noexcept
         {
             if (offset < dataSize)
+            {
                 data[offset] = static_cast<std::byte>(value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr16(size_t offset, uint16_t value) noexcept
         {
             if (offset + 1 < dataSize)
+            {
                 Utils::writeUInt16LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
         void wr32(size_t offset, uint32_t value) noexcept
         {
             if (offset + 3 < dataSize)
+            {
                 Utils::writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + offset), value);
+                refreshChecksumAfterWrite(offset);
+            }
         }
 
         bool isPartySize() const noexcept { return dataSize >= Encryption::SIZE_PARTY6_ORAS; }
@@ -140,14 +152,10 @@ namespace Pokemon
         uint32_t pid() const noexcept override { return rd32(0x18); }
         void setPID(uint32_t value) noexcept override { wr32(0x18, value); }
         uint8_t nature() const noexcept override { return rd8(0x1C); }
-        void setNature(uint8_t nature) noexcept override
-        {
-            if (nature > 24)
-                return;
-            wr8(0x1C, nature);
-            recalculateStats();
-            refreshChecksum();
-        }
+        /// A plain write, except for a Pokemon from Gens 3-4, whose nature must still equal
+        /// `EC % 25` (PKHeX GenderVerifier.VerifyNaturePID): its PID, which is also its encryption
+        /// constant, is rebuilt to give the new nature.
+        void setNature(uint8_t nature) noexcept override;
         uint8_t statNature() const noexcept override { return nature(); } // mints arrive in Gen 8
         void setStatNature(uint8_t) noexcept override {}
 
@@ -312,8 +320,10 @@ namespace Pokemon
 
         std::u16string otName() const override { return readString(0xB0, 13); }
         void setOTName(const std::u16string &value) noexcept override { writeString(0xB0, 13, value); }
-        uint8_t friendship() const noexcept override { return rd8(0xCA); }
-        void setFriendship(uint8_t value) noexcept override { wr8(0xCA, value); }
+        /// The CURRENT handler's friendship: the OT's (0xCA) while the OT holds it, the handling
+        /// trainer's (0xA2) after a trade (PKHeX G6PKM.CurrentFriendship).
+        uint8_t friendship() const noexcept override { return currentHandler() == 0 ? rd8(0xCA) : rd8(0xA2); }
+        void setFriendship(uint8_t value) noexcept override { wr8(currentHandler() == 0 ? 0xCA : 0xA2, value); }
         uint8_t otFriendship() const noexcept override { return rd8(0xCA); }
         void setOTFriendship(uint8_t value) noexcept override { wr8(0xCA, value); }
 
@@ -401,6 +411,19 @@ namespace Pokemon
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
 
     protected:
+        /// The checksum covers the four blocks: 0x08 up to the stored size.
+        static constexpr size_t CHECKSUM_START_OFFSET = 0x08;
+        void refreshChecksumAfterWrite(size_t offset) noexcept
+        {
+            if (offset >= CHECKSUM_START_OFFSET && offset < Encryption::SIZE_STORED6_ORAS)
+                refreshChecksum();
+        }
+        bool isFromGenerations3To5() const noexcept;
+        /// A new PID for a Pokemon from Gens 3-5, whose PID still decides its gender, its ability
+        /// slot and (Gens 3-4) its nature, and is also its encryption constant: those are held and
+        /// the encryption constant follows the PID (PKHeX PKM.SetShiny / SetPIDNature). `wantNature`
+        /// of -1 holds the current one. False, with nothing changed, when no PID fits.
+        bool rerollTransferredPID(int wantShiny, int wantNature, uint32_t trainerID32) noexcept;
         const PersonalRecord &personal() const noexcept
         {
             return getPersonalInfo6ORAS(speciesID(), form());

@@ -221,6 +221,7 @@ namespace Pokemon
             data[0x126] = static_cast<std::byte>(value);
             refreshChecksum();
         }
+        uint8_t hyperTrainMinimumLevel() const noexcept override { return 50; }
 
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xCE]); }
         void setOriginGame(uint8_t version) noexcept override
@@ -295,10 +296,25 @@ namespace Pokemon
         }
 
         uint8_t metLevel() const noexcept override { return static_cast<uint8_t>(data[0x125]) & 0x7F; }
+        /// Keeps the obedience level (0x11F) valid against the new met level, as PKHeX's
+        /// MiscVerifierHelpers.IsObedienceLevelValid requires: equal to it while the Pokemon is
+        /// untraded (no handling trainer name), and never below it after a trade.
         void setMetLevel(uint8_t value) noexcept override
         {
             uint8_t packedByte = (static_cast<uint8_t>(data[0x125]) & 0x80) | (value & 0x7F);
             data[0x125] = static_cast<std::byte>(packedByte);
+            const uint8_t newMetLevel = static_cast<uint8_t>(value & 0x7F);
+            const bool untraded = data[0xA8] == std::byte{0} && data[0xA9] == std::byte{0};
+            if (untraded || obedienceLevel() < newMetLevel)
+            {
+                data[0x11F] = static_cast<std::byte>(newMetLevel);
+            }
+            refreshChecksum();
+        }
+        uint8_t obedienceLevel() const noexcept { return static_cast<uint8_t>(data[0x11F]); }
+        void setObedienceLevel(uint8_t value) noexcept
+        {
+            data[0x11F] = static_cast<std::byte>(value);
             refreshChecksum();
         }
 
@@ -592,10 +608,8 @@ namespace Pokemon
 
         bool isShiny(uint32_t trainerID32, std::string species) const noexcept override
         {
-            if (trainerID32 == 0)
-            {
-                return false;
-            }
+            // No guard for an id of 0: PKHeX has none, and that is a real (if rare) trainer id.
+            // Callers skip empty slots, whose all-zero PID would otherwise read as shiny.
             uint32_t xorComponent = (pid() ^ trainerID32);
             uint32_t xorResult = (xorComponent ^ (xorComponent >> 16)) & 0xFFFF;
             return xorResult < 16;

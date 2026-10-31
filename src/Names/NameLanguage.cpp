@@ -30,8 +30,16 @@ namespace Names {
     size_t systemLanguageIndex()
     {
 #ifdef __SWITCH__
+        // The settings service is not open this early -- the system-language default can be read
+        // from Utils::loadSettings(), the first line of main() -- and setGetSystemLanguage on a
+        // service nobody initialised fails, which answered English for every console. libnx
+        // reference-counts the session, so opening and closing it here is safe at any time.
+        if (R_FAILED(setInitialize()))
+            return LANGUAGE_INDEX_ENGLISH;
         u64 languageCode = 0;
-        if (R_FAILED(setGetSystemLanguage(&languageCode)))
+        const Result languageResult = setGetSystemLanguage(&languageCode);
+        setExit();
+        if (R_FAILED(languageResult))
             return LANGUAGE_INDEX_ENGLISH;
         SetLanguage systemLanguage = SetLanguage_ENUS;
         if (R_FAILED(setMakeLanguage(languageCode, &systemLanguage)))

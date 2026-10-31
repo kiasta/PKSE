@@ -12,7 +12,8 @@ PKSE is a homebrew application for conveniently editing Pokemon save files on th
 ## **Features**
 - Backup and restore save files, directly on the console.
 - Edit party and box Pokemon: species, level, stats, IVs/EVs (AVs in Let's Go), nature, ability, moves, held item, ball, OT/met/origin, shininess and gender.
-- Edit trainer info and item pouches.
+- **Ribbons and marks** — the details page shows every ribbon and mark the Pokemon's format can hold, as the games draw them, and `Y` opens an editor to give or take any of them (or all at once), set a Gen 3 contest rank or a memory ribbon's count, and pick the ribbon a Gen 8/9 Pokemon displays. Any ribbon can be given; the legality checker flags the ones the Pokemon could not have earned, as information only.
+- Edit trainer info and item pouches. **Add All Items** (ZR in the Items view) gives you every item each pocket can hold, in the amount you choose, capped at what the game allows for each item. Key items are left out unless you switch them on, since getting one early can skip or break story events.
 - **Older generations** — open a save file from an emulator, a cartridge dump or a 3DS save manager and edit it the same way. Boxes, party, items, trainer details, the creator, the legality checker and the bank all work as they do for the Switch games.
 - **Pokemon creator** — build a Pokemon from scratch in any supported game's format, with legal options highlighted.
 - **Legality checker** — flags illegal values as you edit, and checks whether a real encounter in the Pokemon's origin game could have produced it (informational; it never blocks or auto-changes anything).
@@ -78,7 +79,6 @@ Every main-series game before the Switch is implemented too — 28 titles. Their
 ### Known gaps
 - Transferring *into* Gen 3 rebuilds the Pokemon's PID. Gen 3 derives nature, gender, shininess and ability slot from the PID, so PKSE searches for a PID that reproduces all four — those traits are preserved (the original PID is kept in the rare case no match is found). The trade-off is that the PID itself changes, and the resulting PID/IV pair won't correspond to a real Gen 3 RNG frame; PKSE warns you before the conversion. A nickname Gen 3's character set can't spell falls back to the species name, and an original trainer name it can't spell is left blank rather than replaced.
 - Pokemon from Generations 4, 5 and 6 can be stored in the bank, but PKSE doesn't convert them into another game's format yet.
-- Ribbons and marks are listed on the details page but can't be edited.
 - Korean Gold/Silver saves aren't supported. They use a different character table and checksum, so PKSE refuses them rather than half-opening one.
 - Red/Blue, Gold/Silver, Ruby/Sapphire, FireRed/LeafGreen (as a GBA save file), Diamond/Pearl and HeartGold/SoulSilver each write an identical save with no version byte, so PKSE can only name the pair.
 
@@ -92,7 +92,7 @@ Pick a user, a game, then a backup to work on (or create a new one). Backups liv
 
 ### Opening an older game's save
 
-An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat`, `.sgm`, `.dsv`, `.duc`, `.dss`, `.fla` and `.SaveRAM` files, second-player and save-slot files (`.sa2`–`.sa4`, `.srm2`, `.sav1`–`.sav9`), and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and if it can't open a file it says why, under the list. Before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
+An older game's save is a file, not an installed game. Copy it onto your SD card, press **Y — Open Save File** on the save picker and browse to it. The browser lists `.sav`, `.srm`, `.dat`, `.sgm`, `.dsv`, `.duc`, `.dss`, `.fla` and `.SaveRAM` files, second-player and save-slot files (`.sa2`–`.sa4`, `.srm2`, `.sav1`–`.sav9`), and 3DS saves named `main`; **X** shows every file. PKSE identifies the game from the file's contents, and if it can't open a file it says why, under the list. The browser opens in the folder you last picked a file from, and **ZR** adds the folder you are in to your favorites; **ZL** lists them, so another emulator's save folder is one press away. Before it writes to a file you opened this way it copies the original to `sdmc:/PKSE/FileBackups`.
 
 Saves straight from an emulator open as they are, and are written back in the same shape so the emulator keeps reading them:
 
@@ -151,12 +151,13 @@ export DEVKITPRO=/opt/devkitpro
 
 ### 3. Fetch the romfs assets (once per checkout)
 
-The fonts and art PKSE bundles into the `.nro` are not in the repository — `romfs/` is gitignored — and **the build downloads nothing**. Fetch them once with the four scripts in `tools/`:
+The fonts and art PKSE bundles into the `.nro` are not in the repository — `romfs/` is gitignored — and **the build downloads nothing**. Fetch them once with the five scripts in `tools/`:
 
 ```bash
 python tools/gen_fonts.py        # the UI fonts: Nunito, Noto Sans Symbols and Symbols 2 (SIL OFL)
 python tools/gen_typeicons.py    # the 19 type icons: 18 types plus Stellar
 python tools/gen_marks.py        # the origin marks, from PKHeX
+python tools/gen_ribbons.py      # the ribbon and mark images, from PKHeX
 python tools/gen_hdsprites.py    # every Pokemon HOME render, downscaled to 256px (needs Pillow)
 ```
 
@@ -174,7 +175,7 @@ From the repository root, in a POSIX shell — the devkitPro MSys2 shell on Wind
 make                   # or: make -j$(nproc)
 ```
 
-This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output, and `make all` is an alias for `make`.
+This produces **`PKSE.nro`** in the repository root; copy it to `/switch/` on your SD card. `make clean` removes the build output.
 
 `make` is the production build, the one releases are made from. `make BUILD_TYPE=development` builds **`PKSE-dev.nro`** instead, and `make all` builds both. The development build is listed as *PKSE (Development)*: the same app plus an on-console self test, reached with `-` on the save picker (see [`docs/DEV_TESTING.md`](docs/DEV_TESTING.md), which also covers the host test harnesses in `tools/harness/`). The two build into separate folders, so switching needs no `make clean`. SD-card logging is a **runtime** setting in both — Settings → *Enable Debug Logging*, off by default — so a user who hits a bug on a release can always produce a log.
 
@@ -247,7 +248,7 @@ It finds every `tools/gen_*.py` by itself. By default it **also regenerates any 
 | `gen_itemnames.py` | item names |
 | `gen_locations.py` | met-location names |
 | `gen_formnames.py` | form names in the eight languages besides English (needs the .NET SDK, see below) |
-| `gen_ribbonnames.py` | ribbon names in the eight languages besides English |
+| `gen_ribbonnames.py` | every format's ribbon table (where each ribbon is stored, its English name) and the names in the other eight languages |
 | `gen_personaltables.py` | per-game species data — stats, types, abilities, gender ratio, growth rate, forms — one file per save format |
 | `gen_personal.py` | the cross-game species table: per-game presence and form counts |
 | `gen_gen1.py` | Red/Blue/Yellow's own tables: species index, base stats, types and move PP |

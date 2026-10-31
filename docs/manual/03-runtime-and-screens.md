@@ -190,7 +190,13 @@ Three methods. That is the whole interface. Implementers:
 
 `TrainerViewScreen` additionally exposes `hasRequestedExit()` (the `+` button = quit the app) as a
 separate signal from `shouldExit()` (`B` = go back one screen), because they unwind different
-distances.
+distances. `+` does nothing while `overlayOwnsInput()` is true (any dialog, menu, page or picker with
+an `overlayNavHint()` entry, the details page, the inject confirm): it is not an answer to whatever
+is open. It also waits for a carried Pokemon to go home (`returnHeldToOrigin()`), and for the bank
+prompt when the bank changed (chapter 10, "Leaving with unsaved bank changes").
+
+`handleTrainerView` (`src/UI/UI.cpp`) refuses a trainer whose `isValid()` is false: the screen is
+never built on a save that failed to read, and the backup list reports the failure instead.
 
 ### Golden rules for `update()` and `draw()`
 
@@ -229,7 +235,9 @@ it at the top of the next `update()`.
 
 `include/Globals.h` holds the handful of process-wide flags. `g_` on a mutable global is the only
 prefix in this codebase. The settings are `inline bool`, persisted to `settings.cfg` by
-`Utils::saveSettings()` and loaded by `Utils::loadSettings()`.
+`Utils::saveSettings()` and loaded by `Utils::loadSettings()`. The file browser's favorite and
+last-used folders are saved in the same file but are not globals: they sit behind accessors in
+`Utils/Settings.h` (chapter 05).
 
 | Global | Default | Settings row | Meaning |
 |---|---|---|---|

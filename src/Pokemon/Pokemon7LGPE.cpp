@@ -4,6 +4,7 @@
 
 #include "Pokemon/Pokemon7LGPE.h"
 #include "Pokemon/PersonalInfo7LGPE.h"
+#include "Pokemon/PersonalInfoTable.h" // the base height and weight the size absolutes scale
 #include "Pokemon/Experience.h" // getLevelFromExp / getGrowthRate (real growth-table level)
 
 namespace Trainer
@@ -14,6 +15,53 @@ namespace Trainer
 
 namespace Pokemon
 {
+
+    namespace
+    {
+        // PKHeX PB7.GetHeightRatio / GetWeightRatio. The volatile stores keep the multiply from
+        // being fused into the add whatever the compiler flags are.
+        float heightRatioFor(uint8_t heightScalarValue)
+        {
+            volatile float scaledRatio = (heightScalarValue / 255.0f) * 0.79999995f;
+            return scaledRatio + 0.6f;
+        }
+
+        float weightRatioFor(uint8_t weightScalarValue)
+        {
+            volatile float scaledRatio = (weightScalarValue / 255.0f) * 0.40000004f;
+            return scaledRatio + 0.8f;
+        }
+    }
+
+    float Pokemon7LGPE::heightAbsoluteFor(uint16_t speciesId, uint8_t formId, uint8_t heightScalarValue) noexcept
+    {
+        const PersonalInfo &personalInfo = getPersonalInfo(speciesId, formId);
+        return heightRatioFor(heightScalarValue) * static_cast<float>(personalInfo.height);
+    }
+
+    float Pokemon7LGPE::weightAbsoluteFor(uint16_t speciesId, uint8_t formId, uint8_t heightScalarValue, uint8_t weightScalarValue) noexcept
+    {
+        const PersonalInfo &personalInfo = getPersonalInfo(speciesId, formId);
+        volatile float scaledWeight = weightRatioFor(weightScalarValue) * static_cast<float>(personalInfo.weight);
+        return heightRatioFor(heightScalarValue) * scaledWeight;
+    }
+
+    void Pokemon7LGPE::resetSizeAbsolutes() noexcept
+    {
+        constexpr size_t heightAbsoluteOffset = 0x2C;
+        constexpr size_t weightAbsoluteOffset = 0xE4;
+        if (dataSize < weightAbsoluteOffset + sizeof(float))
+            return;
+        const float heightValue = heightAbsoluteFor(speciesID(), form(), heightScalar());
+        const float weightValue = weightAbsoluteFor(speciesID(), form(), heightScalar(), weightScalar());
+        uint32_t heightBits = 0;
+        uint32_t weightBits = 0;
+        std::memcpy(&heightBits, &heightValue, sizeof(float));
+        std::memcpy(&weightBits, &weightValue, sizeof(float));
+        writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + heightAbsoluteOffset), heightBits);
+        writeUInt32LittleEndian(reinterpret_cast<uint8_t *>(data.data() + weightAbsoluteOffset), weightBits);
+        refreshChecksum();
+    }
 
     const char *Pokemon7LGPE::species() const noexcept
     {
@@ -166,37 +214,7 @@ namespace Pokemon
         if (statIndex == 0)
             return static_cast<uint16_t>(std::max(1, avStat(0) + initial + levelValue + 10));
 
-        // Nature table, column order [Atk,Def,Spe,SpA,SpD]: 0 = -10% (90), 1 = neutral (100), 2 = +10% (110).
-        static const int8_t natureStatModifiers[25][5] = {
-            {1, 1, 1, 1, 1},
-            {2, 0, 1, 1, 1},
-            {2, 1, 0, 1, 1},
-            {2, 1, 1, 0, 1},
-            {2, 1, 1, 1, 0},
-            {0, 2, 1, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 2, 0, 1, 1},
-            {1, 2, 1, 0, 1},
-            {1, 2, 1, 1, 0},
-            {0, 1, 2, 1, 1},
-            {1, 0, 2, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 2, 0, 1},
-            {1, 1, 2, 1, 0},
-            {0, 1, 1, 2, 1},
-            {1, 0, 1, 2, 1},
-            {1, 1, 0, 2, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 1, 2, 0},
-            {0, 1, 1, 1, 2},
-            {1, 0, 1, 1, 2},
-            {1, 1, 0, 1, 2},
-            {1, 1, 1, 0, 2},
-            {1, 1, 1, 1, 1},
-        };
-        const uint8_t natureValue = nature();
-        const int natureColumn = (natureValue < 25) ? natureStatModifiers[natureValue][statIndex - 1] : 1;
-        const int natureMod = (natureColumn == 0) ? 90 : (natureColumn == 2 ? 110 : 100);
+        const int natureMod = natureStatPercent(nature(), statIndex - 1);
 
         const int friendVal = friendship();
         const int scalar = static_cast<int>(((friendVal / 255.0f / 10.0f) + 1.0f) * 100.0f); // 100..110

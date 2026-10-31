@@ -190,8 +190,8 @@ namespace Trainer
         ID32 = readUInt32LittleEndian(sourceBytes + ST_ID32);
         TID16 = readUInt16LittleEndian(sourceBytes + ST_ID32);
         SID16 = readUInt16LittleEndian(sourceBytes + ST_ID32 + 2);
-        TID = TID16;
-        SID = SID16;
+        TID = ID32 % 1000000; // Gen 7+ shows the six-digit ID (PKHeX TrainerTID7)
+        SID = ID32 / 1000000;
         trainerGender = sourceBytes[ST_GENDER] & 1;
         money = readUInt32LittleEndian(at(blkMisc()) + MISC_MONEY);
         currentBox = at(blkBoxLayout())[BL_CURRENT];
@@ -297,6 +297,12 @@ namespace Trainer
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
+            // Unchanged since load: keep the bytes (a Bad Egg keeps its bad checksum, as in PKHeX).
+            if (slotHoldsLoadedRecord(party[partySlotIndex].get(), bytes + written * recordSize, recordSize, Encryption::decryptArray7USUM))
+            {
+                ++written;
+                continue;
+            }
             party[partySlotIndex]->refreshChecksum();
             // Staged through a party-length buffer -- see Trainer7USUM::makeEntity.
             std::vector<std::byte> rec(recordSize, std::byte{0});
@@ -322,6 +328,9 @@ namespace Trainer
             {
                 uint8_t *offset = b + (box * BOX_SLOTS + slotIndex) * recordSize;
                 auto &pokemon = boxes[box][slotIndex];
+                // Unchanged since load (an empty slot or a Bad Egg included): keep the file's bytes.
+                if (slotHoldsLoadedRecord(pokemon.get(), offset, recordSize, Encryption::decryptArray7USUM))
+                    continue;
                 if (pokemon)
                 {
                     // Empty slots go through here too. Re-encrypting the record we read back is

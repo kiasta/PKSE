@@ -75,6 +75,9 @@ namespace Trainer
         HeavyCount,
         LightCount,
         UpdateCounter,
+        /// The research entry's flag word: bit 0 updated, bit 1 has a report, bits 3/4/5 the
+        /// displayed gender (female), shiny and alpha (PKHeX PokedexSaveResearchEntry.Flags, low half).
+        Flags,
     };
 
     class Trainer8LA final : public Trainer

@@ -355,6 +355,7 @@ Maintained here. When you coin a term that will appear in more than one file, ad
 | Party collection | `party` | `partyList`, `team`, `activeParty` |
 | Storage box | `box`, `boxIndex`, `boxName` | `pcBox`, `storageBox` |
 | Slot inside a box or party | `slotIndex` | `pos`, `cell`, `spot` |
+| A counted Gen 1/2 list entry PKSE cannot read, kept and written back | `unmapped` (`UnmappedListEntry`, `isBoxSlotUnmapped`, `getUnmappedPartySlots`) | `glitch`, `invalid`, `unknown` in identifiers |
 | Cross-game persistent storage | `bank` | `vault`, `home`, `depot` |
 | Species identifier | `speciesId` | `dexId`, `natDex`, `species` (bare) |
 | Species display name | `speciesName` | `name` (bare) |
@@ -513,6 +514,7 @@ Rules:
 - Space after keywords (`if (`), none after function names (`draw(`).
 - Namespace bodies are indented one level (existing style).
 - Do not reformat lines you did not otherwise change. A diff that is 90% whitespace is a rejected diff.
+- **The repo's `.clang-format` encodes these rules.** Run `git clang-format` to format only the lines you changed; run `clang-format -i` on a whole file only when bringing that file up to the standard on purpose. It cannot split a multi-name declaration (one declaration per line is still yours to check), and it lays out a braced list with a trailing comma one value per line and joins one without onto a single line, so wrap a hand-wrapped or hand-aligned initializer list in `// clang-format off` / `// clang-format on`. Vendored directories carry a `.clang-format` that disables formatting.
 
 ---
 

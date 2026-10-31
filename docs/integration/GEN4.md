@@ -419,8 +419,13 @@ public void SetBoxWallpaper(int box, int value) => Storage[…] = (byte)AdjustWa
 PKSE does not currently show wallpapers. **Preserve the byte and do not touch it** — that is enough
 for a clean round trip.
 
-`BOX_FLAGS` and, in HGSS, `FlagsBoxContentChanged` (`int32` at `BOX_END + 4`, all-boxes value
-`0x3_FFFF`) are the game's "which boxes changed since last save" bitfield. Preserve them verbatim.
+`BOX_FLAGS` is preserved verbatim. HGSS's `FlagsBoxContentChanged` (`int32` at `BOX_END + 4`,
+all-boxes value `0x3_FFFF`) is the game's "which boxes changed since last save" bitfield, and it
+must **not** be left alone after a box edit: on its next save the game copies only the flagged
+boxes but writes the checksum of the new data, so an edited box it was not told about reads back
+corrupt (PKHeX `SAV4HGSS.GetFinalData` sets `0x3_FFFF` on every export, commit "Fix HGSS box saving
+(empty->not)"). `Trainer4HGSS::serialize()` writes `0x3_FFFF` whenever the box data changed, and
+leaves the field alone otherwise so an unedited save still round-trips byte for byte.
 
 ### 3.4 Party
 
@@ -693,8 +698,10 @@ public override byte BallHGSS { get => Data[0x86]; set => Data[0x86] = value; }
 
 `0x86` is a field HGSS added; DP/Pt leave it zero. PKHeX's `PK4.Ball` getter picks between them
 based on origin version. **Implement `ball()` to read `0x86` when non-zero and fall back to
-`0x83`**, and write both on set (that is what PKHeX's HGSS path does), or you get an Apricorn ball
-reading as a Poké Ball.
+`0x83`**, or you get an Apricorn ball reading as a Poké Ball. On set, follow PKHeX's `G4PKM.Ball`
+setter: `0x83` gets the ball if it is at most Cherish (16), else Poké Ball; `0x86` gets the ball
+(clamped the same way at Sport, 24) only when `WasCreatedInHGSS`, else 0. Writing the raw id to both
+puts Apricorn balls in the D/P/Pt field and gives every Pokémon created in a D/P/Pt save an HGSS ball.
 
 ### 5.6 Derived values
 
@@ -908,7 +915,9 @@ isGameSupported:     nothing to do -- derived from getGameGroup
 ```
 
 > **Diamond and Pearl are indistinguishable from the save alone**, exactly like Red/Blue and
-> Gold/Silver. Name the pair. Same for HeartGold/SoulSilver. Platinum stands alone.
+> Gold/Silver. Name the pair. HeartGold/SoulSilver are not: their trainer record's ROM code
+> (`Trainer1 + 0x1C`, 7 or 8) names the game, and `Trainer4HGSS::getGameVersion()` reads it.
+> Platinum stands alone.
 
 ### 11.2 New files
 
@@ -1151,10 +1160,11 @@ compare. That proves tables + crypt + checksum + IV unpack + formula in one shot
 12. **A name that exactly fills its field gets no terminator.**
 13. **Gen 4 text is a code page, not UTF-16.** Gen 5 *is* UTF-16 — do not share the converter.
 14. **`0x80000` is also Gen 5's size.** Detect on the footer size field + SDK magic (§2.6), not on length.
-15. **Diamond/Pearl and HeartGold/SoulSilver are pairs.** Name the pair.
+15. **Diamond/Pearl are a pair.** Name the pair. HeartGold/SoulSilver are told apart by the ROM code.
 16. **Met-location namespaces differ per game** — DP, Pt and HGSS each have their own.
 17. **`compactStorage()` must stay `false`.** Gen 4 storage is positional.
-18. **Preserve the box-changed flag bitfield** and the wallpaper bytes.
+18. **Flag every box as changed after a box edit in HGSS** (`0x3_FFFF` at `BOX_END + 4`), and
+    preserve the wallpaper bytes. Leaving the bitfield as found loses the edit on the game's next save.
 
 ---
 

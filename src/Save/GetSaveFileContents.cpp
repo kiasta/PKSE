@@ -116,8 +116,11 @@ namespace Save
         TrainerVariant variant = readTrainerInfo(backupDir, titleId);
         // The variant holds a VALUE, and the trainer classes are movable but not copyable, so the
         // chosen alternative is moved onto the heap rather than copied out.
-        return std::visit([](auto &trainer) -> std::unique_ptr<Trainer::Trainer>
-            { return std::make_unique<std::decay_t<decltype(trainer)>>(std::move(trainer)); }, variant);
+        std::unique_ptr<Trainer::Trainer> trainer = std::visit([](auto &loadedTrainer) -> std::unique_ptr<Trainer::Trainer>
+            { return std::make_unique<std::decay_t<decltype(loadedTrainer)>>(std::move(loadedTrainer)); }, variant);
+        if (!trainer->isValid())
+            return nullptr;
+        return trainer;
     }
 
     TrainerVariant readTrainerInfo(const char *backupDir, u64 titleId)
@@ -197,6 +200,14 @@ namespace Save
          * Auto-detects the game version and calls the appropriate saving function.
          * Uses virtual getGameGroup() method to determine concrete type without RTTI.
          */
+
+        // A save that never loaded (missing, truncated or damaged file) has nothing to write back,
+        // and writing it would replace the user's file with an empty or partial one.
+        if (!trainer.isValid())
+        {
+            logErrorToFile("Refusing to save: this save did not load", backupDir);
+            return false;
+        }
 
         // A file the user browsed to has no title id, and `backupDir` is that FILE. The session decides
         // the writer, not the group: FireRed/LeafGreen arrive both as an installed title and as a file.
@@ -363,8 +374,8 @@ namespace Save
             return false;
         }
         size_t written = fwrite(raw.data(), 1, raw.size(), outFile);
-        fclose(outFile);
-        if (written != raw.size())
+        const bool fileClosed = fclose(outFile) == 0;
+        if (written != raw.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete save file", savePath);
             return false;
@@ -438,9 +449,9 @@ namespace Save
         }
 
         size_t written = fwrite(encryptedData.data(), 1, encryptedData.size(), outFile);
-        fclose(outFile);
+        const bool fileClosed = fclose(outFile) == 0;
 
-        if (written != encryptedData.size())
+        if (written != encryptedData.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete save file", savePath);
             return false;
@@ -571,8 +582,8 @@ namespace Save
                 return false;
             }
             size_t written = fwrite(saveData.data(), 1, saveData.size(), outFile);
-            fclose(outFile);
-            if (written != saveData.size())
+            const bool fileClosed = fclose(outFile) == 0;
+            if (written != saveData.size() || !fileClosed)
             {
                 logErrorToFile("Failed to write complete save file", savePath);
                 return false;
@@ -620,9 +631,9 @@ namespace Save
         }
 
         size_t written = fwrite(encryptedData.data(), 1, encryptedData.size(), outFile);
-        fclose(outFile);
+        const bool fileClosed = fclose(outFile) == 0;
 
-        if (written != encryptedData.size())
+        if (written != encryptedData.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete save file", savePath);
             return false;
@@ -677,9 +688,9 @@ namespace Save
         }
 
         size_t written = fwrite(encryptedData.data(), 1, encryptedData.size(), outFile);
-        fclose(outFile);
+        const bool fileClosed = fclose(outFile) == 0;
 
-        if (written != encryptedData.size())
+        if (written != encryptedData.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete save file", savePath);
             return false;
@@ -732,9 +743,9 @@ namespace Save
         }
 
         size_t written = fwrite(encryptedData.data(), 1, encryptedData.size(), outFile);
-        fclose(outFile);
+        const bool fileClosed = fclose(outFile) == 0;
 
-        if (written != encryptedData.size())
+        if (written != encryptedData.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete save file", savePath);
             return false;
@@ -862,8 +873,8 @@ namespace Save
             return false;
         }
         const size_t written = fwrite(raw.data(), 1, raw.size(), outFile);
-        fclose(outFile);
-        if (written != raw.size())
+        const bool fileClosed = fclose(outFile) == 0;
+        if (written != raw.size() || !fileClosed)
         {
             logErrorToFile("Failed to write complete FRLG save file", savePath);
             return false;
@@ -887,14 +898,14 @@ namespace Save
         return true;
     }
 
-    void backupOriginalFile(const char *savePath)
+    bool backupOriginalFile(const char *savePath)
     {
         size_t length = 0;
         uint8_t *original = Utils::readAllBytes(savePath, &length);
         if (!original)
         {
             logErrorToFile("Could not read the save to back it up", savePath);
-            return;
+            return false;
         }
 
         const char *slash = strrchr(savePath, '/');
@@ -904,18 +915,20 @@ namespace Save
         mkdir(directory.c_str(), 0777);
 
         time_t nowSeconds = time(nullptr);
-        struct tm *t = localtime(&nowSeconds);
+        struct tm *localTime = localtime(&nowSeconds);
         char stamp[32] = "unknown";
-        if (t)
-            strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", t);
+        if (localTime)
+            strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", localTime);
 
         const std::string destination = directory + "/" + stamp + "_" + base;
-        FILE *bf = fopen(destination.c_str(), "wb");
-        if (bf)
+        bool backedUp = false;
+        FILE *backupFile = fopen(destination.c_str(), "wb");
+        if (backupFile)
         {
-            const size_t dialogWidth = fwrite(original, 1, length, bf);
-            fclose(bf);
-            if (dialogWidth == length)
+            const size_t writtenLength = fwrite(original, 1, length, backupFile);
+            const bool fileClosed = fclose(backupFile) == 0;
+            backedUp = writtenLength == length && fileClosed;
+            if (backedUp)
                 logInfoToFile("Save backed up to", destination.c_str());
             else
                 logErrorToFile("The backup was short", destination.c_str());
@@ -925,6 +938,39 @@ namespace Save
             logErrorToFile("Could not write the backup", destination.c_str());
         }
         delete[] original;
+        return backedUp;
+    }
+
+    bool replaceFileContents(const char *filePath, const std::vector<uint8_t> &fileBytes)
+    {
+        const std::string temporaryPath = std::string(filePath) + ".tmp";
+        FILE *temporaryFile = fopen(temporaryPath.c_str(), "wb");
+        if (!temporaryFile)
+        {
+            logErrorToFile("Failed to open the save for writing", temporaryPath.c_str());
+            return false;
+        }
+        const size_t writtenLength = fwrite(fileBytes.data(), 1, fileBytes.size(), temporaryFile);
+        const bool fileClosed = fclose(temporaryFile) == 0;
+        if (writtenLength != fileBytes.size() || !fileClosed)
+        {
+            logErrorToFile("Failed to write the complete save; the original is untouched", filePath);
+            remove(temporaryPath.c_str());
+            return false;
+        }
+        // The Switch's SD filesystem will not rename onto an existing file, so the original goes
+        // first. Its replacement is already complete on disk, and was backed up before this call.
+        if (remove(filePath) != 0 && errno != ENOENT)
+        {
+            logErrorToFile("Could not replace the save; the new bytes are left beside it", temporaryPath.c_str());
+            return false;
+        }
+        if (rename(temporaryPath.c_str(), filePath) != 0)
+        {
+            logErrorToFile("Could not move the new save into place; it is left at", temporaryPath.c_str());
+            return false;
+        }
+        return true;
     }
 
     namespace
@@ -1075,8 +1121,11 @@ namespace Save
         // the user pointed at their own save, quite possibly the only copy of it -- so the backup
         // has to be of what is on disk now, taken before the write. A caller writing to a scratch
         // copy of its own opts out: a backup per write would leave megabytes behind.
-        if (backupOriginal)
-            backupOriginalFile(savePath);
+        if (backupOriginal && !backupOriginalFile(savePath))
+        {
+            logErrorToFile("Refusing to write a save whose original could not be backed up", savePath);
+            return false;
+        }
 
         // serialize() applies every block and refreshes the checksums last. It is not virtual on
         // the base -- each generation returns its own image -- so this dispatches on the group,
@@ -1156,50 +1205,9 @@ namespace Save
             }
         }
 
-        FILE *f = fopen(savePath, "wb");
-        if (!f)
-        {
-            logErrorToFile("Failed to open the save for writing", savePath);
+        if (!replaceFileContents(savePath, fileBytes))
             return false;
-        }
-        const size_t written = fwrite(fileBytes.data(), 1, fileBytes.size(), f);
-        fclose(f);
-        if (written != fileBytes.size())
-        {
-            logErrorToFile("Failed to write the complete save", savePath);
-            return false;
-        }
         logInfoToFile("Loose save written", savePath);
-        return true;
-    }
-
-    bool saveTrainerInfoRBY(Trainer::Trainer1RBY &trainer, const char *savePath)
-    {
-        if (!savePath || !*savePath)
-        {
-            logErrorToFile("Gen 1 save: no path to write to");
-            return false;
-        }
-
-        backupOriginalFile(savePath);
-
-        // serialize() applies every block and refreshes the one-byte checksum last.
-        const std::vector<uint8_t> &raw = trainer.serialize();
-        FILE *f = fopen(savePath, "wb");
-        if (!f)
-        {
-            logErrorToFile("Failed to open Gen 1 save for writing", savePath);
-            return false;
-        }
-        const size_t written = fwrite(raw.data(), 1, raw.size(), f);
-        fclose(f);
-        if (written != raw.size())
-        {
-            logErrorToFile("Failed to write the complete Gen 1 save", savePath);
-            return false;
-        }
-        logInfoToFile("Successfully wrote Gen 1 save", savePath);
-        Utils::logEventToFile("SAVE gen=1 file=\"" + std::string(savePath) + "\" bytes=" + std::to_string(written) + " result=OK");
         return true;
     }
 }

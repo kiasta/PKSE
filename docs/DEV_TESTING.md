@@ -79,7 +79,7 @@ with an ordinary `g++`, so it can run against real save files on a PC instead of
 ./tools/harness/build-oldgens.sh [save-root]             # Gens 2, 4-7 + every save envelope
 ./tools/harness/build-pksmimport.sh [bank.bnk]           # PKSM bank import
 ./tools/harness/build-pokemonfile.sh [PKHeX Tests dir]   # .pkX files against PKHeX's 200 test files
-./tools/harness/build-legality.sh <save-root> [--verbose]  # legality sweep + six bite checks
+./tools/harness/build-legality.sh <save-root> [--verbose]  # legality sweep + seven bite checks
 ./tools/harness/build-selftest.sh [report] [save-root]   # 7 of the 13 self-test suites
 ./tools/harness/uihost/run.sh [report] [save-root]       # headless UI: real screens, synthetic input
 ```
@@ -325,8 +325,8 @@ those was invisible to the gate. Two loader rules came with that: an emulator **
 trimmed** exactly as `Save::openExternalSave` trims it (untrimmed, every Gen 2 save swept as
 "0 Pokemon"), and title folders are matched the way the console matches them (`SaveTree::folderFor`).
 
-**A clean sweep proves nothing on its own**, which is why the run ends with **six bite checks**. All
-six fail the run, because a checker that never fires is not a clean result.
+**A clean sweep proves nothing on its own**, which is why the run ends with **seven bite checks**. All
+seven fail the run, because a checker that never fires is not a clean result.
 
 1. **Met location.** A Pokemon moved to a met location no game has must draw a complaint. Two details
    decide whether it bites for the right reason. The bogus location must be one the FORMAT can hold —
@@ -360,6 +360,13 @@ six fail the run, because a checker that never fires is not a clean result.
 5. **Evolution, caught elsewhere.** The same pose where that evolution IS catchable elsewhere in the
    game must draw the SAME complaint — the stage-ordering rule in chapter 11.
 6. **Seadra.** The reported case, built from the tables with no save at all, in both directions.
+7. **Catch combo.** Let's Go spawns a slot's Pokemon up to one level above its range, so its wild rows
+   carry `ENCOUNTER_FLAG_CATCH_COMBO`. The donor is posed at a flagged row's max + 1, which must match,
+   and at max + 2, which must draw the met-level finding quoting the widened band. The row's species
+   has no pre-evolution and no other row at that place reaches max + 2, so nothing else can explain
+   the second pose. Only games whose table has flagged rows are counted, which today means the two
+   Let's Go saves. Before the flag existed, the Let's Go Eevee test save drew nine false "is met at
+   level" warnings.
 
 ### `build-selftest.sh` — the self test on the host
 
@@ -386,7 +393,15 @@ for whichever half you are changing.
   leave the whole Gen 1/2 route untested — and the cases most likely to break are the rare ones a real
   Red save has none of (Unown's letter, an in-game-trade OT, Celebi, the Dizzy Punch removal, Crystal
   naming itself). A blank entity is a legitimate PK1/PK2, so nothing there is a fixture pretending to
-  be a save.
+  be a save. The same chunk runs `receivingHandlerSynthetic`, which pushes a FireRed Pokemon into each
+  game with a handler and checks the exact handler block written (chapter 10, "The receiving player
+  becomes the handler"). The matrix itself converts INTO a fixed receiving trainer and checks that
+  every pairing made them the active handler.
+- `boxwrite` is the box half of the `save` suite's unedited write, for each Switch save in the tree
+  (Sword/Shield, Legends: Arceus, Scarlet/Violet, Legends: Z-A). It re-encodes the box block in memory
+  and requires every OCCUPIED slot back byte for byte; the file is never written. It shares
+  `include/Test/SCBlockRewrite.h` with the `save` suite, so both sort changed bytes into slots with
+  the same per-format record stride.
 
 It calls those suites **directly** rather than through the registry, which is why the sample pool is
 `inline` in `TestSuite.h` and not in a `.cpp`: linking the registry would drag in the ones that need
@@ -470,10 +485,36 @@ fixed-seed sweep of random presses — worth running at all.
   checking each key for the other's effect too. Add Item sat on `Y` until the search claimed it; the
   search branch returned first, so adding an item became unreachable while the nav bar still
   advertised it. Nothing failed.
+- **`testAddAllItems`** runs Add All Items through its dialog on **all nineteen save formats**,
+  including Ruby/Sapphire/Emerald, the one `runUI` does not walk, twice: key items off with a small amount, then key items on at 999. Every legal id
+  of every pouch is checked against the bag before it (the amount added, clamped to the item's own
+  ceiling, never lowered, key items untouched while off, and left out only when its pouch is full).
+  The ceilings PKHeX sets per item are written out again in the test, so a rule dropped from
+  `itemMaxCount()` fails instead of agreeing with itself. Then the save is **written and read back**,
+  and every stack must come back with its count: a writer that drops part of a full bag is still
+  holding it in the trainer the editor filled.
+- **`testRibbonEditor`** opens the ribbon editor on **all nineteen save formats** (a box Pokemon, or
+  the party where a box is empty). Gen 1 and Gen 2 must not offer it. Everywhere else it checks the
+  nav badges, one tile and one image per row, then Remove All, A, L/R stepping, taps, Give All and,
+  in Gen 8/9, affixing (which an unowned ribbon must refuse, and taking the ribbon away must clear).
+  Every edit must refresh the checksum and mark the save unsaved, a Gen 3 edit must keep the
+  fateful-encounter bit, and the details page's Ribbons row must show the new count. Then the save is
+  **written and read back**, and every ribbon must come back with its value.
 - **`testBoxMenus`** opens the Boxes view's `Y` menu and runs Clone and Move from it, then runs
   Search from the `X` box menu in both the Boxes and Storage views. The Pokemon menu is one list
   shared by two views, and the Boxes view's Move is a swap rather than a carry, so a change made
   for one view can quietly break the other.
+- **`testWithdrawSetsHandler`** puts a FireRed Pokemon in the bank, carries it into the open save
+  through the Storage view's Move, and requires the save's trainer to arrive as its active handler,
+  with the save's language where the format records one. It covers the withdraw call site, which hands
+  the trainer to the conversion. It runs on every save with a handler that conversion connects.
+- **`testHyperTraining`** sets one stat's Hyper Training flag through the stat editor, by button and
+  by tap, and requires the flag alone to change, the stored IV to stay put, the stat to follow and the
+  checksum to hold. It also checks that Cancel keeps nothing, that raising a trained IV to the maximum
+  drops the flag, that the row refuses below the format's level until "Allow illegal values" is on,
+  and that the details page and the party card both mark a trained IV. `runUI` walks every format
+  with Hyper Training for this; Brilliant Diamond/Shining Pearl and Scarlet/Violet were once opened
+  only for Add All Items, so a test that passed everywhere had never run on them.
 - **`Driver::tilt`** checks the on-screen keyboard's left stick against its D-pad. The keyboard runs
   its own loop, so the stick has to be sampled there too.
 - **The box summary panel's legality verdict clears the edit hint.** The panel is 452px wide; a
@@ -680,7 +721,7 @@ load-bearing**.
 | 1 | `tables` | Global | generation-independent data tables |
 | 2 | `assets` | Global | ROMFS: fonts, type icons, every sprite |
 | 3 | `picker` | Global | drives the save picker (console only) |
-| 4 | `browser` | Global | drives the file browser over a fixture directory it builds |
+| 4 | `browser` | Global | drives the file browser over a fixture directory it builds, including favorite folders and the last folder, read back through a scratch `settings.cfg` |
 | 5 | `gentables` | PerTarget | per-generation tables (items, learnsets, dex) |
 | 6 | `entity` | PerTarget | every Pokemon in the save |
 | 7 | `setters` | PerTarget | set → get on a blank entity, field by field |
@@ -769,7 +810,7 @@ and each is allowed only where it is proven to be that rewrite:
 |---|---|---|
 | Gen 1 | the current box's flush | every changed byte is in the bank copy, the initialised bit, a first-flush header or the checksum, and the bank copy now equals the live one (as `build-gen1.sh`) |
 | Gen 2 | the trainer-block backup refresh | every changed byte is in a mirror or a checksum word, and every mirror equals its source (as `build-oldgens.sh`) |
-| Sword/Shield, Legends: Arceus, Scarlet/Violet, Legends: Z-A | empty box slots normalised; Pokedex registration | decrypted block by block: only the box block (in EMPTY slots only) and the Pokedex blocks may differ |
+| Sword/Shield, Legends: Arceus, Scarlet/Violet, Legends: Z-A | empty box slots normalised; Pokedex registration | decrypted block by block: only the box block (in EMPTY slots only) and the Pokedex blocks may differ. A changed byte is placed in a slot by the format's own record stride (`Test::scBlockLayout`), never by dividing the block's size by the slot count: Scarlet/Violet's block holds 990 records for 960 visible slots, and that division put the normalised blanks onto the Pokemon beside them |
 | Let's Go | Pokedex registration | block by block: only the Pokedex block may differ, and a second unedited write must change nothing |
 | Brilliant Diamond / Shining Pearl | Pokedex registration | not attributable here, so any change is a WARNING naming the count and first offset |
 | everything else | nothing | the file must be identical |

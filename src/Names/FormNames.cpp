@@ -1129,13 +1129,53 @@ namespace Names
      * no grammar it cannot verify, stays correct for every form family rather than just regional
      * ones, and is how the French and Italian Pokedex sites present a form themselves.
      */
+    namespace
+    {
+        std::string composeDisplayName(const char *formName, const std::string &baseName)
+        {
+            if (formName == nullptr || formName[0] == '\0')
+                return baseName;
+            if (displayLanguageIndex() == LANGUAGE_INDEX_ENGLISH)
+                return std::string(formName) + " " + baseName;
+            return baseName + " (" + formName + ")";
+        }
+    }
+
     std::string getDisplayName(uint16_t speciesId, uint8_t formId, const std::string &baseName)
     {
-        const char *formName = getFormName(speciesId, formId);
-        if (formName == nullptr || formName[0] == '\0')
-            return baseName;
-        if (displayLanguageIndex() == LANGUAGE_INDEX_ENGLISH)
-            return std::string(formName) + " " + baseName;
-        return baseName + " (" + formName + ")";
+        return composeDisplayName(getFormName(speciesId, formId), baseName);
+    }
+
+    const char *getFormName(uint16_t speciesId, uint8_t formId, Enums::GameVersion group)
+    {
+        constexpr uint16_t pikachuSpecies = 25;
+        constexpr uint16_t arceusSpecies = 493;
+        const int generation = Enums::getVersionGeneration(Enums::getGroupRepVersion(group));
+        // PKHeX FormConverter.GetFormsPikachu, Gen 6: ORAS's Cosplay outfits, not the Gen 7+ caps.
+        // English only -- the localized table is built from the Gen 7+ list, so another language
+        // shows these English labels rather than a cap's name.
+        if (speciesId == pikachuSpecies && generation == 6)
+        {
+            static const char *const cosplayNames[] = {"", "Rock Star", "Belle", "Pop Star", "Ph.D.", "Libre", "Cosplay"};
+            return formId < sizeof(cosplayNames) / sizeof(cosplayNames[0]) ? cosplayNames[formId] : "";
+        }
+        // PKHeX FormConverter.GetFormsArceus, Gen 4: the ???-type plate sits at 9, so Fire through
+        // Dark are 10-17, and there is no Fairy.
+        if (speciesId == arceusSpecies && generation == 4)
+        {
+            constexpr uint8_t questionTypeForm = 9;
+            constexpr uint8_t lastGenerationFourForm = 17;
+            if (formId == questionTypeForm)
+                return "???";
+            if (formId > lastGenerationFourForm)
+                return "";
+            return getTypeName(formId < questionTypeForm ? formId : static_cast<uint8_t>(formId - 1));
+        }
+        return getFormName(speciesId, formId);
+    }
+
+    std::string getDisplayName(uint16_t speciesId, uint8_t formId, const std::string &baseName, Enums::GameVersion group)
+    {
+        return composeDisplayName(getFormName(speciesId, formId, group), baseName);
     }
 }

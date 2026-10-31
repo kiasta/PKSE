@@ -38,6 +38,7 @@ namespace UI
     SpriteManager::EvictFn SpriteManager::evictCallback = nullptr;
     std::map<uint8_t, Sprite *> SpriteManager::typeSpriteCache;
 std::map<uint32_t, Sprite *> SpriteManager::originMarkCache;
+    std::map<std::string, Sprite *> SpriteManager::ribbonSpriteCache;
     bool SpriteManager::initialized = false;
 
     void SpriteManager::setEvictCallback(EvictFn callback) { evictCallback = callback; }
@@ -111,6 +112,10 @@ std::map<uint32_t, Sprite *> SpriteManager::originMarkCache;
         for (auto &pair : typeSpriteCache)
             delete pair.second;
         typeSpriteCache.clear();
+
+        for (auto &pair : ribbonSpriteCache)
+            delete pair.second;
+        ribbonSpriteCache.clear();
 
         initialized = false;
         logInfoToFile("SpriteManager cleanup complete");
@@ -261,6 +266,20 @@ std::map<uint32_t, Sprite *> SpriteManager::originMarkCache;
         delete source;
         originMarkCache[key] = tinted; // a failed load is cached too, so romfs is asked once
         return tinted;
+    }
+
+    Sprite *SpriteManager::getRibbonSprite(const std::string &spriteStem)
+    {
+        if (!initialized)
+            init();
+
+        auto iterator = ribbonSpriteCache.find(spriteStem);
+        if (iterator != ribbonSpriteCache.end())
+            return iterator->second;
+
+        Sprite *sprite = loadSprite("sprites/ribbons/" + spriteStem + ".png");
+        ribbonSpriteCache[spriteStem] = sprite; // a failed load is cached too, so romfs is asked once
+        return sprite;
     }
 
     Sprite *SpriteManager::getTypeSprite(uint8_t typeId)

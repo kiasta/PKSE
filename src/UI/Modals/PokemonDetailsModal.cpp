@@ -11,6 +11,7 @@
 #include "UI/PKSEFramebuffer.h"
 #include "UI/ScreenChrome.h"
 #include "UI/SpriteManager.h"
+#include "UI/Dialogs/RibbonEditDialog.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/OriginStamp.h" // originStampLabel -- the Origin row
 #include "Utils/HelperUtilities.h"
@@ -54,6 +55,7 @@ namespace UI
             const bool usesAwakeningValues = p->hasAwakeningValues();
             const int selectedIndex = screen.details.selectedField; // 0-5 stats, 6 shiny, 7 nature, 8 gender, 9 level, 10-13 moves, 14 item
             const Legality::Report legalityRep = Legality::analyze(*p, p->getGameGroup());
+            const bool hasRibbons = !Names::getRibbonDefinitions(p->getGameGroup()).empty();
 
             screen.touchButtons.clear();
 
@@ -70,7 +72,7 @@ namespace UI
             // Regional/variant label ABOVE the name ("Combat Breed", "Alolan", "Hisuian", ...), so a
             // variant reads as what it is even when the pokemon is nicknamed. Only drawn when the form has a
             // name; the name drops a row to make space for it.
-            const char *variant = Names::getFormName(p->speciesID(), p->form());
+            const char *variant = Names::getFormName(p->speciesID(), p->form(), p->getGameGroup());
             int nameY = 16;
             if (variant[0] != '\0')
             {
@@ -345,7 +347,7 @@ namespace UI
             // PID-derived, so setForm is a no-op there -> exclude only Gen 3).
             if (notGen3 && Pokemon::getPersonalInfo(p->speciesID(), 0).formCount > 1)
             {
-                const char *fn = Names::getFormName(p->speciesID(), p->form());
+                const char *fn = Names::getFormName(p->speciesID(), p->form(), p->getGameGroup());
                 editRow("Form", (fn[0] != '\0') ? std::string(fn) : std::string("Base"), 26);
             }
             // Stat Nature (the mint / effective-stat nature) -- modern formats only.
@@ -376,10 +378,10 @@ namespace UI
                 originalTrainerName += (p->otGender() == 0) ? " (M)" : " (F)";
             row("OT", originalTrainerName);
             // Trainer ID in the format the game shows (six digits for Gen 7+ origins, 16-bit TID otherwise;
-            // a pokemon with no origin falls back to its own format -- only Gen 3 is 16-bit among these games).
+            // a pokemon with no origin falls back to its own format: six digits from Gen 7 on, five before).
             {
                 const uint8_t originVersion = p->originGame();
-                const bool sixDigit = (originVersion != 0) ? Enums::usesSixDigitTrainerID(originVersion) : !Enums::isGen3Group(p->getGameGroup());
+                const bool sixDigit = (originVersion != 0) ? Enums::usesSixDigitTrainerID(originVersion) : Enums::getVersionGeneration(Enums::getGroupRepVersion(p->getGameGroup())) >= 7;
                 if (sixDigit)
                     snprintf(buffer, sizeof(buffer), "%06u", p->id32() % 1000000u);
                 else
@@ -397,8 +399,9 @@ namespace UI
             // the game hands friendship, affection and memories to whichever of OT/HT is active.
             //
             // READ-ONLY. The handler is written by the Trade Evolve action, which is where the choice between
-            // a real save and a generated trainer belongs -- a trade is something you DO to a Pokemon, not a
-            // field you type into.
+            // a real save and a generated trainer belongs, and by a transfer into another game, which makes
+            // the receiving player the handler -- both are something you DO to a Pokemon, not a field you
+            // type into.
             if (p->hasHandler())
             {
                 std::string handlingTrainerName = utf16ToUtf8(p->htName());
@@ -488,6 +491,8 @@ namespace UI
             }
             if (notGen3)
                 editRow("Fateful", p->isFatefulEncounter() ? "Yes" : "No", 31);
+            if (p->hasAlphaFlag())
+                editRow("Alpha", p->isAlpha() ? "Yes" : "No", 34);
             {
                 // Pokerus: editable (None -> Infected -> Cured) where the game has it; read-only otherwise.
                 const char *pkrs = p->isPokerusInfected() ? "Infected" : p->isPokerusCured() ? "Cured" : "None";
@@ -496,16 +501,14 @@ namespace UI
                 else
                     row("Pokerus", pkrs);
             }
-            // Ribbons: count only (there can be dozens); Y / tap opens the full list.
+            // Ribbons: count only (there can be dozens); Y / tap opens the editor. Shown with none
+            // owned too, because the editor is also where ribbons are added.
+            if (hasRibbons)
             {
-                auto ribbonList = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup());
-                if (!ribbonList.empty())
-                {
-                    const int rectY = infoRowY - scroll;
-                    row("Ribbons", std::to_string(ribbonList.size()) + "  (Y)"); // advances iy
-                    if (rowVisible(rectY))
-                        screen.touchButtons.push_back({94, leftColumnX + 8, rectY, Lw - 16, editRowHeight});
-                }
+                const int rectY = infoRowY - scroll;
+                row("Ribbons", std::to_string(Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup()).size()) + "  (Y)"); // advances iy
+                if (rowVisible(rectY))
+                    screen.touchButtons.push_back({94, leftColumnX + 8, rectY, Lw - 16, editRowHeight});
             }
             framebuffer.clearClip();
             screen.details.leftOrder = leftOrder; // hand the nav its draw-order field list
@@ -669,6 +672,11 @@ namespace UI
                 screen.touchButtons.push_back({index, centreColumnX + 8, statRowY - 6, Cw - 16, statRowH - 6});
                 statRowY += statRowH;
             }
+            if (p->isHyperTrained())
+            {
+                framebuffer.drawText(nameX, statRowY - 8, "HT: Hyper Trained, plays as " + std::to_string(p->maxIV()), Colors::TextDim, TextStyle::Caption);
+                statRowY += 14;
+            }
 
             // Shiny toggle row (selectable index 6).
             statRowY += 10;
@@ -796,7 +804,7 @@ namespace UI
                     framebuffer.drawRoundedRect(rightColumnX + 14, infoRowY - 8, Rw - 28, 38, 10, Colors::Accent, 2);
                 }
                 const uint16_t heldItemId = p->hasHeldItem() ? p->heldItem() : 0;
-                const std::string iname = heldItemId ? std::string(Enums::isGen3Group(p->getGameGroup()) ? Names::getItemNameG3(heldItemId) : getItemName(heldItemId)) : std::string("None");
+                const std::string iname = heldItemId ? std::string(Names::getItemNameFor(p->getGameGroup(), heldItemId)) : std::string("None");
                 framebuffer.drawText(rightColumnX + 24, infoRowY, p->hasHeldItem() ? iname : std::string("--"), heldItemId ? Colors::Text : Colors::TextDim, TextStyle::Body);
                 // Only offer the row as a touch target where the format can actually hold an item;
                 // Gen 1 has no held-item field, so tapping it would open an editor over nothing.
@@ -806,18 +814,15 @@ namespace UI
 
             // Bottom nav bar -- the SAME badge guide as the rest of the app. This is a full-screen page, so
             // it gets a real nav bar. The context depends on which column is focused (values / details /
-            // moves). Drawn before the overlays so an open legality or ribbon popup dims it like everything
+            // moves). Drawn before the overlays so an open legality popup dims it like everything
             // else behind them.
             {
                 // An overlay drawn OVER this page owns input, so it names the keys -- this page's own
                 // controls do nothing while a picker or a confirm is up, and printing them anyway is
-                // what made the picker carry a second hint strip inside its card.
+                // what made the picker carry a second hint strip inside its card. The screen draws that
+                // bar itself, after the overlay, so the overlay's scrim does not dim it.
                 std::string navHint = screen.overlayNavHint();
-                if (!navHint.empty())
-                {
-                    drawNavBar(framebuffer, navHint);
-                }
-                else
+                if (navHint.empty())
                 {
                 // Y opens ribbons; R opens the legality list -- but only when there is something to read,
                 // so a pokemon with an empty report simply omits R: Legality (nothing to view).
@@ -829,12 +834,14 @@ namespace UI
                 // than discarding on the spot, so "Discard" would be a promise it does not keep. Dirtiness
                 // is already signalled by the top-bar "Unsaved changes" marker.
                 const std::string backSeg = "B: Close";
+                // Gen 1 and Gen 2 store no ribbons, so Y has nothing to open there.
+                const std::string ribbonSeg = hasRibbons ? "Y: Ribbons  |  " : "";
                 if (selectedIndex >= 15)
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Right: Values  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Right: Values  |  " + saveSeg + "  |  " + backSeg;
                 else if (selectedIndex >= 10)
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Left: Values  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Left: Values  |  " + saveSeg + "  |  " + backSeg;
                 else
-                    navHint = "A: Edit  |  Y: Ribbons  |  L: Randomize IVs  |  " + legalSeg + "Left: Details  |  Right: Moves  |  " + saveSeg + "  |  " + backSeg;
+                    navHint = "A: Edit  |  " + ribbonSeg + "L: Randomize IVs  |  " + legalSeg + "Left: Details  |  Right: Moves  |  " + saveSeg + "  |  " + backSeg;
                 drawNavBar(framebuffer, navHint);
                 }
             }
@@ -948,41 +955,10 @@ namespace UI
                 screen.touchButtons.push_back({96, 0, 0, screenWidth, H - NAV_BAR_HEIGHT});
             }
 
-            // Ribbon list overlay — opened by tapping the Ribbons row; any tap / B closes.
-            // Two columns, because a fully-decorated Gen 8/9 pokemon can carry dozens of ribbons and marks.
+            // The ribbon editor, opened by Y or by tapping the Ribbons row. It owns input and names
+            // its own keys through overlayNavHint().
             if (screen.details.ribbonOverlay)
-            {
-                const auto ribbonList = Names::getMonRibbons(reinterpret_cast<const uint8_t *>(p->getData().data()), p->getGameGroup());
-                framebuffer.drawFilledRect(0, 0, screenWidth, H, Color(0, 0, 0, 170));
-                const int cols = (ribbonList.size() > 12) ? 2 : 1;
-                const int perCol = (static_cast<int>(ribbonList.size()) + cols - 1) / std::max(1, cols);
-                const int overlayWidth = (cols == 2) ? 860 : 560;
-                const int overlayHeight = std::min(H - 60, 96 + std::max(1, perCol) * 28);
-                const int overlayX = (screenWidth - overlayWidth) / 2, oy = (H - overlayHeight) / 2;
-                framebuffer.drawFilledRoundedRect(overlayX, oy, overlayWidth, overlayHeight, 16, Colors::Panel);
-                framebuffer.drawRoundedRect(overlayX, oy, overlayWidth, overlayHeight, 16, Colors::Border, 1);
-                framebuffer.drawText(overlayX + 24, oy + 20, "Ribbons & Marks", Colors::Text, TextStyle::Heading);
-                {
-                    const char *h = "B / tap: close";
-                    int headingWidth, hh;
-                    framebuffer.measureText(h, headingWidth, hh, TextStyle::Caption);
-                    framebuffer.drawText(overlayX + overlayWidth - 24 - headingWidth, oy + 28, h, Colors::TextDim, TextStyle::Caption);
-                }
-                const int colW = (overlayWidth - 56) / std::max(1, cols);
-                for (size_t rbIndex = 0; rbIndex < ribbonList.size(); ++rbIndex)
-                {
-                    const int color = static_cast<int>(rbIndex) / std::max(1, perCol);
-                    const int ribbonRowIndex = static_cast<int>(rbIndex) % std::max(1, perCol);
-                    const int ribbonX = overlayX + 28 + color * colW;
-                    const int statRowY = oy + 66 + ribbonRowIndex * 28;
-                    if (statRowY > oy + overlayHeight - 26)
-                        continue;
-                    framebuffer.drawText(ribbonX, statRowY, ribbonList[rbIndex], Colors::Text, TextStyle::Caption);
-                }
-                // id 96: tap anywhere closes -- but NOT over the nav bar, whose badges are themselves
-                // tappable. Overlapping them would fire both the badge's button and this close.
-                screen.touchButtons.push_back({96, 0, 0, screenWidth, H - NAV_BAR_HEIGHT});
-            }
+                Dialogs::drawRibbonEditDialog(screen, framebuffer);
         }
     }
 }

@@ -61,6 +61,7 @@ namespace Trainer
         Gen9Paldea,   // Scarlet / Violet
         Gen9ZA,       // Legends: Z-A
         GO,           // Pokemon GO
+        GameBoyAdvance, // FireRed / LeafGreen on Nintendo Switch, sent through HOME
         Count
     };
 

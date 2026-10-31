@@ -2,6 +2,7 @@
 #define UI_TRAINER_VIEW_SCREEN_H
 
 #include <cstddef> // std::byte (details.editSnapshot)
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +25,10 @@
 namespace Pokemon
 {
     struct TradePartner;
+}
+namespace Names
+{
+    struct RibbonDefinition;
 }
 #include "Dialogs/StatEditDialog.h"
 #include "Dialogs/PickerDialog.h"
@@ -76,7 +81,7 @@ namespace UI
 
         // Storage (bank) view input + helpers (Phase 3.3b). Called from update().
         void handleStorageInput(u64 buttonsDown);
-        void returnHeldToOrigin();
+        bool returnHeldToOrigin(); // false: something could go nowhere and is still in hand
         std::unique_ptr<Pokemon::Pokemon> &storageSlot(int pane, int box, int slot); // pane 0=save,1=bank
         bool storageSlotLocked(int pane, int box, int slot); // LGPE party members (save pane) are locked
         bool convertForPane(std::unique_ptr<Pokemon::Pokemon> &pokemon, int destPane);
@@ -88,7 +93,7 @@ namespace UI
         void buildMovePickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint16_t current);
         void buildFormPickerOrder(uint16_t species, uint8_t current, Enums::GameVersion group); // storable forms only (drops battle-only ones + the ones this game doesn't have)
         // only the genders the species can be (one row when fixed-gender)
-        void buildGenderPickerOrder(uint16_t species, uint8_t form, uint8_t current);
+        void buildGenderPickerOrder(uint16_t species, uint8_t form, Enums::GameVersion group, uint8_t current);
         // false -> the Gender row is read-only (nothing to change it TO)
         bool genderEditable(const Pokemon::Pokemon &p) const;
         void openStorageEditor(int pane, int box, int slot); // open the details modal on a storage slot
@@ -127,6 +132,9 @@ namespace UI
         bool pendingTransferOriginIsGuess() const; // ...and whether that title is a representative rather than a fact
         Pokemon::Pokemon *detailsTargetPokemon();  // resolve the editor's current target (party/box/bank)
         void mirrorEditedPartyMember(); // after an edit, keep an LGPE party member's box/party copies in sync
+        /// End every edit of the details target: recalculate the stats when the edit affects them,
+        /// refresh the checksum, mark the game changed (not for a bank Pokemon), mirror a party member.
+        void commitTargetEdit(bool statsChanged);
         void snapshotEditTarget(); // capture the target's bytes as the save baseline (modal open + X = Save); revert
                                    // restores to it
         // has the details target changed vs the snapshot? (drives the "Unsaved changes" marker)
@@ -134,10 +142,30 @@ namespace UI
         void restoreEditTarget(); // roll the details target back to the snapshot -- discards edits when the page closes
                                   // without Save
         void closeDetailsModal(); // reset all details-modal / edit state and close it
+        void openRibbonEditor(); // Y / the Ribbons row: open the grid on the target's first ribbon
+        void handleRibbonEditInput(u64 buttonsDown, int touchedButton); // owns input while the editor is open
+        /// Store `ribbonValue` into the details target's ribbon and do what every edit on the page does:
+        /// checksum, unsaved marker, party mirror. Clearing the affixed ribbon clears the affix with it.
+        void setTargetRibbonValue(const Names::RibbonDefinition &ribbon, uint8_t ribbonValue);
         std::vector<int> visibleItemIndices() const; // raw indices in the current pouch worth showing (count > 0)
         int currentPouchCapacity() const;            // slot limit of the current pouch; 0 = appending unsupported
+        int pouchCapacity(int categoryIndex) const;  // the same, for any pouch
         void sortStorageBox(int pane, int box);      // pack + order one box, pinning party-linked slots
-        int currentItemMaxCount() const;             // per-stack ceiling for the current pouch (never 0)
+        int currentItemMaxCount() const;             // the selected item's stack ceiling (itemMaxCount), else the pouch's
+        int pouchItemMaxCount(int categoryIndex) const; // the same, for any pouch
+        /// The stack ceiling for one item: the pouch's, lowered where the game limits that item on its
+        /// own (an HM, a Sword/Shield TM). 0 means the item must not be given at all.
+        int itemMaxCount(int categoryIndex, uint16_t itemId) const;
+        /// What "Add All Items" did: entries it created or raised, and legal items left out because
+        /// their pouch had no free slot.
+        struct AddAllItemsResult
+        {
+            int changedItemCount = 0;
+            int noRoomItemCount = 0;
+        };
+        /// Adds `amountToAdd` of every legal item to every pouch, clamped per item. Never lowers a
+        /// count. Key items are left out unless `includeKeyItems`.
+        AddAllItemsResult addAllItems(int amountToAdd, bool includeKeyItems);
         void stepItemPouch(int pouchStep);           // L/R: move to the next (+1) or previous (-1) pouch, wrapping
 
         // Public state - accessible by UI components (Panels, Dialogs, Modals)
@@ -233,8 +261,20 @@ namespace UI
         std::pair<int, int> selectDimensions{0, 0};
         bool currentlySelecting = false;   // Multi mode: a rectangle is being dragged out
         int selectPane = 0, selectBox = 0; // which pane/box the in-progress rectangle lives in
-        // Origin of the block's TOP-LEFT cell, so B can put the whole thing back where it came from.
+        // Origin of the block's TOP-LEFT cell: where the cursor goes and what the move log names.
         int heldPane = 0, heldFromBox = 0, heldFromSlot = 0;
+        /// Where one carried cell goes back to on Put Back: the slot it was lifted from, or the drop
+        /// slot that swapped it up. Cells of one block can have different homes, in different panes,
+        /// once a drop has left some of them in hand. A copy has no home: its original never left.
+        struct CarriedCellOrigin
+        {
+            int pane = 0;
+            int box = 0;
+            int slot = 0;
+            bool isCopy = false;
+        };
+        std::vector<CarriedCellOrigin> moveMonOrigins; // parallel to moveMon
+        void clearCarried();                          // empty the hands (moveMon, its origins, the block size)
         bool carrying() const { return !moveMon.empty(); }
         int carriedCount() const;                     // non-null cells in moveMon
         const Pokemon::Pokemon *firstCarried() const; // first non-null cell, or nullptr
@@ -281,11 +321,27 @@ namespace UI
         bool releaseGroup = false;
         // Leaving the storage view with unsaved bank changes: prompt Save / Discard / Cancel (HOME-style).
         bool storageExitConfirmActive = false;
-        int storageExitConfirmIndex = 0; // 0=Save & Exit, 1=Discard & Exit, 2=Cancel
+        int storageExitConfirmIndex = 0; // 0=Save & Exit, 1=Discard, 2=Cancel
+
+        // THE BANK AND THE GAME SAVE ARE SEPARATE, and are saved separately: leaving the bank with
+        // changes asks Save & Exit / Discard / Cancel and writes the BANK only; the game save (X)
+        // writes the GAME only and never the bank. Do not couple them.
+        //
+        // Bank Discard reloads the BANK only and never touches the save's boxes or party: a Pokemon
+        // withdrawn and then discarded stays in the save until the GAME save's own Save/Discard
+        // decides it. Do not add an undo of the game's half here either.
+        /// The row labels of the bank prompt.
+        const char *storageExitConfirmLabel(int rowIndex) const;
+        static constexpr int STORAGE_EXIT_ROW_SAVE = 0;
+        static constexpr int STORAGE_EXIT_ROW_DISCARD = 1;
+        static constexpr int STORAGE_EXIT_ROW_CANCEL = 2;
+        static constexpr int STORAGE_EXIT_ROW_COUNT = 3;
         // Set when + (exit app) raised that prompt instead of B. Closing the app is not an answer to
         // "save the bank?", so + asks first and the exit resumes once Save or Discard has been picked.
         bool exitAfterBankChoice = false;
         void beginAppExit(); // the + handler's tail: prompt about the game save, else leave
+        /// Any dialog, popup, page or pending action that owns the next button press. + waits for it.
+        bool overlayOwnsInput() const;
         // Touchable storage slot rects, captured during draw for tap hit-testing next frame.
         struct TouchTarget
         {
@@ -406,9 +462,13 @@ namespace UI
         bool itemEditDialogActive = false;   // True when editing an item's amount
         int itemEditDialogValue = 0;         // Current value being edited
         int itemEditDialogOriginalValue = 0; // Original value before editing
-        // Items list: Y asks before removing the selected item. A in this dialog does the delete,
+        // Items list: X asks before removing the selected item. A in this dialog does the delete,
         // B cancels. Only reachable from the Items view, so it never lets X-to-save fire (home-menu only).
         bool itemRemoveConfirmActive = false;
+        // Items list: ZR opens "Add All Items". The amount is what each item gains, capped per item.
+        bool addAllItemsDialogActive = false;
+        int addAllItemsAmount = 999;
+        bool addAllItemsIncludesKeyItems = false;
 
         bool saveConfirmActive = false;
         // Save destination picker.
@@ -473,9 +533,15 @@ namespace UI
         /// logic: it is about what is being written, not where.
         bool illegalDataWritten = false;
 
-        // Create sdmc:/PKSE/{title}/{name}/ seeded with a copy of the current backup, suffixing
-        // -2, -3... if the name is taken. Returns the new path, or "" on failure.
+        // Create {the title's backup folder}/{name}/ seeded with a copy of the current backup,
+        // suffixing -2, -3... if the name is taken. Returns the new path, or "" on failure.
         std::string createNamedBackupDir(const std::string &name);
+        /// Whether a typed backup name keeps any character once it is made safe for a folder name.
+        static bool backupNameIsUsable(const std::string &name);
+        /// A session opened from the live game save starts in the snapshot taken as it loaded --
+        /// the only copy of the pre-edit save. Its first game save moves the session to a working
+        /// copy beside it, so the snapshot is never overwritten.
+        bool cartSnapshotPreserved = false;
         // Last gate before overwriting the player's real save data. Reached only by choosing the
         // "Game save" destination, which is itself only offered when the Settings lock is on.
         bool saveInjectConfirmActive = false;
@@ -491,11 +557,12 @@ namespace UI
         struct StatEditState
         {
             bool dialogActive = false;
-            int selectedStat = 0; // 0-5: HP, ATK, DEF, SPE, SPA, SPD
+            int selectedStat = 0; // 0-5: HP, ATK, DEF, SPA, SPD, SPE (the Hyper Training bit order)
             Dialogs::StatEditMode mode = Dialogs::StatEditMode::IV;
             int value = 0;                                      // current edit (the active IV/EV/AV)
             int originalIV = 0, originalEV = 0, originalAV = 0; // on entry (AV = Let's Go)
             int currentIV = 0, currentEV = 0, currentAV = 0;    // edits, kept across mode switches
+            bool originalHyperTrained = false, currentHyperTrained = false;
         };
         StatEditState statEdit;
 
@@ -514,7 +581,12 @@ namespace UI
             bool editing = false;                // editing a stat value / main field
             int hexMode = 0;                     // hexagon (Y-cycled): 0 Summary, 1 Base Points (EV/AV), 2 Judge (IVs)
             bool legalityOverlay = false;        // full legality issue list (Y / tap)
-            bool ribbonOverlay = false;          // full ribbon/mark list (X / tap)
+            bool ribbonOverlay = false;          // the ribbon editor (Y / tap the Ribbons row)
+            int selectedRibbonIndex = 0;         // ribbon editor: row of the format's ribbon table under the cursor
+            int ribbonScrollRow = 0;             // ribbon editor: first grid row on screen
+            /// The target's format displays an affixed ribbon. Taken when the editor opens, because the
+            /// nav bar names X: Affix from a const path that cannot resolve the target itself.
+            bool ribbonAffixAvailable = false;
             /// "You have unsaved changes" prompt, raised when the page is closed while pokemonEditDirty().
             /// Rolling straight back to the snapshot on close loses the edits with nothing said -- the top-
             /// bar marker is the only clue, and it disappears along with the page.
@@ -601,6 +673,7 @@ namespace UI
         uint8_t pickerMetVersion = 0;
         // Form picker: the species whose forms are being listed, so the picker can name each form.
         uint16_t pickerFormSpecies = 0;
+        Enums::GameVersion pickerFormGroup = Enums::GameVersion::Invalid; // the target's format numbers its forms
         // Location picker mode: true routes the pick to the egg-met location, false to the met location.
         bool pickerMetIsEgg = false;
 

@@ -23,7 +23,8 @@ Pokemon HOME are the source of truth for anything a user reads.** PKHeX's string
 games' own text verbatim. A few are labels PKHeX added for its own UI (e.g. `Champion (Gen3)`), and
 when PKHeX and a game disagree, **the game wins**. Where the games are ambiguous, disambiguate
 deliberately and leave a comment saying so. PKHeX is the only data source. Nothing comes from
-pokemondb or any other site.
+pokemondb or any other site. The one exception is Gen 1's key-item list, which PKHeX lacks: it is
+the game's own ROM table (chapter 07).
 
 ## Coding standards (binding)
 
@@ -60,7 +61,8 @@ Requires `DEVKITPRO` and a POSIX shell (Linux, or MSys2 on Windows):
 
 ```bash
 python tools/gen_fonts.py && python tools/gen_typeicons.py \
-  && python tools/gen_marks.py && python tools/gen_hdsprites.py   # once per checkout (romfs/)
+  && python tools/gen_marks.py && python tools/gen_ribbons.py \
+  && python tools/gen_hdsprites.py                                # once per checkout (romfs/)
 make                                   # -> PKSE.nro; refuses to start if a romfs asset is missing
 make BUILD_TYPE=development            # -> PKSE-dev.nro: the same app plus the on-console self test
 make all                               # -> both
@@ -127,6 +129,9 @@ python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept 
   test, with nothing stricter. Emulator wrappers are save envelopes. See chapter 05.
 - **A bank tag names a FORMAT, not a game.** Never compare `groupForBankTag(tag)` with an entity's
   own group. Bank tags are only ever added, never changed. See chapter 10.
+- **The bank and the game save are saved separately — by design, don't couple them.** Leaving the
+  bank asks Save & Exit / Discard / Cancel for the bank only (Discard never touches the save's
+  boxes); the game save never writes the bank. See chapter 10.
 - **Name tables are per language; stored text is not.** A byte is a font index, so the RECORD's
   language selects the codec. Gen 3 text goes through `include/Utils/Gen3Text.h` only. See
   chapter 07.

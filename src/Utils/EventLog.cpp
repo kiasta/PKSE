@@ -109,7 +109,7 @@ namespace Utils
 
     std::string briefPokemon(const Pokemon::Pokemon &pokemon)
     {
-        const std::string species = Names::getDisplayName(pokemon.speciesID(), pokemon.form(), Trainer::getSpeciesName(pokemon.speciesID()));
+        const std::string species = Names::getDisplayName(pokemon.speciesID(), pokemon.form(), Trainer::getSpeciesName(pokemon.speciesID()), pokemon.getGameGroup());
         std::string out = logField("species", species) + " form=" + numberText(pokemon.formID()) + " lv=" + numberText(pokemon.level());
 
         const std::string nick = utf16ToUtf8(pokemon.nickname());
@@ -140,7 +140,7 @@ namespace Utils
             // Both spellings of the ID. The six-digit form is what the game and the user see; the
             // raw id32 is what the code compares, and a report where those disagree is the bug.
             const uint8_t ver = pokemon.originGame();
-            const bool sixDigit = (ver != 0) ? Enums::usesSixDigitTrainerID(ver) : !Enums::isGen3Group(pokemon.getGameGroup());
+            const bool sixDigit = (ver != 0) ? Enums::usesSixDigitTrainerID(ver) : Enums::getVersionGeneration(Enums::getGroupRepVersion(pokemon.getGameGroup())) >= 7;
             out += " otid=" + numberText(sixDigit ? (pokemon.id32() % 1000000u) : (pokemon.id32() & 0xFFFFu));
             out += " otid32=" + hex32(pokemon.id32());
         }

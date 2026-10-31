@@ -4,8 +4,10 @@
 #include "Pokemon/Pokemon5BW.h"
 #include "Pokemon/PIDSearch.h"
 #include "Enums/GameVersion.h"
+#include "Enums/LanguageID.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/PokemonTypes.h"
+#include "Utils/Gen4Text.h"
 #include "Utils/HelperUtilities.h"
 #include "Trainer/Trainer.h" // Trainer::getSpeciesName
 
@@ -30,16 +32,22 @@ namespace Pokemon
             // PKHeX StringConverter5: BOTH 0xFFFF and 0x0000 terminate. Gen 4 checks only 0xFFFF.
             if (codeUnit == 0xFFFF || codeUnit == 0)
                 break;
-            out.push_back(static_cast<char16_t>(codeUnit));
+            out.push_back(static_cast<char16_t>(Utils::gen4NormalizeGenderSymbol(codeUnit)));
         }
         return out;
     }
 
     void Pokemon5BW::writeString(size_t offset, size_t units, const std::u16string &value) noexcept
     {
+        // PKHeX StringConverter5.SetString: a half-width name stores its gender signs as the
+        // half-width glyphs, a full-width one as the ordinary signs.
+        const bool halfWidthText = language() == static_cast<uint8_t>(Enums::LanguageID::Korean) || !isFullWidthText(value);
         size_t writeIndex = 0;
         for (; writeIndex < units && writeIndex < value.size(); ++writeIndex)
-            wr16(offset + writeIndex * 2, static_cast<uint16_t>(value[writeIndex]));
+        {
+            const uint16_t character = static_cast<uint16_t>(value[writeIndex]);
+            wr16(offset + writeIndex * 2, halfWidthText ? Utils::gen4UnNormalizeGenderSymbol(character) : character);
+        }
         // A name that exactly fills the field gets no terminator -- one past the end would
         // overrun into the next field.
         if (writeIndex < units)
@@ -76,51 +84,15 @@ namespace Pokemon
         const uint16_t abilityId = ability();
         if (p.ability2 != p.ability1 && abilityId == p.ability2)
             return 2;
-        return 1;
+        if (abilityId == p.ability1)
+            return 1;
+        // The stored id matches neither slot -- report the PID's slot rather than invent one.
+        return ((pid() >> abilityBitIndex()) & 1) ? 2 : 1;
     }
 
     int Pokemon5BW::natureModifier(int statIndex) const noexcept
     {
-        // statIndex is in STAT-WRITE order: 0 ATK, 1 DEF, 2 SPE, 3 SPA, 4 SPD.
-        static const int8_t natureStatModifiers[25][5] = {
-            {1, 1, 1, 1, 1},
-            {2, 0, 1, 1, 1},
-            {2, 1, 0, 1, 1},
-            {2, 1, 1, 0, 1},
-            {2, 1, 1, 1, 0},
-            {0, 2, 1, 1, 1},
-            {1, 1, 0, 1, 1},
-            {1, 2, 0, 1, 1},
-            {1, 2, 1, 0, 1},
-            {1, 2, 1, 1, 0},
-            {0, 1, 2, 1, 1},
-            {1, 0, 2, 1, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 2, 0, 1},
-            {1, 1, 2, 1, 0},
-            {0, 1, 1, 2, 1},
-            {1, 0, 1, 2, 1},
-            {1, 1, 0, 2, 1},
-            {1, 1, 1, 1, 1},
-            {1, 1, 1, 2, 0},
-            {0, 1, 1, 1, 2},
-            {1, 0, 1, 1, 2},
-            {1, 1, 0, 1, 2},
-            {1, 1, 1, 0, 2},
-            {1, 1, 1, 1, 1},
-        };
-        const uint8_t count = nature();
-        if (count > 24 || statIndex < 0 || statIndex > 4)
-            return 100;
-        switch (natureStatModifiers[count][statIndex])
-        {
-        case 0:
-            return 90;
-        case 2:
-            return 110;
-        default:
-            return 100;
-        }
+        return natureStatPercent(nature(), statIndex);
     }
 
     uint16_t Pokemon5BW::calculateChecksum() const noexcept
@@ -146,7 +118,7 @@ namespace Pokemon
         if (p.hp == 0)
             return; // no data for this species -- do NOT write zeroed stats
 
-        const int hitPoints = ((2 * p.hp + ivHP() + (evHP() / 4)) * levelValue) / 100 + levelValue + 10;
+        const int hitPoints = hitPointsForBase(p.hp, ((2 * p.hp + ivHP() + (evHP() / 4)) * levelValue) / 100 + levelValue + 10);
         const uint16_t oldMax = rd16(0x90);
         wr16(0x90, static_cast<uint16_t>(hitPoints));
         // Only re-top current HP when max HP actually moved; blindly setting current = max heals
@@ -198,23 +170,35 @@ namespace Pokemon
     // Pokemon from Gens 3-4, whose nature is still `PID % 25` and whose ability slot is bit 0 rather
     // than Gen 5's bit 16 (PKHeX PKM.PIDAbility). Each caller names what it changes and holds the
     // rest; the stored gender is written to match the new PID.
-    bool Pokemon5BW::rerollPID(int wantShiny, int wantGender, uint32_t trainerID32) noexcept
+    bool Pokemon5BW::pidHoldsNature() const noexcept
     {
         const int originGeneration = Enums::getVersionGeneration(originGame());
-        const bool pidHoldsNature = originGeneration == 3 || originGeneration == 4;
+        return originGeneration == 3 || originGeneration == 4;
+    }
+
+    bool Pokemon5BW::rerollPID(int wantShiny, int wantGender, int wantNature, int wantAbilityBit, uint32_t trainerID32) noexcept
+    {
+        const bool natureFromPID = pidHoldsNature();
         PIDRequirements requirements;
         requirements.trainerID32 = trainerID32;
         requirements.shinyThreshold = 8; // Gen 3-5
         requirements.wantShiny = wantShiny;
         requirements.genderRatio = personal().genderRatio;
         requirements.wantGender = wantGender;
-        requirements.wantNature = pidHoldsNature ? static_cast<int>(pid() % 25) : -1;
-        requirements.abilityBitIndex = pidHoldsNature ? 0 : 16;
-        requirements.wantAbilityBit = static_cast<int>((pid() >> requirements.abilityBitIndex) & 1);
+        if (natureFromPID)
+            requirements.wantNature = wantNature >= 0 ? wantNature : static_cast<int>(pid() % 25);
+        requirements.abilityBitIndex = abilityBitIndex();
+        requirements.wantAbilityBit = wantAbilityBit >= 0 ? wantAbilityBit : static_cast<int>((pid() >> requirements.abilityBitIndex) & 1);
+        requirements.wantWurmpleEvolution = wurmpleEvolutionToHold(speciesID(), pid());
+        // A Gen 5 PID that already ties to the record's ids keeps doing so; one that does not was
+        // not from a correlated encounter, so nothing is held.
+        const int idCorrelationBit = static_cast<int>((tid16() ^ sid16()) & 1);
+        if (!natureFromPID && correlationBitFromPID(pid()) == idCorrelationBit)
+            requirements.wantCorrelationBit = idCorrelationBit;
         uint32_t pidValue = 0;
         if (!findPID(requirements, pidValue))
         {
-            Utils::logErrorToFile("Pokemon5BW::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + "; the Pokemon is unchanged");
+            Utils::logErrorToFile("Pokemon5BW::rerollPID: no PID holds shiny=" + std::to_string(wantShiny) + " gender=" + std::to_string(wantGender) + " nature=" + std::to_string(requirements.wantNature) + " abilityBit=" + std::to_string(requirements.wantAbilityBit) + "; the Pokemon is unchanged");
             return false;
         }
         wr32(0x00, pidValue);
@@ -227,14 +211,14 @@ namespace Pokemon
     // A legality touch-up asked for nothing to change, so it holds everything the PID decides.
     void Pokemon5BW::regeneratePID(uint32_t trainerID32) noexcept
     {
-        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), trainerID32);
+        rerollPID(isShiny(trainerID32, "") ? 1 : 0, gender(), -1, -1, trainerID32);
     }
 
     void Pokemon5BW::setShiny(bool makeShiny, uint32_t trainerID32) noexcept
     {
         if (isShiny(trainerID32, "") == makeShiny)
             return;
-        rerollPID(makeShiny ? 1 : 0, gender(), trainerID32);
+        rerollPID(makeShiny ? 1 : 0, gender(), -1, -1, trainerID32);
     }
 
     void Pokemon5BW::setGender(uint8_t genderValue) noexcept
@@ -248,7 +232,37 @@ namespace Pokemon
             refreshChecksum();
             return;
         }
-        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, id32());
+        rerollPID(isShiny(id32(), "") ? 1 : 0, genderValue, -1, -1, id32());
+    }
+
+    void Pokemon5BW::setNature(uint8_t natureValue) noexcept
+    {
+        if (natureValue > 24)
+            return;
+        if (pidHoldsNature() && static_cast<int>(pid() % 25) != natureValue && !rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), natureValue, -1, id32()))
+            return;
+        wr8(0x41, natureValue);
+        recalculateStats();
+    }
+
+    void Pokemon5BW::setAbilityNumber(uint8_t abilityNumber) noexcept
+    {
+        // The ability id follows the slot, as in PKHeX's PKM.RefreshAbility.
+        const PersonalRecord &personalRecord = personal();
+        if (abilityNumber == 4)
+        {
+            setHiddenAbility(true);
+            if (personalRecord.abilityHidden != 0)
+                setAbility(personalRecord.abilityHidden);
+            return;
+        }
+        if (abilityNumber != 1 && abilityNumber != 2)
+            return;
+        const int wantAbilityBit = abilityNumber == 2 ? 1 : 0;
+        if (static_cast<int>((pid() >> abilityBitIndex()) & 1) != wantAbilityBit && !rerollPID(isShiny(id32(), "") ? 1 : 0, gender(), -1, wantAbilityBit, id32()))
+            return;
+        setHiddenAbility(false);
+        setAbility(abilityNumber == 2 ? personalRecord.ability2 : personalRecord.ability1);
     }
 
 }

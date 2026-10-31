@@ -1,0 +1,3 @@
+# Vendored code: formatted as upstream ships it, never by this project's rules.
+DisableFormat: true
+SortIncludes: Never

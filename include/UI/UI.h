@@ -59,7 +59,9 @@ namespace UI
         // title" path), false when an older backup was opened. Writing back to the game is the
         // normal, expected thing to do in the first case and a rollback in the second, so the two
         // are gated very differently at save time.
-        void handleTrainerView(AccountUid userUid, u64 titleId, const std::string &titleName, const std::string &backupDir, bool loadedFromCart);
+        /// Opens the editor on a backup folder's save. False, having opened nothing, when the save
+        /// did not parse (Trainer::isValid).
+        bool handleTrainerView(AccountUid userUid, u64 titleId, const std::string &titleName, const std::string &backupDir, bool loadedFromCart);
         /// Edits a loose save file picked from the SD card rather than an installed title's save.
         /// There is no title id, no account and no backup directory to work from -- the path IS
         /// the save -- so this is a parallel entry point rather than a variation of the one above.

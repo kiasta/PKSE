@@ -33,7 +33,7 @@ Rerun the generator.
 | `Names/LocationNames.cpp` | `gen_locations.py` | Met-location names, per origin version |
 | `Names/FormNames.cpp` | — (hand-curated) | Form display names, **English** |
 | `Names/FormNamesLocalized.cpp` | `gen_formnames.py` (+ `tools/formdump/`) | Form display names, the other eight languages |
-| `Names/RibbonNames.cpp` | — (hand-transcribed from PKHeX) | Ribbon/mark names, **English**, + per-format bit offsets |
+| `Names/RibbonNames.cpp` | `gen_ribbonnames.py` | One `RibbonDefinition` row per ribbon/mark per format: kind, offsets, **English** name, sprite stem |
 | `Names/RibbonNamesLocalized.cpp` | `gen_ribbonnames.py` | Ribbon/mark names, the other eight languages |
 | `Names/TMMoves.cpp` | — (extracted from PKHeX) | Which move a TM/HM/TR item teaches, per game |
 | `Pokemon/PersonalInfo1RBY.cpp` … `PersonalInfo9LZA.cpp` (19) | `gen_personaltables.py` | **Per-species data, one file per save-format group** — stats, types, abilities, gender ratio, friendship, growth rate, catch rate, forms |
@@ -52,6 +52,7 @@ Rerun the generator.
 | `romfs/sprites/pokemon_hd/` | `gen_hdsprites.py` | The 3260 sprite PNGs |
 | `romfs/sprites/types/` | `gen_typeicons.py` | The 19 type icons — 18 plus Stellar, which is Tera-only |
 | `romfs/sprites/marks/` | `gen_marks.py` | The origin markings, from PKHeX's `Markings` |
+| `romfs/sprites/ribbons/` | `gen_ribbons.py` | Every ribbon and mark image, from PKHeX's `img/ribbons` |
 | `romfs/fonts/` | `gen_fonts.py` | Nunito + both Noto Sans Symbols faces (SIL OFL) |
 
 Rows marked "—" are hand-maintained; everything else is generated output and is never edited by
@@ -224,6 +225,14 @@ evolved Pokémon keeps what it learned earlier).
 `getLearnableBits` returns **`nullptr` when the species+form is absent from that game**. That is
 "unknown", not "knows nothing" — handle it explicitly.
 
+A form past the species' generated form count (`LEARN_FORM_COUNT`) reads the species' base row,
+never a neighbouring species' row. Gen 7 egg moves are indexed by FORM (PKHeX `LearnSource7SM`
+`GetFormIndex`), so Alolan Vulpix gets Freeze-Dry, and Necrozma's fused forms get Sunsteel Strike and
+Moongeist Beam. **Smeargle's row also holds every move it can Sketch** in that game (PKHeX
+`MoveInfo.IsSketchValid`): no Struggle, Chatter, Z-moves or dummied moves, nothing past the game's own
+highest move id (`MaxMoveID_6_XY`, `MaxMoveID_7`, `MaxMoveID_8` -- the game wins over the group's
+later sibling).
+
 ### A cosmetic form is present without a stats entry of its own
 
 Rows are keyed on a universal form index, and a form only gets one if the game counts it PRESENT —
@@ -269,7 +278,7 @@ struct EncounterRow {
     uint8_t  fixedBall;     // 0 = the encounter does not fix the ball
     uint8_t  flawlessIVs;   // guaranteed count of 31 IVs
     uint8_t  nature;        // ENCOUNTER_NATURE_ANY unless forced
-    uint8_t  flags;         // FATEFUL / ALPHA / BOOST60 / EGG / MET_LEVEL_ZERO
+    uint8_t  flags;         // FATEFUL / ALPHA / BOOST60 / EGG / MET_LEVEL_ZERO / CATCH_COMBO
 };
 
 const EncounterTable* getEncounterTable(Enums::GameVersion versionOrGroup);   // nullptr if none
@@ -322,7 +331,17 @@ Related:
 uint16_t Names::itemG3ToModern(uint16_t g3Id);   // 0 if no modern equivalent
 uint16_t Names::itemModernToG3(uint16_t modernId);
 std::vector<uint16_t> Names::getPouchItems(GameVersion group, int pouch);   // legal ids for a pouch
+bool Names::isKeyItem(GameVersion group, uint16_t itemId);                // a key item, in whichever pouch
 ```
+
+**A key item is not "whatever sits in the Key Items pocket".** Gen 2's and Ruby/Sapphire's PC
+Items accept key items, Let's Go files them in its general pocket ("Other Items"), and Gen 1 has no
+key-items pocket at all. Add All Items leaves key items out by default, so `gen_itempouches.py`
+also emits `isKeyItem` from a per-game `KEY_ITEMS` spec: PKHeX's key spans for every group but
+Gen 1. **Gen 1 is the one table here that does not come from PKHeX**, because PKHeX has no Gen 1
+key-item list (`ItemStorage1` is one span for every pouch). It is the ROM's own `KeyItemFlags`
+table (pret/pokered and pret/pokeyellow, identical in both) plus HM01-HM05, which the game's
+`IsKeyItem_` treats as key items before it reads the table. The `gentables` suite pins it at 36.
 
 ## Met locations depend on origin *and* format
 
@@ -604,7 +623,7 @@ The same family, one step subtler: **`utf-8` KEEPS a byte-order mark as a charac
 strips it.** `gen_locations.py` read with plain `utf-8`, so the BOM rode into entry 0 of every table
 that has a real name there — ten tables, nine languages each — and `getMetLocationName(HG, 0)`
 answered `"﻿Mystery Zone"`, an invisible glyph handed to the font for every Gen 4 Pokémon with
-no met location. It decoded "successfully" and looked right in every diff.
+no met location. It decoded "successfully" and looked right in every diff. `gen_itemnames.py` strips a U+FEFF from its text for the same reason (the Spanish Gen 3 items file).
 
 **SWAPPING A HAND-WRITTEN TABLE FOR A GENERATED ONE IS GATED ON THE ENGLISH OUTPUT BEING
 IDENTICAL.** That gate is what stops a PKHeX-internal label from shipping as user-facing text.
@@ -624,6 +643,12 @@ into `FormNamesLocalized.cpp`, and `getFormName` asks English FIRST — if Engli
 0 of most species) no language names anything, so the two can never disagree about which forms
 exist. (The diff paid for itself in the other direction too: it caught `Poke Ball` missing its
 accent, which PKHeX had right.)
+
+**Two species number their forms differently in older games**, so `getFormName` and
+`getDisplayName` have overloads taking the save-format group. In Gen 6, Pikachu forms 1-6 are ORAS's
+Cosplay outfits, not the Gen 7 caps. In Gen 4, Arceus has the ???-type plate at form 9, so Fire through
+Dark are 10-17 and there is no Fairy. The Cosplay labels are English only. A caller that knows the
+group should use the overload.
 
 **FORM LABELS COME FROM POKEAPI WHERE IT CARRIES THE GAMES' WORDING, PKHeX OTHERWISE — and PKHeX IS
 TERSE ONLY IN THE LATIN LANGUAGES.** Measured on cells where both have a label, PKHeX matches the
@@ -692,14 +717,15 @@ answer from another localized getter, the indirect check is not a check.**
 
 ### Ribbon names
 
-**RIBBON NAMES ARE THE GAMES', NOT PKHeX'S, and four of them were simply wrong.** `Battle Royale` is
-`Battle Royal Master`; `Champion Battle` / `Champion Regional` / `Champion National` are `Battle
-Champion` / `Regional Champion` / `National Champion` — PKSE's own Gen 8/9 block already spelled
-those three the right way round at 0x38. Two more carried disambiguation no game shows:
-`RibbonChampionG3` is just **Champion Ribbon** in game and `RibbonChampionG6Hoenn` is **Hoenn
-Champion Ribbon** — separately named, so neither needs PKSE's `(Gen 3)` or PKHeX's `(Gen3)`. Nothing
-checks ribbon names against the games automatically, which is how four wrong ones survived; check a
-new one by hand.
+**RIBBON NAMES ARE THE GAMES', AND PKHeX's LABEL IS ONLY THE STARTING POINT.** A ribbon's English
+name is PKHeX's label with its disambiguator stripped: `Champion (Gen3)` is just **Champion Ribbon**
+in game and `Hoenn Champion (ORAS)` is **Hoenn Champion Ribbon**, separately named, so neither needs
+a suffix. The contest ribbons are the exception: the games say `Cool Ribbon Super` where PKHeX says
+`Cool Super`, so `pkse_aliases()` spells those the games' way. When the English table was typed by
+hand, four names were simply wrong (`Battle Royale` for **Battle Royal Master**, and `Champion
+Battle` / `Regional` / `National` backwards); taking the rest from PKHeX is what keeps that from
+recurring. Nothing checks ribbon names against the games automatically, so check a new alias by
+hand.
 
 **LOCALIZING A NAME-KEYED TABLE MEANS HANDLING AMBIGUITY, NOT HOPING PAST IT.**
 `gen_ribbonnames.py` keys on the English string PKSE produces, and several PKHeX keys collapse to one
@@ -708,9 +734,48 @@ English label once its `(G3)`/`(G4)` suffixes are stripped — `RibbonG3Cool`, `
 Ambiguous labels whose languages disagree are DROPPED rather than guessed, and the one PKSE actually
 needs (`Beauty Master` → `RibbonMasterBeauty`, the Gen 8 contest ribbon) is an explicit alias. Its
 four siblings need none: BDSP names those contests `Coolness`/`Cuteness`/`Cleverness`/`Toughness`,
-which collide with nothing. Every name `RibbonNames.cpp` can produce — 113 flag entries plus 20
-composed Gen 3 contest names — is verified to have a row, so a fallback to English means a bug
-rather than a gap.
+which collide with nothing. The Sinnoh contest ribbons of Gen 4/5 are aliased the same way, to
+`RibbonG4<Category><Rank>` (`SINNOH_CONTEST_RANKS`). Every name `RibbonNames.cpp` can produce — every
+row of every format at every value, Gen 3's composed contest ranks included — must have a row: the
+generator refuses to write the tables otherwise, and `SuiteTables` checks it again at runtime, so a
+fallback to English means a bug rather than a gap.
+
+### Ribbon tables
+
+**ONE ROW PER RIBBON PER FORMAT, AND EVERYTHING GOES THROUGH THE ROW.** `Names::RibbonDefinition`
+carries the bit (or byte) PKHeX stores the ribbon at, its English name and its image stem, and
+`getRibbonValue` / `setRibbonValue` / `getRibbonName` / `getRibbonSpriteStem` take the row. Five
+tables cover the formats that store ribbons: PK3 (RSE and FRLG), PK4/PK5, PK6, PK7/PB7 and the HOME
+block shared by every Gen 8/9 format. A ribbon is one of three shapes, and treating a shape as
+another is how Gen 6+ memory ribbons used to read as plain flags:
+
+- a **flag**, one bit;
+- a Gen 3 **contest rank**, a 3-bit field in the u32 at 0x4C holding the highest rank won. Bit 31 of
+  that word is FatefulEncounter, so a rank write touches its own three bits only;
+- a **memory count** (Contest Memory, Battle Memory; Gen 6 on), a count byte plus a has-flag that
+  `setRibbonValue` keeps equal to `count != 0`, as the games and PKHeX's setters do.
+
+**THE TABLES ARE PARSED FROM PKHeX's ENTITY CLASSES** (`tools/gen_ribbonnames.py`, which writes
+`RibbonNames.cpp` beside `RibbonNamesLocalized.cpp`). Every `Ribbon*` property of `PK3` … `PA9` is
+read from its getter: a bit of a `RIBn` byte alias, a `FlagUtil.GetFlag(Data, offset, bit)`, a PK3
+rank field, or a memory count with its `Has*MemoryRibbon` flag. A getter the generator cannot read
+stops it, and classes that share a table (PK4/PK5, PK7/PB7, every Gen 8/9 class) must parse to the
+same rows, so an upstream layout change fails the run rather than shipping a table that writes the
+wrong bit. The maxima are PKHeX's `RibbonInfo.MaxCount`. The C++ around the tables (reading and
+writing a value, naming it, picking its image) is a string constant in the generator, like
+`gen_itemnames.py`'s.
+
+**THE HOME BLOCK'S ROWS ARE IN `RibbonIndex` ORDER, AND THE ORDER IS DATA.** `AffixedRibbon` stores a
+ribbon's index into that block, and `getRibbonAffixIndex()` is the row's position. The generator
+compares the rows with PKHeX's `RibbonIndex` enum and refuses to write a table in any other order,
+because a row out of place silently re-points every affixed ribbon after it. `SuiteTables` pins the
+indices again at runtime (Kalos Champion 0, Contest Memory 37, Misty Mark 64, Partner 110).
+
+**THE ART IS PKHeX'S, BY PROPERTY NAME** (`tools/gen_ribbons.py` → `romfs/sprites/ribbons/`, PKHeX
+`master`'s whole `img/ribbons` folder). A row's `spriteStem` is the PKHeX property name in lower case;
+a Gen 3 rank adds `super`/`hyper`/`master` and a memory ribbon at its maximum adds `2` (the gold
+image; PKHeX's editor turns Battle Memory gold at seven in the Gen 9 formats, and so does PKSE).
+`SuiteAssets` checks that every stem any row can produce is in the `.nro`.
 
 ### Origin markings
 

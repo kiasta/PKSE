@@ -179,11 +179,9 @@ namespace Pokemon
         // EXP is 3 bytes big endian at 0x0E. The byte at 0x11 immediately after it is the first
         // half of EV_HP, so a 4-byte write here silently corrupts HP Stat Experience.
         uint32_t exp() const noexcept override { return rd24be(ofsBody() + 0x0E); }
-        void setExp(uint32_t value) noexcept override
-        {
-            wr24be(ofsBody() + 0x0E, value & 0xFFFFFF);
-            recalculateStats();
-        }
+        /// Writes both level bytes to the level the new EXP gives, as PKHeX PK1.Stat_Level does:
+        /// level() reads them before the EXP, so leaving them would keep showing the old level.
+        void setExp(uint32_t value) noexcept override;
 
         uint8_t level() const noexcept override;
         void setLevel(uint8_t levelValue) noexcept override;
@@ -232,10 +230,11 @@ namespace Pokemon
         bool hasPID() const noexcept override { return false; }
         bool hasStoredGender() const noexcept override { return false; } // derived from the Attack DV
 
-        // Language is not stored either, but the RECORD WIDTH carries one bit of it: a 59-byte
-        // list is Japanese. Reported as PKHeX's language ids (1 = Japanese, 2 = English) with
-        // English standing for "some international language" -- the format cannot say which.
-        uint8_t language() const noexcept override { return japanese() ? 1 : 2; }
+        // Language is not stored either. The RECORD WIDTH says Japanese or not (a 59-byte list is
+        // Japanese); an international record's language is inferred from its names as PKHeX
+        // GBPKM.Language does, falling back to English. Always a real PKHeX language id: 0 is not
+        // one any later format accepts, and Poke Transporter writes this into the Gen 7 record.
+        uint8_t language() const noexcept override;
 
         // Gen 1 has no gender whatsoever; the concept arrives in Gen 2. What a Gen 1 Pokemon
         // BECOMES on transfer is fixed by its Attack DV against the species' Gen 2 gender ratio,

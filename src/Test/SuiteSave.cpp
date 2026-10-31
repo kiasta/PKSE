@@ -55,6 +55,7 @@
 
 #include "Test/TestSuite.h"
 #include "Test/SaveEnvelopeFixtures.h"
+#include "Test/SCBlockRewrite.h"
 #include "Save/GetSaveFileContents.h"
 #include "Save/SaveEnvelope.h"
 #include "Trainer/Trainer.h"
@@ -482,32 +483,6 @@ namespace Test
             return outsideByteCount;
         }
 
-        /// The SCBlock games' box block and Pokedex blocks: the only blocks an unedited write may change.
-        bool scBlockKeys(Enums::GameVersion group, uint32_t &boxBlockKey, std::vector<uint32_t> &pokedexBlockKeys)
-        {
-            switch (group)
-            {
-            case Enums::GameVersion::SWSH:
-                boxBlockKey = Trainer::BOX8_SWSH;
-                pokedexBlockKeys = {Trainer::SAVE_REVISION8_SWSH, Trainer::SAVE_REVISION8_R1_SWSH, Trainer::SAVE_REVISION8_R2_SWSH};
-                return true;
-            case Enums::GameVersion::PLA:
-                boxBlockKey = Trainer::BOX8_LA;
-                pokedexBlockKeys = {Trainer::POKEDEX8_LA};
-                return true;
-            case Enums::GameVersion::SV:
-                boxBlockKey = Trainer::BOX9_SV;
-                pokedexBlockKeys = {Trainer::ZUKAN9_SV_PALDEA, Trainer::ZUKAN9_SV_KITAKAMI};
-                return true;
-            case Enums::GameVersion::ZA:
-                boxBlockKey = Trainer::BOX9_LZA;
-                pokedexBlockKeys = {Trainer::POKEDEX9_LZA};
-                return true;
-            default:
-                return false;
-            }
-        }
-
         constexpr Trainer::ResearchField8LA RESEARCH_FIELDS[] = {Trainer::ResearchField8LA::CatchCount, Trainer::ResearchField8LA::AlphaCount, Trainer::ResearchField8LA::LargeCount, Trainer::ResearchField8LA::SmallCount, Trainer::ResearchField8LA::HeavyCount, Trainer::ResearchField8LA::LightCount, Trainer::ResearchField8LA::UpdateCounter};
         const char *const RESEARCH_FIELD_NAMES[] = {"catch", "alpha", "large", "small", "heavy", "light", "updateCounter"};
 
@@ -593,7 +568,7 @@ namespace Test
 
         /// Decrypts both files and checks that only the box block (in empty slots) and the Pokedex
         /// blocks changed. Reports its own findings.
-        void checkSCBlockRewrite(Context &context, std::vector<uint8_t> beforeBytes, std::vector<uint8_t> afterBytes, uint32_t boxBlockKey, const std::vector<uint32_t> &pokedexBlockKeys)
+        void checkSCBlockRewrite(Context &context, std::vector<uint8_t> beforeBytes, std::vector<uint8_t> afterBytes, const SCBlockLayout &layout)
         {
             const std::vector<Save::Block> beforeBlocks = Encryption::decrypt(beforeBytes.data(), beforeBytes.size());
             const std::vector<Save::Block> afterBlocks = Encryption::decrypt(afterBytes.data(), afterBytes.size());
@@ -626,7 +601,7 @@ namespace Test
                 }
 
                 bool isPokedexBlock = false;
-                for (uint32_t pokedexBlockKey : pokedexBlockKeys)
+                for (uint32_t pokedexBlockKey : layout.pokedexBlockKeys)
                 {
                     isPokedexBlock = isPokedexBlock || beforeBlock.key == pokedexBlockKey;
                 }
@@ -639,43 +614,20 @@ namespace Test
                     }
                     continue;
                 }
-                if (beforeBlock.key != boxBlockKey)
+                if (beforeBlock.key != layout.boxBlockKey)
                 {
                     context.fail("an unedited write changed a block it has no reason to touch", where + " changed=" + std::to_string(changedByteCount));
                     continue;
                 }
 
                 // The box block: every changed byte must sit in a slot that is empty.
-                const size_t storageSlotCount = trainer.getBoxCount() * trainer.getSlotsPerBox();
-                const size_t slotRecordSize = storageSlotCount ? beforeBlock.data.size() / storageSlotCount : 0;
-                if (!context.check(slotRecordSize > 0, "could not work out the box block's slot size", where + " size=" + std::to_string(beforeBlock.data.size())))
+                BoxSlotChanges boxSlotChanges;
+                if (!context.check(countBoxSlotChanges(trainer, beforeBlock.data, afterBlock.data, layout.boxSlotStride, boxSlotChanges), "the box block cannot be split into this format's slots", where + " size=" + std::to_string(beforeBlock.data.size()) + " stride=" + std::to_string(layout.boxSlotStride)))
                 {
                     continue;
                 }
-                size_t occupiedSlotByteCount = 0;
-                size_t firstOccupiedSlotIndex = 0;
-                for (size_t byteIndex = 0; byteIndex < beforeBlock.data.size(); ++byteIndex)
-                {
-                    if (beforeBlock.data[byteIndex] == afterBlock.data[byteIndex])
-                    {
-                        continue;
-                    }
-                    const size_t storageSlotIndex = byteIndex / slotRecordSize;
-                    const size_t boxIndex = storageSlotIndex / trainer.getSlotsPerBox();
-                    const size_t slotIndex = storageSlotIndex % trainer.getSlotsPerBox();
-                    const bool slotIsEmpty = boxIndex >= trainer.boxes.size() || slotIndex >= Trainer::BOX_SLOTS || isEmptySlot(trainer.boxes[boxIndex][slotIndex].get());
-                    if (slotIsEmpty)
-                    {
-                        ++emptySlotByteCount;
-                        continue;
-                    }
-                    if (occupiedSlotByteCount == 0)
-                    {
-                        firstOccupiedSlotIndex = storageSlotIndex;
-                    }
-                    ++occupiedSlotByteCount;
-                }
-                context.check(occupiedSlotByteCount == 0, "an unedited write changed an OCCUPIED box slot", numberField("bytes", (long long)occupiedSlotByteCount) + " " + slot((int)(firstOccupiedSlotIndex / trainer.getSlotsPerBox()), (int)(firstOccupiedSlotIndex % trainer.getSlotsPerBox())));
+                emptySlotByteCount += boxSlotChanges.emptySlotByteCount;
+                context.check(boxSlotChanges.occupiedSlotByteCount == 0, "an unedited write changed an OCCUPIED box slot", numberField("bytes", (long long)boxSlotChanges.occupiedSlotByteCount) + " " + slot((int)(boxSlotChanges.firstOccupiedSlotIndex / trainer.getSlotsPerBox()), (int)(boxSlotChanges.firstOccupiedSlotIndex % trainer.getSlotsPerBox())));
             }
             if (pokedexByteCount)
             {
@@ -747,13 +699,12 @@ namespace Test
             const std::string differenceSummary = "count=" + std::to_string(differingByteCount) + " of " + std::to_string(beforeBytes.size()) + (differingByteCount ? "  " + hexField("firstOffset", firstDifferenceOffset, 6) : "");
             const Enums::GameVersion group = context.group;
 
-            uint32_t boxBlockKey = 0;
-            std::vector<uint32_t> pokedexBlockKeys;
-            if (scBlockKeys(group, boxBlockKey, pokedexBlockKeys))
+            SCBlockLayout layout;
+            if (scBlockLayout(group, layout))
             {
                 if (differingByteCount)
                 {
-                    checkSCBlockRewrite(context, beforeBytes, afterBytes, boxBlockKey, pokedexBlockKeys);
+                    checkSCBlockRewrite(context, beforeBytes, afterBytes, layout);
                 }
                 else
                 {
@@ -1238,8 +1189,27 @@ namespace Test
             FILE *fileHandle = fopen(path.c_str(), "wb");
             if (!fileHandle) return false;
             const size_t writtenByteCount = fwrite(fileBytes.data(), 1, fileBytes.size(), fileHandle);
-            fclose(fileHandle);
-            return writtenByteCount == fileBytes.size();
+            const bool fileClosed = fclose(fileHandle) == 0;
+            return writtenByteCount == fileBytes.size() && fileClosed;
+        }
+
+        /// A loose save is replaced only whole (through a ".tmp" sibling) and only once its original
+        /// is backed up: a failed backup used to be logged and then the user's only copy truncated.
+        void checkLooseSaveWriteGuards(Context &context)
+        {
+            const std::string replacedPath = context.workDirectory + "/replaced-save";
+            const std::vector<uint8_t> firstBytes(16, 0x11);
+            const std::vector<uint8_t> secondBytes(32, 0x22);
+            const bool replaced = writeFile(replacedPath, firstBytes) && Save::replaceFileContents(replacedPath.c_str(), secondBytes);
+            context.check(replaced && readFile(replacedPath) == secondBytes && readFile(replacedPath + ".tmp").empty(), "replacing a save file did not leave exactly the new bytes", "path=\"" + replacedPath + "\"");
+            remove(replacedPath.c_str());
+
+            const std::string missingPath = context.workDirectory + "/never-written-save";
+            remove(missingPath.c_str());
+            const bool backupRefused = !Save::backupOriginalFile(missingPath.c_str());
+            const bool writeRefused = !Save::saveExternalSave(*context.trainer, missingPath.c_str(), true);
+            context.check(backupRefused && writeRefused && readFile(missingPath).empty(), "a save whose original could not be backed up was written anyway", "path=\"" + missingPath + "\"");
+            remove(missingPath.c_str());
         }
 
         void runEnvelopes(Context &context)
@@ -1256,6 +1226,7 @@ namespace Test
                 context.note("this format has no file form, so there is no envelope to test");
                 return;
             }
+            checkLooseSaveWriteGuards(context);
 
             Save::SaveEnvelope sourceEnvelope;
             std::vector<uint8_t> saveImage;

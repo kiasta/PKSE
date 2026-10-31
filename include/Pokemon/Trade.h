@@ -14,10 +14,11 @@
  * Pokemon is in, and the state `EvolutionMethod.ValidNotLevelUp` looks for when it decides whether
  * a trade evolution was possible.
  *
- * THERE ARE THREE BEHAVIOURS, NOT ONE. PKHeX implements them as three separate overrides and so
- * does this: see TradeEra in the implementation. Generation 6/7 writes a link-trade memory and a
- * geolocation history; Let's Go has neither and copies friendship rather than resetting it; Gen 8
- * and 9 store a handler language and leave the memory to the game.
+ * THERE ARE FOUR BEHAVIOURS, NOT ONE. PKHeX implements them as separate overrides and so does
+ * this: see TradeEra in the implementation. Generation 6 writes a link-trade memory and a
+ * geolocation history; Generation 7 stores both fields but writes neither on a trade; Let's Go has
+ * neither and copies friendship rather than resetting it; Gen 8 and 9 store a handler language and
+ * leave the memory to the game.
  */
 #ifndef POKEMON_TRADE_H
 #define POKEMON_TRADE_H
@@ -59,6 +60,19 @@ namespace Pokemon
     bool applyTradeRoundTrip(Pokemon &pokemon, const TradePartner &partner);
 
     /**
+     * Makes `receiver` the active handler of a Pokemon arriving from another game: the outbound
+     * half of a trade, with no return leg.
+     *
+     * Every route into a game with a handler does this, the player's own Pokemon included.
+     * Transporter, Bank and HOME each make the receiving player the handler (PKHeX
+     * PK5.ConvertToPK6, PKH.UpdateHandler), and PKHeX reports a Pokemon from another game whose
+     * original trainer is still the active handler as invalid (TransferHandlerFlagRequired).
+     *
+     * Same refusals as applyTradeRoundTrip. Leaves the record checksummed.
+     */
+    bool applyReceivingTrainer(Pokemon &pokemon, const TradePartner &receiver);
+
+    /**
      * A trade partner PKSE invents, for when the user has no second save to point at.
      *
      * **THIS FABRICATES A PERSON, which nothing else in PKSE does** -- every other invented value
@@ -73,6 +87,14 @@ namespace Pokemon
      * and redoing the same action would produce a different Pokemon.
      */
     TradePartner generateTradePartner(const Pokemon &pokemon);
+
+    /**
+     * A feeling a Gen 6/7 link-trade memory may carry, picked by `choice` from the legal ones below
+     * `feelingLimit` -- PKHeX MemoryContext6.GetRandomFeeling6(4, limit), which draws below 20 for a
+     * trade and below 10 for a Pokemon Bank transfer. A plain `choice % limit` lands on a feeling the
+     * MemoryVerifier rejects (1, 10, 12, 13, 16, 17, 19 are not in the mask).
+     */
+    uint8_t linkTradeMemoryFeeling(uint32_t choice, uint8_t feelingLimit);
 }
 
 #endif  // POKEMON_TRADE_H

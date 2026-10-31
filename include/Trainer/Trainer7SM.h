@@ -41,6 +41,9 @@
 namespace Trainer
 {
 
+    /// BoxLayout7.BattleBoxFlags: the battle-team pointers inside the box-layout block.
+    inline constexpr size_t BATTLE_TEAM_POINTERS7_SM = 0x4C4;
+
     class Trainer7SM final : public Trainer
     {
     public:
@@ -69,6 +72,8 @@ namespace Trainer
         /// PKHeX TrainerNameVerifier: five digits from Gen 6 on, four before.
         int getMaxTrainerNameDigits() const noexcept override { return 5; }
         bool supportsBoxNames() const noexcept override { return true; }
+        /// A member of a battle team (PKHeX GetBoxSlotFlags: overwrite-protected).
+        bool isBoxSlotLocked(size_t boxIndex, size_t slotIndex) const noexcept override { return battleTeamsHoldSlot(at(blkBoxLayout()) + BATTLE_TEAM_POINTERS7_SM, 6 * 6 * 2, boxIndex, slotIndex); }
         /// The field is 0x22 bytes = 17 UTF-16 units, so 16 characters plus a terminator.
         size_t getMaxBoxNameLength() const noexcept override { return 16; }
         bool itemsAreIdIndexed() const noexcept override { return false; }

@@ -115,7 +115,9 @@ Names::getItemNameFor(group, id)      // ALWAYS. Never the modern table directly
 ```
 
 The same reasoning killed the old `bool g3Items` parameter: it stopped being expressible the moment
-a third id space existed.
+a third id space existed. There are four now (Gen 1, Gen 2, Gen 3, modern), each with its own picker
+kind (`ItemG1`/`ItemG2`/`ItemG3`/`Item` and the `Pouch…` set). Gen 2 shipped without one: its
+pickers listed the modern table and its held items were named from it.
 
 ---
 
@@ -127,8 +129,9 @@ carries**. A FireRed Rattata in a Shield box is `SWSH` / `4`.
 This decides real behaviour:
 
 - **Which met-location table names a location** — `Enums::locationTableVersion(origin, format,
-  isEgg)`. A Gen 3/4 met location is remapped into the *current* format's numbering on transfer up,
-  so it must be named with the *format's* table. Without this a Platinum starter link-traded to
+  isEgg)`. A Gen 3/4 met location is replaced or remapped into the *current* format's numbering on
+  transfer up (a Gen 3 one becomes Poké Transfer, 30001, as Pal Park and Poké Transfer leave it), so it
+  must be named with the *format's* table. Without this a Platinum starter link-traded to
   Scarlet/Violet reads "(none)".
 - **Whether the trainer ID renders as six digits or a 16-bit TID** —
   `usesSixDigitTrainerID(originGame())`. The games pick this from the mon's **origin** generation,
@@ -361,6 +364,13 @@ not a cosmetic issue.
 a save edited elsewhere can already hold an over-cap count, so opening the dialog must only ever move
 it back into range.
 
+Some items have a ceiling of their own, below their pouch's. `itemMaxCount(pouch, itemId)` applies
+PKHeX's per-item rules (`PlayerBag*.GetMaxCount`) on top of the pouch: one of each HM (Gens 2-4),
+one of each Sword/Shield TM (TRs stack), one of each Scarlet/Violet picnic accessory, two Z-Rings in
+Sun/Moon and Ultra Sun/Ultra Moon, one of any key item, and none at all for Legends: Z-A's
+Cherished Ring and Colorful Screw. Add All Items gives every item at most that, and it **never
+lowers** a count that is already higher. The Edit Item dialog still clamps to the pouch's ceiling.
+
 ---
 
 ## 26. DLC revision is not a content gate
@@ -418,6 +428,16 @@ reports a Warning rather than Invalid. **Match the reference's confidence.**
 And where PKHeX's per-game rule answers a subtly different question than you need, deviate — loudly,
 in the generator's docstring. `gen_personal.py` excludes Gen 7 Totem forms for exactly that reason
 (chapter 07).
+
+---
+
+## 31. A null slot that is not free
+
+A Gen 1/2 box or party entry PKSE cannot read (MissingNo., an out-of-range Gen 2 species) loads as
+null but is written back at its position, so it occupies a slot. The storage view used to show it as
+empty: a Pokemon dropped there made the list one entry longer than it can hold, and the last entry
+was cut on save. Every "is there room?" question goes through `storageSlotLocked` (boxes) or counts
+`getUnmappedPartySlots()` (party), never through `!pokemon` alone. Chapter 06 has the details.
 
 ---
 

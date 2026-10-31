@@ -330,6 +330,9 @@ virtual bool   supportsBoxNames() const noexcept { return false; }
 virtual size_t getMaxBoxNameLength() const noexcept { return 0; }   // 0 = renaming unsupported
 virtual bool   canStoreBoxName(const std::string&) const { return true; }
 virtual bool   compactStorage() { return false; }    // MUST stay a no-op for positional games
+virtual bool   isBoxSlotLocked(size_t, size_t) const noexcept { return false; }   // battle teams
+virtual bool   isBoxSlotUnmapped(size_t, size_t) const noexcept { return false; } // Gen 1/2 kept entries
+virtual std::vector<size_t> getUnmappedPartySlots() const { return {}; }          // Gen 1/2 kept entries
 virtual size_t getItemPouchCapacity(int pouch) const { return 0; }  // 0 = appending unsupported
 virtual bool   itemsAreIdIndexed() const { return false; }
 virtual uint32_t getMaxMoney() const noexcept { return 9999999; }

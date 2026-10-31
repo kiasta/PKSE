@@ -87,7 +87,10 @@ namespace Trainer
         void updateItemBlock() override;
         void updateTrainerInfoBlock() override;                                // money / OT name
         uint32_t getMaxMoney() const noexcept override { return 999999; }      // PKHeX SAV3.MaxMoney
-        size_t getMaxTrainerNameLength() const noexcept override { return 7; } // PKHeX SAV3.MaxStringLengthTrainer
+        /// PKHeX SAV3.OT: five characters on a Japanese save, seven elsewhere. The Japanese games never
+        /// write the name field's last two bytes, and that zero pair is how the save's language is told
+        /// apart (PKHeX SAV3 `Japanese`), so a longer name would turn the save international.
+        size_t getMaxTrainerNameLength() const noexcept override { return languageId == static_cast<uint8_t>(Enums::LanguageID::Japanese) ? 5 : 7; }
         int getMaxTrainerNameDigits() const noexcept override { return -1; }   // no digit cap before generation 4
 
         std::unique_ptr<::Pokemon::Pokemon> createBlankPokemon() const override;

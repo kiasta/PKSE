@@ -226,6 +226,15 @@ namespace Pokemon
         virtual uint8_t hyperTrainFlags() const noexcept { return 0; }
         virtual void setHyperTrainFlags(uint8_t) noexcept {}
 
+        /// The level at which the game offers Hyper Training: 100 in Gens 7 and 8, 50 from Scarlet /
+        /// Violet on (PKHeX's GetHyperTrainMinLevel). Only meaningful where hasHyperTraining().
+        virtual uint8_t hyperTrainMinimumLevel() const noexcept { return 100; }
+
+        /// Whether this record could have been Hyper Trained at all. Distinct from hasHyperTraining(),
+        /// which says the field exists: Legends: Arceus stores the flags but sells no Bottle Caps, so
+        /// they can only have been set in a game visited through HOME (PKHeX's IsHyperTrainingAvailable).
+        virtual bool isHyperTrainingAvailable() const noexcept { return hasHyperTraining(); }
+
         /// Stat index, in the IV/HT bit order: 0 HP, 1 ATK, 2 DEF, 3 SPA, 4 SPD, 5 SPE.
         enum HyperTrainStat : int
         {
@@ -286,6 +295,57 @@ namespace Pokemon
         }
 
         /**
+         * The percentage a nature applies to one stat (90, 100 or 110), with `statIndex` in
+         * STAT-WRITE order: 0 ATK, 1 DEF, 2 SPE, 3 SPA, 4 SPD. Nature n raises stat n / 5 and lowers
+         * stat n % 5; the five where those coincide (Hardy, Docile, Serious, Bashful, Quirky) are
+         * neutral. Computed rather than tabled: ten hand-copied tables once disagreed (Docile lowered
+         * Speed in Gen 5 alone). PKHeX NatureAmp.
+         */
+        static int natureStatPercent(uint8_t natureId, int statIndex) noexcept
+        {
+            constexpr uint8_t natureCount = 25;
+            constexpr int statsPerRow = 5;
+            if (natureId >= natureCount || statIndex < 0 || statIndex >= statsPerRow)
+                return 100;
+            const int raisedStatIndex = natureId / statsPerRow;
+            const int loweredStatIndex = natureId % statsPerRow;
+            if (raisedStatIndex == loweredStatIndex)
+                return 100;
+            if (statIndex == raisedStatIndex)
+                return 110;
+            if (statIndex == loweredStatIndex)
+                return 90;
+            return 100;
+        }
+
+        /// Shedinja's rule (base HP 1): its maximum HP is always 1, whatever the formula says.
+        /// PKHeX PKM.GetStats: `p.HP == 1 ? 1 : ...`.
+        static int hitPointsForBase(uint8_t baseHitPoints, int formulaHitPoints) noexcept
+        {
+            return baseHitPoints == 1 ? 1 : formulaHitPoints;
+        }
+
+        /**
+         * PKHeX StringConverter.GetIsFullWidthString: true when any character is outside the
+         * half-width ranges (U+0xxx and the U+Exxx private-use glyphs) other than the two gender
+         * signs. Gens 4-7 store a gender sign in a half-width name as the game's own half-width
+         * glyph, and in a full-width name as the ordinary sign.
+         */
+        static bool isFullWidthText(const std::u16string &text) noexcept
+        {
+            for (const char16_t character : text)
+            {
+                const uint16_t codeUnit = static_cast<uint16_t>(character);
+                if ((codeUnit >> 12) == 0 || (codeUnit >> 12) == 0xE)
+                    continue;
+                if (codeUnit == 0x2640 || codeUnit == 0x2642)
+                    continue;
+                return true;
+            }
+            return false;
+        }
+
+        /**
          * Awakening Values (AVs) are unique to Pokemon Let's Go Pikachu/Eevee.
          * They provide additional stat points similar to EVs but earned differently.
          * Max 200 per stat, earned by using candies or catching Pokemon.
@@ -310,12 +370,23 @@ namespace Pokemon
          * Is this an Alpha? Legends: Arceus and Legends: Z-A only; every other format
          * has no such concept and is false.
          *
-         * Read-only across the codebase -- nothing in PKSE creates an Alpha -- but a save
-         * can already contain one, and the legality checker has to know: an Alpha is a
-         * property of the ENCOUNTER (alpha slots and alpha statics are separate templates
-         * with their own guaranteed IVs), not something the player can confer afterwards.
+         * The legality checker reads it because an Alpha is a property of the ENCOUNTER
+         * (alpha slots and alpha statics are separate templates with their own guaranteed
+         * IVs), not something the player can confer afterwards. The editor still lets the
+         * flag be set; legality reports the mismatch rather than refusing it.
          */
         virtual bool isAlpha() const noexcept { return false; }
+
+        /// Whether the format stores an Alpha flag at all (Legends: Arceus, Legends: Z-A).
+        virtual bool hasAlphaFlag() const noexcept { return false; }
+
+        /**
+         * Sets the Alpha flag. Setting it also gives the Pokemon the size the game gives a wild
+         * Alpha, because an Alpha of ordinary size matches no encounter; clearing it leaves the
+         * size alone, since a maximum-size non-Alpha is an ordinary roll. A no-op where
+         * hasAlphaFlag() is false.
+         */
+        virtual void setAlpha(bool alpha) noexcept { (void)alpha; }
 
         virtual uint16_t move(int slot) const noexcept
         {

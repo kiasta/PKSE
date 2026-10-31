@@ -29,9 +29,10 @@ namespace Pokemon {
     /// Statistics-entry index for a (species, form), or DEX8LA_NO_STAT_ENTRY when it has none.
     uint16_t getStatisticsIndex8LA(uint16_t species, uint8_t form) noexcept;
 
-    /// True when the dex tracks this species+form's genders SEPARATELY (PokemonInfoGenders bit 3).
-    /// Where false, the male and female slots are one shared record.
-    bool tracksGenderSeparately8LA(uint16_t species, uint8_t form) noexcept;
+    /// True when this species+form's male and female are ONE dex record (PokemonInfoGenders bit 3;
+    /// PKHeX counts such an entry once for either gender). PKHeX's SetSelectedGenderForm then picks
+    /// the displayed gender from the obtained flags rather than from the Pokemon alone.
+    bool sharesGenderRecord8LA(uint16_t species, uint8_t form) noexcept;
 
     /// The four size research tasks. Large and small compare HeightAbsolute with the threshold;
     /// heavy and light compare WeightAbsolute with the threshold in tenths.

@@ -3,8 +3,10 @@
 #include "Pokemon/PersonalInfo1RBY.h" // Gen 1's own per-species table
 
 #include "Pokemon/Experience.h"     // getLevelFromExp / getExpForLevel
+#include "Pokemon/EvolutionTable.h"
 #include "Utils/Gen1Text.h"         // the Gen 1 character sets
 #include "Utils/StringHelpers.h"  // normalizeGameBoyName / utf8ToUtf16 -- shared with Gen 2
+#include "Names/NameLanguage.h"   // the name table of each language
 
 namespace Names
 {
@@ -13,11 +15,57 @@ namespace Names
     // declared in Trainer/Trainer.h, and a Pokemon-layer source must not include the
     // trainer layer to reach it.
     const char *getSpeciesName(uint16_t speciesId);
+    // The per-language species names, for telling which language an un-nicknamed record was
+    // written in. Forward-declared for the same reason as getSpeciesName above.
+    const char *getSpeciesNameLocalized(uint16_t speciesId, size_t languageIndex);
 }
 
 
 namespace Pokemon
 {
+
+    namespace
+    {
+        /// The catch-rate bytes that are a Gen 2 held item once traded up: PKHeX
+        /// ItemConverter.CatchRateIsHeldItem, one bit per byte value.
+        constexpr uint8_t CATCH_RATE_HELD_ITEM_FLAGS[32] = {
+            0x3F, 0xFF, 0xFF, 0xFD, 0xFF, 0xDF, 0x3B, 0xD2,
+            0x03, 0xFF, 0xFF, 0xFB, 0xEF, 0xFF, 0xE7, 0x7E,
+            0x18, 0x9C, 0xC5, 0xF1, 0xFB, 0x77, 0xF0, 0xBF,
+            0xF7, 0xFF, 0xFF, 0xEF, 0xFF, 0xFF, 0x07, 0x00,
+        };
+
+        /**
+         * Whether a species change keeps the stored catch rate rather than resetting it to the new
+         * species' own (PKHeX PK1.SetSpeciesValues / IsValidCatchRateAnyPreEvo): a tradeback held
+         * item, the Light Ball rate Yellow's starter Pikachu carries, or the rate of the species or
+         * one it evolved from -- which is what an evolved Pokemon still holds.
+         *
+         * PKHeX also accepts Yellow's own per-species rates; PKSE has no Yellow personal table, so a
+         * rate only Yellow uses is reset here.
+         */
+        bool isCatchRateKeptAcrossSpecies(uint16_t speciesId, uint8_t catchRateValue)
+        {
+            constexpr uint16_t pikachuSpeciesId = 25;
+            constexpr uint8_t lightBallCatchRate = 0xA3;
+            if ((CATCH_RATE_HELD_ITEM_FLAGS[catchRateValue >> 3] >> (catchRateValue & 7)) & 1)
+                return true;
+            if (speciesId == pikachuSpeciesId && catchRateValue == lightBallCatchRate)
+                return true;
+            if (getPersonalInfo1RBY(speciesId, 0).catchRate == catchRateValue)
+                return true;
+            constexpr int maximumChainLength = 4;
+            uint16_t ancestorSpecies[maximumChainLength] = {};
+            uint8_t ancestorForms[maximumChainLength] = {};
+            const int ancestorCount = getPreEvolutionChain(Enums::GameVersion::RBY, speciesId, 0, ancestorSpecies, ancestorForms, maximumChainLength);
+            for (int ancestorIndex = 0; ancestorIndex < ancestorCount; ++ancestorIndex)
+            {
+                if (getPersonalInfo1RBY(ancestorSpecies[ancestorIndex], 0).catchRate == catchRateValue)
+                    return true;
+            }
+            return false;
+        }
+    }
 
     const char *Pokemon1RBY::species() const noexcept { return Names::getSpeciesName(speciesID()); }
 
@@ -49,6 +97,15 @@ namespace Pokemon
         setB8(0x21, levelValue);
         setB8(0x03, levelValue); // both, always -- PKHeX's Stat_Level setter does the same
         wr24be(ofsBody() + 0x0E, getExpForLevel(levelValue, growthRate()) & 0xFFFFFFu);
+        recalculateStats();
+    }
+
+    void Pokemon1RBY::setExp(uint32_t value) noexcept
+    {
+        wr24be(ofsBody() + 0x0E, value & 0xFFFFFF);
+        const uint8_t levelValue = getLevelFromExp(value & 0xFFFFFF, growthRate());
+        setB8(0x21, levelValue);
+        setB8(0x03, levelValue);
         recalculateStats();
     }
 
@@ -238,6 +295,67 @@ namespace Pokemon
         return true;
     }
 
+    namespace
+    {
+        /// The languages an international Game Boy cart shipped in, in PKHeX's search order
+        /// (Language.Languages_GB after Japanese), each with the name table it reads from.
+        struct GameBoyLanguage
+        {
+            Enums::LanguageID languageId;
+            Names::NameLanguage nameLanguage;
+        };
+        constexpr GameBoyLanguage INTERNATIONAL_GAME_BOY_LANGUAGES[] = {
+            {Enums::LanguageID::English, Names::NameLanguage::English},
+            {Enums::LanguageID::French, Names::NameLanguage::French},
+            {Enums::LanguageID::Italian, Names::NameLanguage::Italian},
+            {Enums::LanguageID::German, Names::NameLanguage::German},
+            {Enums::LanguageID::Spanish, Names::NameLanguage::Spanish},
+        };
+
+        /// A species name as an international Gen 1 cart writes it, ready to compare with a stored
+        /// name (PKHeX SpeciesName.GetSpeciesName1234): upper case, and French drops the accents on
+        /// E and I. Run through normalizeGameBoyName like the stored side.
+        std::u16string gameBoySpeciesName(uint16_t nationalSpecies, const GameBoyLanguage &language)
+        {
+            std::u16string speciesName = Utils::utf8ToUtf16(Names::getSpeciesNameLocalized(nationalSpecies, static_cast<size_t>(language.nameLanguage)));
+            for (char16_t &character : speciesName)
+            {
+                if (character >= 0xE0 && character <= 0xFE && character != 0xF7)
+                    character = static_cast<char16_t>(character - 0x20);
+                if (language.languageId == Enums::LanguageID::French)
+                {
+                    if (character >= 0xC8 && character <= 0xCA)
+                        character = u'E';
+                    else if (character == 0xCF)
+                        character = u'I';
+                }
+            }
+            return Utils::normalizeGameBoyName(speciesName);
+        }
+    }
+
+    // Not stored, so inferred as PKHeX GBPKM.Language and GuessedLanguage do: an OT name with a
+    // German-only letter is German; otherwise the language whose species name the record still
+    // carries; otherwise English. Asking the DISPLAY language instead made every un-nicknamed
+    // English Pokemon a "nickname" under a French menu, and sent every French one out as English.
+    uint8_t Pokemon1RBY::language() const noexcept
+    {
+        if (japanese())
+            return static_cast<uint8_t>(Enums::LanguageID::Japanese);
+        for (const char16_t character : otName())
+        {
+            if (character == u'\u00C4' || character == u'\u00D6' || character == u'\u00DC' || character == u'\u00E4' || character == u'\u00F6' || character == u'\u00FC')
+                return static_cast<uint8_t>(Enums::LanguageID::German);
+        }
+        const std::u16string stored = Utils::normalizeGameBoyName(nickname());
+        for (const GameBoyLanguage &candidate : INTERNATIONAL_GAME_BOY_LANGUAGES)
+        {
+            if (!stored.empty() && stored == gameBoySpeciesName(speciesID(), candidate))
+                return static_cast<uint8_t>(candidate.languageId);
+        }
+        return static_cast<uint8_t>(Enums::LanguageID::English);
+    }
+
     bool Pokemon1RBY::isNicknamed() const noexcept
     {
         // Gen 1 has no "is nicknamed" flag -- the games compare the stored name against the
@@ -253,7 +371,15 @@ namespace Pokemon
         const std::u16string stored = Utils::normalizeGameBoyName(nickname());
         if (stored.empty())
             return false;
-        return stored != Utils::normalizeGameBoyName(Utils::utf8ToUtf16(species()));
+        // Compared with the species name in the record's OWN language (PKHeX IsNicknamedBank),
+        // never the display language.
+        const uint8_t recordLanguage = language();
+        for (const GameBoyLanguage &candidate : INTERNATIONAL_GAME_BOY_LANGUAGES)
+        {
+            if (static_cast<uint8_t>(candidate.languageId) == recordLanguage)
+                return stored != gameBoySpeciesName(speciesID(), candidate);
+        }
+        return true;
     }
 
     uint8_t Pokemon1RBY::baseHP() const noexcept
@@ -295,6 +421,8 @@ namespace Pokemon
         const uint8_t internal = nationalToG1(national);
         // not a Gen 1 species -- refuse rather than store a MissingNo.
         if (internal == 0) return;
+        // A blank record's catch rate of 0 is not a rate to keep: a new Pokemon takes its species'.
+        const bool replacesSpecies = speciesID() != 0;
         setB8(0x00, internal);
         // Types and catch rate are STORED per-Pokemon, copied from the base-stat table when the
         // Pokemon is created. Leaving the old ones behind produces a Pokemon whose typing and
@@ -311,7 +439,8 @@ namespace Pokemon
             const uint8_t secondType = (bs.type2 == PERSONAL_TYPE_NONE) ? bs.type1 : bs.type2;
             setB8(0x05, pkseTypeToG1(bs.type1));
             setB8(0x06, pkseTypeToG1(secondType));
-            setB8(0x07, bs.catchRate);
+            if (!replacesSpecies || !isCatchRateKeptAcrossSpecies(national, catchRate()))
+                setB8(0x07, bs.catchRate);
         }
         syncListHeader(); // the list header carries the species too, and it is what the games read
         recalculateStats();

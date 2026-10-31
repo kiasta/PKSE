@@ -59,8 +59,8 @@ APP_AUTHOR  :=  Kiasta
 #
 # NOTE: no trailing comment on either assignment line. Make keeps trailing whitespace in a value, so
 # "0.0.3 \t\t# ..." would have baked spaces into the .nacp version and the -D define.
-APP_VERSION :=	1.2.1
-APP_VERSION_FULL :=	1.2.1
+APP_VERSION :=	1.2.2
+APP_VERSION_FULL :=	1.2.2
 
 # Mirrors what switch_rules does for APP_VERSION: an unset long form falls back to the short one
 # rather than compiling in an empty version string.
@@ -135,7 +135,9 @@ SDL_PKGCONFIG	:=	$(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 SDL_CFLAGS	:=	$(shell $(SDL_PKGCONFIG) --cflags sdl2)
 SDL_LIBS	:=	$(shell $(SDL_PKGCONFIG) --libs --static sdl2)
 
-CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
+# -ffp-contract=off: no fused multiply-add. The games round a multiply and the add after it
+# separately, and PKHeX compares the Let's Go and Legends: Arceus size floats bit for bit.
+CFLAGS	:=	-g -Wall -O2 -ffunction-sections -ffp-contract=off \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(SDL_CFLAGS)
@@ -265,12 +267,13 @@ endif
 #---------------------------------------------------------------------------------
 # romfs assets: REQUIRED, and NOT fetched here
 #
-# NOTHING IN THIS MAKEFILE DOWNLOADS ANYTHING. Fetching is four scripts under tools/, run by hand
+# NOTHING IN THIS MAKEFILE DOWNLOADS ANYTHING. Fetching is five scripts under tools/, run by hand
 # once per checkout -- romfs/ is gitignored, so a fresh one has none of it:
 #
 #     python tools/gen_fonts.py         the three SIL OFL UI fonts
 #     python tools/gen_typeicons.py     the 19 type icons (18 + Stellar, which is Tera-only)
 #     python tools/gen_marks.py         the origin markings
+#     python tools/gen_ribbons.py       the ribbon and mark images
 #     python tools/gen_hdsprites.py     the 3260 Pokemon sprites (needs Pillow, ~148 MB)
 #
 # A BUILD HAS NO BUSINESS REACHING THE NETWORK. It makes the toolchain depend on GitHub being up,
@@ -278,7 +281,7 @@ endif
 # .nro was actually built from.
 #
 # So the build REFUSES TO START instead of quietly fetching (`check-assets`, below -- named
-# so it cannot collide with the assets/ DIRECTORY, which would let Make call it up to date). All four are mandatory: without the
+# so it cannot collide with the assets/ DIRECTORY, which would let Make call it up to date). All five are mandatory: without the
 # fonts nothing on screen has text at all, and the rest are blank art with nothing anywhere saying
 # why -- a missing asset otherwise links into a perfectly healthy .nro. One representative file
 # per group is enough, because each script verifies its own set and is safe to re-run.
@@ -286,6 +289,7 @@ endif
 ASSET_FONTS   := romfs/fonts/Nunito.ttf
 ASSET_TYPES   := romfs/sprites/types/0.png
 ASSET_MARKS   := romfs/sprites/marks/vc.png
+ASSET_RIBBONS := romfs/sprites/ribbons/ribbonchampionkalos.png
 ASSET_SPRITES := romfs/sprites/pokemon_hd/1.png
 
 check-assets:
@@ -293,6 +297,7 @@ check-assets:
 	[ -s "$(CURDIR)/$(ASSET_FONTS)" ]   || missing="$$missing\n  UI fonts .......... python tools/gen_fonts.py"; \
 	[ -s "$(CURDIR)/$(ASSET_TYPES)" ]   || missing="$$missing\n  type icons ........ python tools/gen_typeicons.py"; \
 	[ -s "$(CURDIR)/$(ASSET_MARKS)" ]   || missing="$$missing\n  origin markings ... python tools/gen_marks.py"; \
+	[ -s "$(CURDIR)/$(ASSET_RIBBONS)" ] || missing="$$missing\n  ribbon images ..... python tools/gen_ribbons.py"; \
 	[ -s "$(CURDIR)/$(ASSET_SPRITES)" ] || missing="$$missing\n  Pokemon sprites ... python tools/gen_hdsprites.py"; \
 	if [ -n "$$missing" ]; then \
 		printf 'error: romfs is missing assets the .nro must contain, and this build does not\n'; \

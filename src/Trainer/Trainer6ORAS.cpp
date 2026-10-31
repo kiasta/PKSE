@@ -236,6 +236,12 @@ namespace Trainer
         {
             if (!party[partySlotIndex] || party[partySlotIndex]->speciesID() == 0)
                 continue;
+            // Unchanged since load: keep the bytes (a Bad Egg keeps its bad checksum, as in PKHeX).
+            if (slotHoldsLoadedRecord(party[partySlotIndex].get(), bytes + written * recordSize, recordSize, Encryption::decryptArray6ORAS))
+            {
+                ++written;
+                continue;
+            }
             party[partySlotIndex]->refreshChecksum();
             // Staged through a party-length buffer -- see Trainer6ORAS::makeEntity.
             std::vector<std::byte> rec(recordSize, std::byte{0});
@@ -261,6 +267,9 @@ namespace Trainer
             {
                 uint8_t *offset = b + (box * BOX_SLOTS + slotIndex) * recordSize;
                 auto &pokemon = boxes[box][slotIndex];
+                // Unchanged since load (an empty slot or a Bad Egg included): keep the file's bytes.
+                if (slotHoldsLoadedRecord(pokemon.get(), offset, recordSize, Encryption::decryptArray6ORAS))
+                    continue;
                 if (pokemon)
                 {
                     // Empty slots go through here too. Re-encrypting the record we read back is

@@ -40,10 +40,36 @@ namespace Encryption
 
     std::vector<Block> decrypt(uint8_t *data, size_t dataLength)
     {
-        size_t payloadLength = dataLength - SIZE_HASH_IN_BYTES;
+        if (!data || dataLength <= SIZE_HASH_IN_BYTES)
+        {
+            char message[LOG_BUFFER_SIZE];
+            snprintf(message, sizeof(message), "SwishCrypto save refused: %zu bytes is no longer than its 0x%zX-byte hash", dataLength, static_cast<size_t>(SIZE_HASH_IN_BYTES));
+            logErrorToFile(message);
+            return {};
+        }
+        const size_t payloadLength = dataLength - SIZE_HASH_IN_BYTES;
+
+        // The hash covers the payload as stored (still xorpad-encrypted).
+        uint8_t computedHash[SIZE_HASH_IN_BYTES];
+        computeHash(data, payloadLength, computedHash);
+        if (std::memcmp(computedHash, data + payloadLength, SIZE_HASH_IN_BYTES) != 0)
+        {
+            logErrorToFile("SwishCrypto save refused: the SHA-256 footer does not match (truncated or damaged file)");
+            return {};
+        }
+
         std::vector<uint8_t> payload(data, data + payloadLength);
         cryptStaticXorpadBytes(payload, payloadLength);
-        return parseAllBlocks(payload.data(), payloadLength);
+        size_t consumedLength = 0;
+        std::vector<Block> blocks = parseAllBlocks(payload.data(), payloadLength, &consumedLength);
+        if (consumedLength != payloadLength)
+        {
+            char message[LOG_BUFFER_SIZE];
+            snprintf(message, sizeof(message), "SwishCrypto save refused: blocks parse stopped at 0x%zX of 0x%zX payload bytes", consumedLength, payloadLength);
+            logErrorToFile(message);
+            return {};
+        }
+        return blocks;
     }
 
     void computeHash(const uint8_t *data, size_t dataLength, uint8_t *hash)

@@ -146,7 +146,7 @@ CSHARP_VERSION_ALIASES = {
 KIND = {"wild": 0, "static": 1, "gift": 2, "trade": 3, "raid": 4, "event": 5}
 SHINY = {"random": 0, "never": 1, "always": 2}
 FORM_ANY, GENDER_ANY, NATURE_ANY = 0xFF, 0xFF, 0xFF
-F_FATEFUL, F_ALPHA, F_BOOST60, F_EGG, F_MET_LEVEL_ZERO = 1, 2, 4, 8, 16
+F_FATEFUL, F_ALPHA, F_BOOST60, F_EGG, F_MET_LEVEL_ZERO, F_CATCH_COMBO, F_FLUTE, F_DEXNAV = 1, 2, 4, 8, 16, 32, 64, 128
 
 # Location sentinels for templates whose met location is a whole region rather than one
 # id. SW/SH distribution raids are the only case: the den is anonymous, so any Wild Area
@@ -260,13 +260,15 @@ EGG_RULES = {
     # Island in Kanto / Route 117 in Hoenn.
     "FRLG": _egg(0, 0, 0, 0, 146),          # Locations.HatchLocationFRLG
     "RSE": _egg(0, 0, 0, 0, 32),            # Locations.HatchLocationRSE
+    # Platinum and HeartGold/SoulSilver also accept Faraway4 (3002, "a faraway place") as a bred
+    # egg's location; Diamond/Pearl do not (PKHeX Locations.IsEggLocationBred4).
     "DP": _egg(2000, 2002, 0, 0, 4),        # Daycare4, LinkTrade4; HatchLocationDPPt
-    "PT": _egg(2000, 2002, 0, 0, 4),
-    "HGSS": _egg(2000, 2002, 0, 0, 182),    # HatchLocationHGSS
+    "PT": _egg(2000, 2002, 3002, 0, 4),     # + Faraway4
+    "HGSS": _egg(2000, 2002, 3002, 0, 182), # + Faraway4; HatchLocationHGSS
     # GEN 5 HAS THREE legal bred-egg locations, which is why the row carries two alternates rather
     # than one: PKHeX's IsEggLocationBred5 accepts Daycare5, LinkTrade5 and LinkTrade5NPC, the last
     # being the id Spin Trade writes ("incorrectly used ... two legal values!", its own comment).
-    # Every other generation uses at most two and leaves the third slot 0.
+    # Platinum and HGSS fill the third slot too (Faraway4); every other game leaves it 0.
     # GEN 2 IS CRYSTAL-ONLY HERE: it invented breeding and has no egg-location field, and Gold and
     # Silver record no met data at all, so only a Crystal egg leaves a trace -- met level 1 wherever
     # it hatched. Locations.HatchLocationC is only what PKHeX's EncounterEgg2 STAMPS when it builds
@@ -284,7 +286,9 @@ EGG_RULES = {
     "SM": _egg(60002, 30002, 0, 1, 78, 30016),  # HatchLocation7; Locations.Pelago7
     "USUM": _egg(60002, 30002, 0, 1, 78, 30016),
     "SWSH": _egg(60002, 30002, 0, 1, 40),       # Daycare5, LinkTrade6; HatchLocation8
-    "BDSP": _egg(60010, 30002, 0, 1, 446),      # Daycare8b, LinkTrade6; HatchLocation8b
+    # BD/SP's traded egg carries LinkTrade6NPC (30001), not LinkTrade6 -- PKHeX
+    # Locations.IsEggLocationBred8b and TradedEggLocation both single BD/SP out.
+    "BDSP": _egg(60010, 30001, 0, 1, 446),      # Daycare8b, LinkTrade6NPC; HatchLocation8b
     "SV": _egg(30023, 30002, 0, 1, 6),          # Picnic9, LinkTrade6; HatchLocation9
 }
 NO_BREEDING = ("RBY", "GG", "PLA", "ZA")  # Gen 1, Let's Go, Legends: Arceus and Z-A: no daycare
@@ -899,7 +903,7 @@ def wild_hgss():
     return wild_gen34("Gen4", 6, (("encounter_hg.pkl", 1), ("encounter_ss.pkl", 2)))
 
 
-def wild_gen567(generation, files):
+def wild_gen567(generation, files, flags_for_slot_type=None):
     """Gen 5, 6 and 7 wild slots -- one reader for all three, because the layout never changed.
 
     Each area is a 4-byte header (location u16, slot type, pad) followed by 4-byte slots of
@@ -911,6 +915,7 @@ def wild_gen567(generation, files):
     for file_name, version_bits in files:
         for area in split_blobs_uint32(_load(WILD(generation, file_name))):
             location = struct.unpack_from("<H", area, 0)[0]
+            slot_flags = flags_for_slot_type(area[2]) if flags_for_slot_type else 0
             body = area[4:]
             for offset in range(0, len(body) - 3, 4):
                 packed, level_min, level_max = struct.unpack_from("<HBB", body, offset)
@@ -922,7 +927,7 @@ def wild_gen567(generation, files):
                 if species == 0:
                     continue
                 out.append(row(species, location, wild_form(packed >> 11),
-                               level_min, level_max, version_bits, "wild"))
+                               level_min, level_max, version_bits, "wild", flags=slot_flags))
     return out
 
 
@@ -957,8 +962,16 @@ def wild_xy():
     return out
 
 
+ORAS_SLOT_ROCK_SMASH = 6  # PKHeX SlotType6.Rock_Smash -- the one slot type DexNav cannot search
+
+
 def wild_oras():
-    return wild_gen567("Gen6", (("encounter_as.pkl", 1), ("encounter_or.pkl", 2)))
+    # A met level outside the slot's own span is ordinary in ORAS: the Flutes shift it by 4 and a
+    # DexNav chain by up to 33 (PKHeX EncounterSlot6AO.IsMatchExact). The area header's third byte
+    # is the slot type (EncounterArea6AO: `Type = (SlotType6)data[2]`).
+    def oras_slot_flags(slot_type):
+        return F_FLUTE if slot_type == ORAS_SLOT_ROCK_SMASH else F_FLUTE | F_DEXNAV
+    return wild_gen567("Gen6", (("encounter_as.pkl", 1), ("encounter_or.pkl", 2)), oras_slot_flags)
 
 
 def wild_sm():
@@ -980,7 +993,8 @@ def wild_gg():
             for offset in range(0, len(body) - 3, 4):
                 species, _flags, level_min, level_max = struct.unpack_from("<BBBB", body, offset)
                 for location in locations:
-                    out.append(row(species, location, 0, level_min, level_max, version_bits, "wild"))
+                    out.append(row(species, location, 0, level_min, level_max, version_bits, "wild",
+                                   flags=F_CATCH_COMBO))
     return out
 
 
@@ -2312,6 +2326,16 @@ namespace Legality {
         /// instead. Gen 2's in-game trades: Crystal records them at LinkTrade2NPC and met level 0,
         /// and the received Pokemon is at least the level the template names (EncounterTrade2).
         ENCOUNTER_FLAG_MET_LEVEL_ZERO = 1 << 4,
+        /// The slot can be met ONE LEVEL above its range. Let's Go's catch combo spawns a slot's
+        /// Pokemon a level higher, so PKHeX matches every Let's Go wild slot up to LevelMax + 1
+        /// (EncounterSlot7b.CatchComboBonus).
+        ENCOUNTER_FLAG_CATCH_COMBO = 1 << 5,
+        /// ORAS's Black and White Flutes move a wild slot's level 4 either way (PKHeX
+        /// EncounterSlot6AO.FluteBoostMin/Max). Every ORAS wild slot carries it.
+        ENCOUNTER_FLAG_FLUTE   = 1 << 6,
+        /// ORAS DexNav: a chain raises the level by up to 29, on top of the Black Flute's 4
+        /// (EncounterSlot6AO.DexNavBoost). Every ORAS slot but Rock Smash (CanDexNav).
+        ENCOUNTER_FLAG_DEXNAV  = 1 << 7,
     };
 
     constexpr uint8_t ENCOUNTER_FORM_ANY   = 0xFF;  // slot randomises the form

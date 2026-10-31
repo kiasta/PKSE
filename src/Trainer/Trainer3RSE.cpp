@@ -376,7 +376,7 @@ namespace Trainer
     {
         const size_t smallBlockOffset = sectorOffset[SMALL_ID];
         detectLanguage(smallBlockOffset);
-        this->trainerName = g3Decode(&saveData[smallBlockOffset + 0x00], 7, languageId);
+        this->trainerName = g3Decode(&saveData[smallBlockOffset + 0x00], getMaxTrainerNameLength(), languageId);
         this->TID16 = readUInt16LittleEndian(&saveData[smallBlockOffset + 0x0A]);
         this->SID16 = readUInt16LittleEndian(&saveData[smallBlockOffset + 0x0C]);
         this->trainerGender = saveData[smallBlockOffset + 0x08] & 1; // 0x08: player gender (0=M, 1=F)
@@ -639,12 +639,13 @@ namespace Trainer
     void Trainer3RSE::updateTrainerInfoBlock()
     {
         // Raw sector-mapped save: OT name (g3-encoded, 7 chars @ 0x00) lives in the Small sector; money
-        // in the Large block at 0x290, XOR-keyed with the security key. finalizeChecksums() runs after.
-        // g3Encode writes 7 chars + a 0xFF terminator into 8 bytes, stopping before the gender byte at
-        // 0x08; the UI has already rejected any name the Gen-3 glyph table can't store.
+        // in the Large block at 0x490, XOR-keyed with the security key. finalizeChecksums() runs after.
+        // g3Encode writes up to 7 chars (5 on a Japanese save) and a 0xFF terminator, never reaching the
+        // gender byte at 0x08 -- nor, on a Japanese save, bytes 6-7, whose zeros mark it Japanese. The
+        // UI has already rejected any name the Gen-3 glyph table can't store.
         const size_t smallBlockOffset = sectorOffset[SMALL_ID];
         if (smallBlockOffset + 0x09 <= saveData.size())
-            g3Encode(this->trainerName, &saveData[smallBlockOffset + 0x00], 8, 7, languageId);
+            g3Encode(this->trainerName, &saveData[smallBlockOffset + 0x00], getMaxTrainerNameLength() + 1, getMaxTrainerNameLength(), languageId);
         uint8_t moneyBuf[4];
         writeUInt32LittleEndian(moneyBuf, this->money ^ saveSecurityKey);
         writeBlock(LARGE_ID, OFS_MONEY, moneyBuf, 4);
@@ -694,6 +695,12 @@ namespace Trainer
 
     const std::vector<uint8_t> &Trainer3RSE::serialize()
     {
+        // Nothing was located (no sector table), so every writer below would write through offset 0.
+        if (!valid)
+        {
+            logErrorToFile("Gen 3 save did not load; nothing to serialize");
+            return saveData;
+        }
         updateItemBlock();
         updateBoxBlock();
         updateBoxNameBlock();

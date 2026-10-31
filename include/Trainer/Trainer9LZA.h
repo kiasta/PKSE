@@ -24,6 +24,7 @@ namespace Trainer
 {
 
     constexpr size_t MY_STATUS9_LZA = 0xE3E89BD1;   // Trainer Details
+    constexpr size_t TEAM_INDEXES9_LZA = 0x33F39467; // battle-team box pointers (TeamIndexes8)
     constexpr size_t PARTY9_LZA = 0x3AA1A9AD;
     constexpr size_t MONEY9_LZA = 0x4F35D0DD;       // Money (u32)
     constexpr size_t PLAY_TIME9_LZA = 0xEDAFF794;
@@ -85,6 +86,8 @@ namespace Trainer
         void updateBoxNameBlock() override;
         void updateCurrentBoxBlock() override;
         bool supportsBoxNames() const noexcept override { return true; }
+        /// A member of a battle team (PKHeX GetBoxSlotFlags: overwrite-protected).
+        bool isBoxSlotLocked(size_t boxIndex, size_t slotIndex) const noexcept override { return battleTeamBlockHoldsSlot(TEAM_INDEXES9_LZA, boxIndex, slotIndex); }
         size_t getMaxBoxNameLength() const noexcept override { return BOX_NAME_LENGTH9_LZA / 2 - 1; }
 
         void updateItemBlock() override;
@@ -128,7 +131,10 @@ namespace Trainer
         // followed by a GAP_BOX_SLOT9_LZA-byte gap. (Trainer9SV packs its slots — no gap.)
         size_t partySlotStride = PARTY_SLOT_SIZE9_LZA; // stride between party slots (gapped)
         size_t boxSlotStride = BOX_SLOT_SIZE9_LZA;     // stride between box slots (gapped)
-        size_t slotGapZero = GAP_BOX_SLOT9_LZA;        // gap bytes zeroed after pokemon data on write
+
+        /// The footer bytes PKHeX writes with every slot it sets: the "present" flag on a revision != 0
+        /// save, and (party only) PARTY_FOOTER_OFFSET9_LZA. The rest of the gap is left as the game wrote it.
+        void writeSlotFooter(uint8_t *slotBytes, bool isPartySlot) const;
         void parseBlock(const Block &block);
 
         /** ID32 is at 0xA0. */

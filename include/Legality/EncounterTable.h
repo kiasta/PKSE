@@ -53,6 +53,16 @@ namespace Legality {
         /// instead. Gen 2's in-game trades: Crystal records them at LinkTrade2NPC and met level 0,
         /// and the received Pokemon is at least the level the template names (EncounterTrade2).
         ENCOUNTER_FLAG_MET_LEVEL_ZERO = 1 << 4,
+        /// The slot can be met ONE LEVEL above its range. Let's Go's catch combo spawns a slot's
+        /// Pokemon a level higher, so PKHeX matches every Let's Go wild slot up to LevelMax + 1
+        /// (EncounterSlot7b.CatchComboBonus).
+        ENCOUNTER_FLAG_CATCH_COMBO = 1 << 5,
+        /// ORAS's Black and White Flutes move a wild slot's level 4 either way (PKHeX
+        /// EncounterSlot6AO.FluteBoostMin/Max). Every ORAS wild slot carries it.
+        ENCOUNTER_FLAG_FLUTE   = 1 << 6,
+        /// ORAS DexNav: a chain raises the level by up to 29, on top of the Black Flute's 4
+        /// (EncounterSlot6AO.DexNavBoost). Every ORAS slot but Rock Smash (CanDexNav).
+        ENCOUNTER_FLAG_DEXNAV  = 1 << 7,
     };
 
     constexpr uint8_t ENCOUNTER_FORM_ANY   = 0xFF;  // slot randomises the form

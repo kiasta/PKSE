@@ -574,10 +574,8 @@ namespace Pokemon
 
         bool isShiny(uint32_t trainerID32, std::string species) const noexcept override
         {
-            if (trainerID32 == 0)
-            {
-                return false;
-            }
+            // No guard for an id of 0: PKHeX has none, and that is a real (if rare) trainer id.
+            // Callers skip empty slots, whose all-zero PID would otherwise read as shiny.
             uint32_t xorComponent = (pid() ^ trainerID32);
             uint32_t xorResult = (xorComponent ^ (xorComponent >> 16)) & 0xFFFF;
             return xorResult < 16;

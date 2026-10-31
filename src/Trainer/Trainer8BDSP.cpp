@@ -19,8 +19,27 @@ using namespace Utils;
 namespace Trainer
 {
 
+    bool Trainer8BDSP::detect(const std::vector<uint8_t> &bytes) noexcept
+    {
+        for (const SaveRevision8BDSP &revision : SAVE_REVISIONS8_BDSP)
+        {
+            if (bytes.size() == revision.fileSize)
+                return readUInt32LittleEndian(bytes.data()) == revision.revisionId;
+        }
+        return false;
+    }
+
     Trainer8BDSP::Trainer8BDSP(std::vector<uint8_t> data) : Trainer(std::vector<Block>{}), saveData(std::move(data))
     {
+        boxes.resize(BDSP_BOX_COUNT);
+        valid = detect(saveData);
+        if (!valid)
+        {
+            char message[LOG_BUFFER_SIZE];
+            snprintf(message, sizeof(message), "BDSP save refused: 0x%zX bytes is not a save size/revision PKHeX accepts", saveData.size());
+            logErrorToFile(message);
+            return;
+        }
         parseMyStatus();
         parseParty();
         parseBoxes();
@@ -83,9 +102,10 @@ namespace Trainer
                 {
                     boxes[bDSP_BOXIndex][slotIndex] = std::move(pokemon);
                 }
-                else if (boxBlank.empty())
+                else if (boxBlank.empty() && slotHoldsGameBlank(offset))
                 {
                     // Capture the game's encrypted blank (an empty slot) once, for empty-slot writes.
+                    // Only a real blank: an all-zero slot also decrypts to species 0 (the Bad Egg).
                     boxBlank.assign(&saveData[offset], &saveData[offset] + SIZE_PARTY8_BDSP);
                 }
                 // occupied stored above; empty slots stay nullptr
@@ -137,25 +157,29 @@ namespace Trainer
 
     void Trainer8BDSP::parseItems()
     {
-        // BDSP items are indexed by item id: item i's 0x10-byte record is at BDSP_ITEM_BASE + i*0x10,
-        // Count is int32 at record offset 0. Collect owned (count > 0) items into each pouch.
+        // BDSP items are indexed by item id: item i's 0x10-byte record is at BDSP_ITEM_BASE + i*0x10.
+        // An item is in the bag exactly when its sort order is non-zero (PKHeX InventoryPouch8b
+        // reads IsValidSaveSortNumberCount, not the count), and the bag lists it in that order.
         items.clear();
         items.resize(POUCH_COUNT8BDSP);
         for (size_t pouchIndex = 0; pouchIndex < POUCH_COUNT8BDSP; ++pouchIndex)
         {
+            std::vector<std::pair<uint16_t, InventoryItem>> sortedItems;
             const auto &validIds = getValidItemIds8BDSP(static_cast<PouchType8BDSP>(pouchIndex));
             for (uint16_t itemId : validIds)
             {
                 const size_t byteOffset = BDSP_ITEM_BASE + static_cast<size_t>(itemId) * ITEM_ENTRY_SIZE8BDSP;
-                if (byteOffset + 4 > saveData.size())
+                if (byteOffset + ITEM_ENTRY_SIZE8BDSP > saveData.size())
+                    continue;
+                const uint16_t sortOrder = readUInt16LittleEndian(&saveData[byteOffset + ITEM_SORT_ORDER_OFFSET8BDSP]);
+                if (sortOrder == 0)
                     continue;
                 const uint32_t count = readUInt32LittleEndian(&saveData[byteOffset + ITEM_COUNT_OFFSET8BDSP]);
-                if (count > 0)
-                {
-                    items[pouchIndex].push_back(InventoryItem{
-                        itemId, static_cast<uint16_t>(std::min<uint32_t>(count, 0xFFFFu)), false, false});
-                }
+                sortedItems.push_back({sortOrder, InventoryItem{itemId, static_cast<uint16_t>(std::min<uint32_t>(count, 0xFFFFu)), false, false}});
             }
+            std::stable_sort(sortedItems.begin(), sortedItems.end(), [](const auto &first, const auto &second) { return first.first < second.first; });
+            for (const auto &sortedItem : sortedItems)
+                items[pouchIndex].push_back(sortedItem.second);
         }
     }
 
@@ -181,6 +205,8 @@ namespace Trainer
             const size_t offset = BDSP_PARTY_OFFSET + partySlotIndex * SIZE_PARTY8_BDSP;
             if (offset + SIZE_PARTY8_BDSP > saveData.size())
                 break;
+            if (partySlotIndex < party.size() && slotHoldsLoadedRecord(party[partySlotIndex].get(), &saveData[offset], SIZE_PARTY8_BDSP, decryptArray8BDSP))
+                continue;
             if (partySlotIndex < party.size() && party[partySlotIndex] && party[partySlotIndex]->speciesID() != 0)
             {
                 const auto &pokemon = party[partySlotIndex];
@@ -225,6 +251,8 @@ namespace Trainer
                 const size_t offset = BDSP_BOX_OFFSET + (bDSP_BOXIndex * BOX_SLOTS + slotIndex) * SIZE_PARTY8_BDSP;
                 if (offset + SIZE_PARTY8_BDSP > saveData.size())
                     return;
+                if (slotHoldsLoadedRecord(boxes[bDSP_BOXIndex][slotIndex].get(), &saveData[offset], SIZE_PARTY8_BDSP, decryptArray8BDSP))
+                    continue;
                 if (boxes[bDSP_BOXIndex][slotIndex] && boxes[bDSP_BOXIndex][slotIndex]->speciesID() != 0)
                 {
                     const auto &pokemon = boxes[bDSP_BOXIndex][slotIndex];
@@ -422,29 +450,49 @@ namespace Trainer
 
     void Trainer8BDSP::updateItemBlock()
     {
-        // Write each parsed item's count (int32) in place — non-destructive: touches only known items,
-        // leaving unrelated item records and the new/favorite/sort-order fields intact.
+        // In place, by item id, touching only what the bag edit changed (PKHeX InventoryPouch8b
+        // rewrites every sort order; keeping the ones already there is what keeps an unedited save
+        // byte for byte):
+        //  - an item still in the bag gets its count; its sort order, seen and favourite fields stay;
+        //  - an item new to the bag also gets the next sort order in its pouch, and seen = 0 (the
+        //    NEW marker) when it was added in the editor -- a sort order of 0 means "not in the
+        //    bag" whatever the count, so without one the game never shows the item;
+        //  - an item that left the bag has its record cleared (PKHeX ClearItem). A count of 0 is
+        //    written as such, as PKHeX does: the record keeps its place in the bag.
+        auto recordAt = [&](uint16_t itemId) -> uint8_t * {
+            const size_t recordOffset = BDSP_ITEM_BASE + static_cast<size_t>(itemId) * ITEM_ENTRY_SIZE8BDSP;
+            return recordOffset + ITEM_ENTRY_SIZE8BDSP <= saveData.size() ? &saveData[recordOffset] : nullptr;
+        };
         for (size_t pouchIndex = 0; pouchIndex < items.size() && pouchIndex < POUCH_COUNT8BDSP; ++pouchIndex)
         {
+            const auto &validIds = getValidItemIds8BDSP(static_cast<PouchType8BDSP>(pouchIndex));
+            uint16_t highestSortOrder = 0;
+            for (uint16_t itemId : validIds)
+            {
+                if (const uint8_t *record = recordAt(itemId))
+                    highestSortOrder = std::max(highestSortOrder, readUInt16LittleEndian(record + ITEM_SORT_ORDER_OFFSET8BDSP));
+            }
+            std::vector<uint16_t> keptItemIds;
             for (const auto &item : items[pouchIndex])
             {
-                const size_t offset = BDSP_ITEM_BASE + static_cast<size_t>(item.itemId) * ITEM_ENTRY_SIZE8BDSP;
-                if (offset + 4 > saveData.size())
+                uint8_t *record = recordAt(item.itemId);
+                if (!record || std::find(validIds.begin(), validIds.end(), item.itemId) == validIds.end())
                     continue;
-                saveData[offset + 0] = static_cast<uint8_t>(item.count & 0xFF);
-                saveData[offset + 1] = static_cast<uint8_t>((item.count >> 8) & 0xFF);
-                saveData[offset + 2] = 0;
-                saveData[offset + 3] = 0;
-                // IsNew is an int32 at record 0x4. Only SET it for freshly-added items so the bag
-                // shows the "new" marker; existing new/favorite/sort fields stay intact. (BDSP derives
-                // the pouch from the item id, so unlike S/V-Z/A it needs no pouchId stamp.)
-                if (item.isNew && item.count > 0 && offset + 8 <= saveData.size())
-                {
-                    saveData[offset + 4] = 1;
-                    saveData[offset + 5] = 0;
-                    saveData[offset + 6] = 0;
-                    saveData[offset + 7] = 0;
-                }
+                keptItemIds.push_back(item.itemId);
+                writeUInt32LittleEndian(record + ITEM_COUNT_OFFSET8BDSP, item.count);
+                if (readUInt16LittleEndian(record + ITEM_SORT_ORDER_OFFSET8BDSP) != 0 || item.count == 0)
+                    continue;
+                writeUInt16LittleEndian(record + ITEM_SORT_ORDER_OFFSET8BDSP, ++highestSortOrder);
+                if (item.isNew)
+                    writeUInt32LittleEndian(record + ITEM_SEEN_OFFSET8BDSP, 0);
+            }
+            for (uint16_t itemId : validIds)
+            {
+                uint8_t *record = recordAt(itemId);
+                if (!record || readUInt16LittleEndian(record + ITEM_SORT_ORDER_OFFSET8BDSP) == 0)
+                    continue;
+                if (std::find(keptItemIds.begin(), keptItemIds.end(), itemId) == keptItemIds.end())
+                    std::memset(record, 0, ITEM_ENTRY_SIZE8BDSP);
             }
         }
     }

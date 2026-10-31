@@ -24,6 +24,10 @@ namespace Pokemon
                 return false;
             if (requirements.wantAbilityBit >= 0 && requirements.abilityBitIndex >= 16 && static_cast<int>((candidate >> requirements.abilityBitIndex) & 1) != requirements.wantAbilityBit)
                 return false;
+            if (requirements.wantWurmpleEvolution >= 0 && wurmpleEvolutionFromPID(candidate) != requirements.wantWurmpleEvolution)
+                return false;
+            if (requirements.wantCorrelationBit >= 0 && correlationBitFromPID(candidate) != requirements.wantCorrelationBit)
+                return false;
             if (requirements.wantShiny >= 0)
             {
                 const uint32_t trainerShinyValue = (requirements.trainerID32 >> 16) ^ (requirements.trainerID32 & 0xFFFF);
@@ -34,6 +38,28 @@ namespace Pokemon
             }
             return true;
         }
+    }
+
+    int wurmpleEvolutionFromPID(uint32_t pidValue) noexcept
+    {
+        return static_cast<int>(((pidValue >> 16) % 10) / 5);
+    }
+
+    int wurmpleEvolutionToHold(uint16_t speciesId, uint32_t currentPID) noexcept
+    {
+        constexpr uint16_t wurmpleSpeciesId = 265;
+        constexpr uint16_t silcoonSpeciesId = 266;
+        constexpr uint16_t dustoxSpeciesId = 269;
+        if (speciesId == wurmpleSpeciesId)
+            return wurmpleEvolutionFromPID(currentPID);
+        if (speciesId >= silcoonSpeciesId && speciesId <= dustoxSpeciesId)
+            return (speciesId - silcoonSpeciesId) >> 1; // Silcoon, Beautifly -> 0; Cascoon, Dustox -> 1
+        return -1;
+    }
+
+    int correlationBitFromPID(uint32_t pidValue) noexcept
+    {
+        return static_cast<int>((pidValue & 1) ^ (pidValue >> 31));
     }
 
     uint8_t genderFromPID(uint32_t pidValue, uint8_t genderRatio) noexcept

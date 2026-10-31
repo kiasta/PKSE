@@ -14,9 +14,10 @@
  *                            ball, gender and nature? See EncounterMatch.h.
  *
  * It stays INFORMATIONAL (no auto-fix) and deliberately conservative. Layer 3's data
- * is real but not complete -- event / Mystery Gift distributions are not modelled, and
- * neither are PID/seed correlations -- so a clean report still means "no problems
- * found", never a guarantee of full legality. Where a check would need data PKSE does
+ * is real but not complete -- only the distributions PKHeX archives are in it, the
+ * moves a specific encounter or event hands out are not, and neither are PID/seed
+ * correlations -- so a clean report still means "no problems found", never a
+ * guarantee of full legality. Where a check would need data PKSE does
  * not have, it says so as an Info note rather than staying silent.
  *
  * No RTTI / no exceptions: every check calls base Pokemon virtuals; per-generation

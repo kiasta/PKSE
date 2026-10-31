@@ -57,10 +57,11 @@ make all                # an alias for `make`. Fetches nothing.
 python tools/gen_fonts.py         # Nunito + both Noto Sans Symbols faces (SIL OFL) -> romfs/fonts/
 python tools/gen_typeicons.py     # the 19 type icons (18 + Stellar)               -> romfs/sprites/types/
 python tools/gen_marks.py         # the origin markings                             -> romfs/sprites/marks/
+python tools/gen_ribbons.py       # every ribbon and mark image                     -> romfs/sprites/ribbons/
 python tools/gen_hdsprites.py     # fetch + downscale the 256px sprites (Pillow)    -> romfs/sprites/pokemon_hd/
 ```
 
-Everything under `romfs/` is **gitignored**, so a fresh checkout must run **all four fetchers**
+Everything under `romfs/` is **gitignored**, so a fresh checkout must run **all five fetchers**
 once before `make` will do anything. `gen_hdsprites.py` (needs Pillow) is the long one.
 
 ### The build downloads nothing, and refuses to start without what it needs
@@ -83,7 +84,7 @@ error: romfs is missing assets the .nro must contain, and this build does not
 ```
 
 It is a prerequisite of `$(BUILD)`, so it runs before anything compiles, and `make clean` still
-works on a checkout with no assets at all. All four groups are mandatory — with no fonts nothing on
+works on a checkout with no assets at all. All five groups are mandatory — with no fonts nothing on
 screen has text at all, and the rest are blank art — because **a missing asset otherwise links into a
 perfectly healthy `.nro`** and surfaces only as blank art, or missing text, on the console.
 
@@ -95,8 +96,8 @@ exits non-zero otherwise, and treats a zero-length file as absent.
 
 Two deliberately different pinning choices. `gen_typeicons.py` pins the **same** PokeAPI/sprites
 commit `gen_hdsprites.py` does, so the two fetchers can never disagree about which upstream snapshot
-`romfs/` came from — bump them together. `gen_fonts.py` tracks google/fonts `main` and
-`gen_marks.py` PKHeX `master`, deliberately: PKSE takes a handful of files out of repositories of
+`romfs/` came from — bump them together. `gen_fonts.py` tracks google/fonts `main`, and
+`gen_marks.py` and `gen_ribbons.py` PKHeX `master`, deliberately: PKSE takes a handful of files out of repositories of
 thousands and an upstream correction is something it wants, and nothing is re-fetched once on disk,
 so the branch moving cannot change a build underneath anyone. `--force` re-fetches everything.
 

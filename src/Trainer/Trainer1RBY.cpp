@@ -64,24 +64,38 @@ namespace Trainer
             return Utils::utf16ToUtf8(text);
         }
 
+        /// Whether every character of `value` has a Gen 1 glyph in this language's table.
+        bool canEncodeName(const std::u16string &value, bool isJapanese)
+        {
+            return std::all_of(value.begin(), value.end(), [isJapanese](char16_t character) { return Utils::charToGen1(character, isJapanese) != Utils::GEN1_TERMINATOR; });
+        }
+
         /// Encode a name, terminate it, and leave the bytes past the terminator ALONE -- they are
         /// trash the games never cleared, and rewriting them makes an untouched save read as edited.
-        void encodeName(uint8_t *bytes, size_t fieldBytes, const std::string &utf8, bool isJapanese)
+        /// A name with a character the game has no glyph for is NOT written (false): encoding used
+        /// to stop at that character and save a truncated name ("Red" with an accent became "R")
+        /// while the editor and the restamped OTs kept the full one.
+        bool encodeName(uint8_t *bytes, size_t fieldBytes, const std::string &utf8, bool isJapanese)
         {
             const std::u16string value = Utils::utf8ToUtf16(utf8);
+            if (!canEncodeName(value, isJapanese))
+                return false;
             size_t byteCount = 0;
             for (const char16_t character : value)
             {
                 if (byteCount + 1 >= fieldBytes)
                     break;
-                const uint8_t packedByte = Utils::charToGen1(character, isJapanese);
-                if (packedByte == Utils::GEN1_TERMINATOR)
-                    break;
-                bytes[byteCount++] = packedByte;
+                bytes[byteCount++] = Utils::charToGen1(character, isJapanese);
             }
             if (byteCount < fieldBytes)
                 bytes[byteCount] = Utils::GEN1_TERMINATOR;
+            return true;
         }
+    }
+
+    bool Trainer1RBY::canStoreBoxName(const std::string &name) const
+    {
+        return canEncodeName(Utils::utf8ToUtf16(name), saveIsJapanese);
     }
 
     bool Trainer1RBY::detect(std::span<const uint8_t> data, bool &outJapanese) noexcept
@@ -186,7 +200,7 @@ namespace Trainer
         gameVersionString = saveIsJapanese ? "Gen 1 (JP)" : "Gen 1";
     }
 
-    std::unique_ptr<::Pokemon::Pokemon> Trainer1RBY::readListEntry(size_t listOffset, size_t capacity, bool isParty, size_t index) const
+    std::unique_ptr<::Pokemon::Pokemon> Trainer1RBY::readListEntry(size_t listOffset, size_t capacity, bool isParty, size_t index, UnmappedListEntry *unmappedEntry) const
     {
         const size_t slotIndex = strLen();
         const size_t bodyLen = isParty ? ::Pokemon::SIZE_1PARTY : ::Pokemon::SIZE_1STORED;
@@ -210,8 +224,23 @@ namespace Trainer
             return nullptr;
 
         const uint8_t marker = saveData[listOffset + 1 + index];
+        // A counted entry is kept whatever it holds (PKHeX PokeList1: "Let out-of-bounds species
+        // fall through"). One PKSE cannot map is carried as its raw columns instead of being dropped.
+        const auto keepUnmapped = [&]()
+        {
+            if (!unmappedEntry)
+                return;
+            unmappedEntry->entryIndex = index;
+            unmappedEntry->marker = marker;
+            unmappedEntry->bodyBytes.assign(&saveData[ofsBody], &saveData[ofsBody] + bodyLen);
+            unmappedEntry->originalTrainerNameBytes.assign(&saveData[ofsOT], &saveData[ofsOT] + slotIndex);
+            unmappedEntry->nicknameBytes.assign(&saveData[ofsNick], &saveData[ofsNick] + slotIndex);
+        };
         if (marker == 0 || marker == 0xFF)
-            return nullptr; // empty slot
+        {
+            keepUnmapped();
+            return nullptr;
+        }
 
         // Build the single-entry list Pokemon1RBY expects. A BOX body is 33 bytes and is copied
         // into a 44-byte party body -- the extra 11 (level + battle stats) are what the game
@@ -226,13 +255,16 @@ namespace Trainer
 
         auto pokemon = std::make_unique<::Pokemon::Pokemon1RBY>(std::span<const std::byte>(rec.data(), rec.size()));
         if (!pokemon->isValid())
+        {
+            keepUnmapped();
             return nullptr;
+        }
         if (!isParty)
             pokemon->recalculateStats(); // box records carry no stats; the game recomputes them
         return pokemon;
     }
 
-    void Trainer1RBY::writeList(size_t listOffset, size_t capacity, bool isParty, const std::vector<::Pokemon::Pokemon *> &mons)
+    void Trainer1RBY::writeList(size_t listOffset, size_t capacity, bool isParty, const std::vector<::Pokemon::Pokemon *> &mons, const std::vector<UnmappedListEntry> &unmappedEntries)
     {
         const size_t slotIndex = strLen();
         const size_t bodyLen = isParty ? ::Pokemon::SIZE_1PARTY : ::Pokemon::SIZE_1STORED;
@@ -242,16 +274,23 @@ namespace Trainer
             return;
 
         size_t byteCount = 0;
-        for (size_t monIndex = 0; monIndex < capacity && monIndex < mons.size(); ++monIndex)
+        for (const ListEntrySource &listEntry : orderListEntries(mons, unmappedEntries, capacity, !isParty))
         {
-            const auto *source = mons[monIndex];
-            if (!source || source->speciesID() == 0)
-                continue;
-            const auto *pokemon = static_cast<const ::Pokemon::Pokemon1RBY *>(source);
-            const auto raw = pokemon->getData();
             const size_t ofsBody = listOffset + start + bodyLen * byteCount;
             const size_t ofsOT = listOffset + start + bodyLen * capacity + slotIndex * byteCount;
             const size_t ofsNick = ofsOT + slotIndex * capacity;
+            if (listEntry.unmappedEntry)
+            {
+                const UnmappedListEntry &unmappedEntry = *listEntry.unmappedEntry;
+                saveData[listOffset + 1 + byteCount] = unmappedEntry.marker;
+                std::memcpy(&saveData[ofsBody], unmappedEntry.bodyBytes.data(), std::min(bodyLen, unmappedEntry.bodyBytes.size()));
+                std::memcpy(&saveData[ofsOT], unmappedEntry.originalTrainerNameBytes.data(), std::min(slotIndex, unmappedEntry.originalTrainerNameBytes.size()));
+                std::memcpy(&saveData[ofsNick], unmappedEntry.nicknameBytes.data(), std::min(slotIndex, unmappedEntry.nicknameBytes.size()));
+                ++byteCount;
+                continue;
+            }
+            const auto *pokemon = static_cast<const ::Pokemon::Pokemon1RBY *>(listEntry.pokemon);
+            const auto raw = pokemon->getData();
 
             saveData[listOffset + 1 + byteCount] = static_cast<uint8_t>(pokemon->speciesInternal());
             std::memcpy(&saveData[ofsBody], raw.data() + 3, bodyLen);
@@ -270,11 +309,15 @@ namespace Trainer
     void Trainer1RBY::parseParty()
     {
         party.clear();
+        unmappedPartyEntries.clear();
         const size_t count = std::min<size_t>(saveData[offsets.party], 6);
         for (size_t index = 0; index < count; ++index)
         {
-            if (auto pokemon = readListEntry(offsets.party, 6, true, index))
+            UnmappedListEntry unmappedEntry{};
+            if (auto pokemon = readListEntry(offsets.party, 6, true, index, &unmappedEntry))
                 party.push_back(std::move(pokemon));
+            else if (!unmappedEntry.bodyBytes.empty())
+                unmappedPartyEntries.push_back(std::move(unmappedEntry));
         }
     }
 
@@ -282,6 +325,7 @@ namespace Trainer
     {
         boxes.clear();
         boxes.resize(getBoxCount());
+        unmappedBoxEntries.assign(getBoxCount(), {});
         const size_t capacity = boxSlotCount();
         const uint8_t current = currentBoxIndex();
         const bool initialized = boxesInitialized();
@@ -298,9 +342,35 @@ namespace Trainer
             const size_t listOfs = useLive ? offsets.currentBox : boxRawOffset(boxIndex);
             for (size_t slotIndex = 0; slotIndex < capacity && slotIndex < BOX_SLOTS; ++slotIndex)
             {
-                boxes[boxIndex][slotIndex] = readListEntry(listOfs, capacity, false, slotIndex);
+                UnmappedListEntry unmappedEntry{};
+                boxes[boxIndex][slotIndex] = readListEntry(listOfs, capacity, false, slotIndex, &unmappedEntry);
+                if (!boxes[boxIndex][slotIndex] && !unmappedEntry.bodyBytes.empty())
+                    unmappedBoxEntries[boxIndex].push_back(std::move(unmappedEntry));
             }
         }
+    }
+
+    bool Trainer1RBY::isBoxSlotUnmapped(size_t boxIndex, size_t slotIndex) const noexcept
+    {
+        if (boxIndex >= unmappedBoxEntries.size())
+            return false;
+        for (const UnmappedListEntry &unmappedEntry : unmappedBoxEntries[boxIndex])
+        {
+            if (unmappedEntry.entryIndex == slotIndex)
+                return true;
+        }
+        return false;
+    }
+
+    std::vector<size_t> Trainer1RBY::getUnmappedPartySlots() const
+    {
+        if (unmappedPartyEntries.empty())
+            return {};
+        std::vector<::Pokemon::Pokemon *> partyPokemon;
+        for (const auto &pokemon : party)
+            partyPokemon.push_back(pokemon.get());
+        // The same order updatePartyBlock() writes, so the party view shows what a reload shows.
+        return unmappedListPositions(orderListEntries(partyPokemon, unmappedPartyEntries, MAX_PARTY_SLOTS, false));
     }
 
     void Trainer1RBY::readPouch(size_t offset, size_t capacity, std::vector<InventoryItem> &out) const
@@ -357,7 +427,7 @@ namespace Trainer
         std::vector<::Pokemon::Pokemon *> ptrs;
         for (auto &p : party)
             ptrs.push_back(p.get());
-        writeList(offsets.party, 6, true, ptrs);
+        writeList(offsets.party, 6, true, ptrs, unmappedPartyEntries);
     }
 
     void Trainer1RBY::updateBoxBlock()
@@ -369,11 +439,13 @@ namespace Trainer
             std::vector<::Pokemon::Pokemon *> ptrs;
             for (size_t slotIndex = 0; slotIndex < capacity && slotIndex < BOX_SLOTS; ++slotIndex)
                 ptrs.push_back(boxes[boxIndex][slotIndex].get());
-            writeList(boxRawOffset(boxIndex), capacity, false, ptrs);
+            const std::vector<UnmappedListEntry> noUnmappedEntries;
+            const std::vector<UnmappedListEntry> &boxUnmappedEntries = boxIndex < unmappedBoxEntries.size() ? unmappedBoxEntries[boxIndex] : noUnmappedEntries;
+            writeList(boxRawOffset(boxIndex), capacity, false, ptrs, boxUnmappedEntries);
             // The current box exists in two places and the game reads the live copy, so writing
             // only the bank would leave the player's open box showing its pre-edit contents.
             if (boxIndex == current)
-                writeList(offsets.currentBox, capacity, false, ptrs);
+                writeList(offsets.currentBox, capacity, false, ptrs, boxUnmappedEntries);
         }
         // Claim the bank is initialised only once something is actually in it. Setting the bit
         // unconditionally marks a brand-new save's empty boxes as real data, which is a lie about
@@ -405,10 +477,10 @@ namespace Trainer
         // left a 0x00, changing bytes nobody edited. The general rule this is an instance of: the
         // serializer's job is to persist edits, not to normalise a file it was merely shown.
         const size_t nameBytes = getMaxTrainerNameLength() + 1;
-        if (decodeName(&saveData[RBYOffsets::otNameOffset], nameBytes, saveIsJapanese) != trainerName)
-            encodeName(&saveData[RBYOffsets::otNameOffset], nameBytes, trainerName, saveIsJapanese);
-        if (decodeName(&saveData[offsets.rival], nameBytes, saveIsJapanese) != rivalName)
-            encodeName(&saveData[offsets.rival], nameBytes, rivalName, saveIsJapanese);
+        if (decodeName(&saveData[RBYOffsets::otNameOffset], nameBytes, saveIsJapanese) != trainerName && !encodeName(&saveData[RBYOffsets::otNameOffset], nameBytes, trainerName, saveIsJapanese))
+            Utils::logErrorToFile("Gen 1 trainer name has a character the game cannot store; the saved name is unchanged", trainerName.c_str());
+        if (decodeName(&saveData[offsets.rival], nameBytes, saveIsJapanese) != rivalName && !encodeName(&saveData[offsets.rival], nameBytes, rivalName, saveIsJapanese))
+            Utils::logErrorToFile("Gen 1 rival name has a character the game cannot store; the saved name is unchanged", rivalName.c_str());
         saveData[offsets.tid16] = static_cast<uint8_t>(TID16 >> 8); // big endian
         saveData[offsets.tid16 + 1] = static_cast<uint8_t>(TID16 & 0xFF);
         writeBCD(&saveData[offsets.money], 3, std::min<uint32_t>(money, getMaxMoney()));

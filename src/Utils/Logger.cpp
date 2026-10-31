@@ -76,12 +76,10 @@ namespace Utils
 
         const bool hasContext = (context != NULL && context[0] != '\0');
 
+        // When the log itself cannot be written there is nowhere to report it: no console is
+        // initialised, so a printf here went nowhere. Logging is best-effort; carry on silently.
         if (mkdir(LOG_DIRECTORY, 0777) != 0 && errno != EEXIST)
-        {
-            printf("Failed to create log directory: %s\n", LOG_DIRECTORY);
-            consoleUpdate(NULL);
             return;
-        }
 
         std::string logFilePath = getCurrentLogFilePath();
 
@@ -104,10 +102,6 @@ namespace Utils
                 fprintf(logFile, "[%s][%s] %s\n", timeBuffer, type, message);
                 fclose(logFile);
             }
-        }
-        else
-        {
-            printf("Failed to open log file: %s\n", logFilePath.c_str());
         }
     }
 

@@ -167,6 +167,9 @@ namespace UI
         // caption). Theme-aware because the caption is drawn in Text/TextDim: black under the dark
         // theme's light text, white under the light theme's dark text.
         inline Color CaptionBacking = Color(0, 0, 0, 205);
+        // Laid over a ribbon the Pokemon does not own in the ribbon editor, so its art fades toward
+        // the card. Theme-aware because it is the panel colour at partial alpha.
+        inline Color RibbonUnownedVeil = Color(40, 39, 54, 190);
 
         // Let's Go specific colors (matching in-game UI) — theme-independent
         constexpr Color PartnerHeart(255, 105, 180); // Hot pink heart for Partner Pokemon
@@ -221,6 +224,7 @@ namespace UI
             CursorMove = Color(86, 148, 244);
             CursorMulti = Color(96, 205, 128);
             CaptionBacking = Color(0, 0, 0, 205);
+            RibbonUnownedVeil = Color(40, 39, 54, 190);
         }
         else
         { // Light
@@ -241,6 +245,7 @@ namespace UI
             CursorMove = Color(38, 106, 214);
             CursorMulti = Color(38, 150, 84);
             CaptionBacking = Color(255, 255, 255, 225);
+            RibbonUnownedVeil = Color(255, 255, 255, 190);
         }
     }
 }

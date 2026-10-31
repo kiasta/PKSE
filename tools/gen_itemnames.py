@@ -132,6 +132,9 @@ def load_rows(path):
         text = raw.decode("utf-16")
     else:
         text = raw.decode("utf-8-sig")
+    # A BOM can also turn up INSIDE a line -- the Spanish Gen 3 list once read "(﻿Ningun)" --
+    # and it is never a character any game draws.
+    text = text.replace("﻿", "")
     rows = text.replace("\r\n", "\n").split("\n")
     if rows and rows[-1] == "":
         rows = rows[:-1]

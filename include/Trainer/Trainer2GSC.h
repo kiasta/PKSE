@@ -131,7 +131,7 @@ namespace Trainer
         size_t getPartySize() const noexcept override { return party.size(); }
         uint32_t getMaxMoney() const noexcept override { return 999999; }
         size_t getMaxTrainerNameLength() const noexcept override { return offsets->japanese ? 5 : 7; }
-        int getMaxTrainerNameDigits() const noexcept override { return 5; }
+        int getMaxTrainerNameDigits() const noexcept override { return -1; } // no digit cap before generation 4 (PKHeX)
         bool supportsBoxNames() const noexcept override { return true; }
         size_t getMaxBoxNameLength() const noexcept override { return 8; }
         /// One flag for the whole save, but Gen 2's TM/HM pouch is positionally indexed while the
@@ -141,7 +141,15 @@ namespace Trainer
         size_t getItemPouchCapacity(int pouch) const override;
         int getItemMaxCount(int pouch) const override;
         const char *getItemPouchName(int pouch) const override;
-        bool compactStorage() override { return true; }
+        /// Gen 2 box lists are counted and gapless (PKHeX PokeList2), so a vacated slot cannot
+        /// exist in the file: this packs each box the way updateBoxBlock() will write it, so the
+        /// view shows what a reload will show. Kept unmapped entries keep their place in that order.
+        /// True only when something moved.
+        bool compactStorage() override;
+        /// A box slot whose counted entry was kept as an UnmappedListEntry (see Trainer).
+        bool isBoxSlotUnmapped(size_t boxIndex, size_t slotIndex) const noexcept override;
+        /// The party slots the kept unmapped party entries are written to (see Trainer).
+        std::vector<size_t> getUnmappedPartySlots() const override;
         /// The regions writeMirrors() refreshes -- see Gen2Mirror. Public because verifying
         /// a round trip means knowing which bytes a write is allowed to move.
         std::vector<Gen2Mirror> mirrorRegions() const;
@@ -174,8 +182,11 @@ namespace Trainer
         void parseItems();
         void parseBoxNames();
 
-        void readList(size_t offset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const;
-        void writeList(size_t offset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &in);
+        /// A counted entry PKSE cannot map reads as null and is copied into `unmappedEntries`.
+        void readList(size_t offset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out, std::vector<UnmappedListEntry> &unmappedEntries) const;
+        void writeList(size_t offset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &in, const std::vector<UnmappedListEntry> &unmappedEntries);
+        std::vector<UnmappedListEntry> unmappedPartyEntries;
+        std::vector<std::vector<UnmappedListEntry>> unmappedBoxEntries;
         void writeChecksums() noexcept;
         void writeMirrors() noexcept;
     };

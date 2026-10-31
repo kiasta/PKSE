@@ -218,7 +218,7 @@ namespace Trainer
         return box < split ? 0x4000 + box * stride : 0x6000 + (box - split) * stride;
     }
 
-    void Trainer2GSC::readList(size_t listOffset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out) const
+    void Trainer2GSC::readList(size_t listOffset, size_t capacity, size_t bodySize, std::vector<std::unique_ptr<::Pokemon::Pokemon>> &out, std::vector<UnmappedListEntry> &unmappedEntries) const
     {
         const size_t slotIndex = nameWidth();
         const size_t start = 1 + capacity + 1;
@@ -230,14 +230,21 @@ namespace Trainer
         for (size_t index = 0; index < byteCount; ++index)
         {
             const uint8_t marker = saveData[listOffset + 1 + index];
-            if (marker == 0 || marker == 0xFF)
-            {
-                out.push_back(nullptr);
-                continue;
-            }
             const size_t ofsBody = listOffset + start + bodySize * index;
             const size_t ofsOT = listOffset + start + bodySize * capacity + slotIndex * index;
             const size_t ofsNick = ofsOT + slotIndex * capacity;
+            // A counted entry is kept whatever it holds (PKHeX PokeList2 copies every one). One PKSE
+            // cannot map is carried as its raw columns, written back verbatim, instead of dropped.
+            const auto keepUnmapped = [&]()
+            {
+                unmappedEntries.push_back(UnmappedListEntry{index, marker, std::vector<uint8_t>(&saveData[ofsBody], &saveData[ofsBody] + bodySize), std::vector<uint8_t>(&saveData[ofsOT], &saveData[ofsOT] + slotIndex), std::vector<uint8_t>(&saveData[ofsNick], &saveData[ofsNick] + slotIndex)});
+                out.push_back(nullptr);
+            };
+            if (marker == 0 || marker == 0xFF)
+            {
+                keepUnmapped();
+                continue;
+            }
 
             // Build the single-entry list Pokemon2GSC expects. A BOX body is 32 bytes copied into
             // a 48-byte party body; the extra 16 are level + battle stats, which the game
@@ -253,7 +260,7 @@ namespace Trainer
             auto pokemon = std::make_unique<::Pokemon::Pokemon2GSC>(std::span<const std::byte>(rec.data(), rec.size()));
             if (!pokemon->isValid())
             {
-                out.push_back(nullptr);
+                keepUnmapped();
                 continue;
             }
             if (bodySize == storedSize())
@@ -262,7 +269,7 @@ namespace Trainer
         }
     }
 
-    void Trainer2GSC::writeList(size_t listOffset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &mons)
+    void Trainer2GSC::writeList(size_t listOffset, size_t capacity, size_t bodySize, const std::vector<::Pokemon::Pokemon *> &mons, const std::vector<UnmappedListEntry> &unmappedEntries)
     {
         const size_t slotIndex = nameWidth();
         const size_t start = 1 + capacity + 1;
@@ -271,17 +278,24 @@ namespace Trainer
             return;
 
         size_t byteCount = 0;
-        for (size_t monIndex = 0; monIndex < capacity && monIndex < mons.size(); ++monIndex)
+        for (const ListEntrySource &listEntry : orderListEntries(mons, unmappedEntries, capacity, bodySize != partySize()))
         {
-            const auto *source = mons[monIndex];
-            if (!source || source->speciesID() == 0)
-                continue;
-            auto *pokemon = static_cast<::Pokemon::Pokemon2GSC *>(mons[monIndex]);
-            pokemon->refreshChecksum(); // re-syncs the list header; PK2 has no checksum of its own
-            const auto raw = pokemon->getData();
             const size_t ofsBody = listOffset + start + bodySize * byteCount;
             const size_t ofsOT = listOffset + start + bodySize * capacity + slotIndex * byteCount;
             const size_t ofsNick = ofsOT + slotIndex * capacity;
+            if (listEntry.unmappedEntry)
+            {
+                const UnmappedListEntry &unmappedEntry = *listEntry.unmappedEntry;
+                saveData[listOffset + 1 + byteCount] = unmappedEntry.marker;
+                std::memcpy(&saveData[ofsBody], unmappedEntry.bodyBytes.data(), std::min(bodySize, unmappedEntry.bodyBytes.size()));
+                std::memcpy(&saveData[ofsOT], unmappedEntry.originalTrainerNameBytes.data(), std::min(slotIndex, unmappedEntry.originalTrainerNameBytes.size()));
+                std::memcpy(&saveData[ofsNick], unmappedEntry.nicknameBytes.data(), std::min(slotIndex, unmappedEntry.nicknameBytes.size()));
+                ++byteCount;
+                continue;
+            }
+            auto *pokemon = static_cast<::Pokemon::Pokemon2GSC *>(listEntry.pokemon);
+            pokemon->refreshChecksum(); // re-syncs the list header; PK2 has no checksum of its own
+            const auto raw = pokemon->getData();
 
             // The record's OWN marker byte, not the species: 0xFD there means egg, and Gen 2
             // records that nowhere else. syncListHeader() above keeps it correct.
@@ -327,7 +341,8 @@ namespace Trainer
 
     void Trainer2GSC::parseParty()
     {
-        readList(offsets->party, 6, partySize(), party);
+        unmappedPartyEntries.clear();
+        readList(offsets->party, 6, partySize(), party, unmappedPartyEntries);
         // A party list has no holes; drop any null the reader produced rather than leaving gaps.
         party.erase(std::remove(party.begin(), party.end(), nullptr), party.end());
     }
@@ -335,12 +350,13 @@ namespace Trainer
     void Trainer2GSC::parseBoxes()
     {
         const size_t capacity = getSlotsPerBox();
+        unmappedBoxEntries.assign(getBoxCount(), {});
         for (size_t boxIndex = 0; boxIndex < getBoxCount(); ++boxIndex)
         {
             std::vector<std::unique_ptr<::Pokemon::Pokemon>> scratch;
             // The BANK, never the mirror. PKHeX: "Don't treat the CurrentBox segment as valid;
             // Stadium ignores it and will de-synchronize it."
-            readList(boxOffset(boxIndex), capacity, storedSize(), scratch);
+            readList(boxOffset(boxIndex), capacity, storedSize(), scratch, unmappedBoxEntries[boxIndex]);
             for (size_t slotIndex = 0; slotIndex < scratch.size() && slotIndex < BOX_SLOTS; ++slotIndex)
                 boxes[boxIndex][slotIndex] = std::move(scratch[slotIndex]);
         }
@@ -406,12 +422,90 @@ namespace Trainer
         }
     }
 
+    bool Trainer2GSC::compactStorage()
+    {
+        const size_t capacity = std::min(getSlotsPerBox(), BOX_SLOTS);
+        const auto occupied = [](const std::unique_ptr<::Pokemon::Pokemon> &pokemon) { return pokemon && pokemon->speciesID() != 0; };
+        bool anythingMoved = false;
+        for (size_t boxIndex = 0; boxIndex < boxes.size(); ++boxIndex)
+        {
+            std::vector<UnmappedListEntry> noUnmappedEntries;
+            std::vector<UnmappedListEntry> &unmappedEntries = boxIndex < unmappedBoxEntries.size() ? unmappedBoxEntries[boxIndex] : noUnmappedEntries;
+            // A box holding more than fits cannot be packed without dropping something, so it is
+            // left as it is. The storage view locks a kept entry's slot, so this needs a caller
+            // that put a Pokemon on one in a full box.
+            size_t entryCount = unmappedEntries.size();
+            for (size_t slotIndex = 0; slotIndex < capacity; ++slotIndex)
+                entryCount += occupied(boxes[boxIndex][slotIndex]) ? 1 : 0;
+            if (entryCount > capacity)
+            {
+                Utils::logErrorToFile("Trainer2GSC::compactStorage: box " + std::to_string(boxIndex + 1) + " holds " + std::to_string(entryCount) + " entries but has room for " + std::to_string(capacity) + "; left unpacked");
+                continue;
+            }
+            // The list order a write produces: each slot's Pokemon, then any kept entry recorded at
+            // that slot (a Pokemon dropped onto an invisible kept entry must not erase it).
+            std::vector<std::unique_ptr<::Pokemon::Pokemon>> packedPokemon;
+            std::vector<size_t> packedPositionOfPokemon;
+            std::vector<size_t> packedPositionOfUnmappedEntry(unmappedEntries.size(), 0);
+            size_t packedPosition = 0;
+            for (size_t slotIndex = 0; slotIndex < capacity; ++slotIndex)
+            {
+                if (occupied(boxes[boxIndex][slotIndex]))
+                {
+                    if (slotIndex != packedPosition)
+                        anythingMoved = true;
+                    packedPokemon.push_back(std::move(boxes[boxIndex][slotIndex]));
+                    packedPositionOfPokemon.push_back(packedPosition++);
+                }
+                for (size_t unmappedIndex = 0; unmappedIndex < unmappedEntries.size(); ++unmappedIndex)
+                {
+                    if (unmappedEntries[unmappedIndex].entryIndex != slotIndex)
+                        continue;
+                    if (slotIndex != packedPosition)
+                        anythingMoved = true;
+                    packedPositionOfUnmappedEntry[unmappedIndex] = packedPosition++;
+                }
+            }
+            for (size_t pokemonIndex = 0; pokemonIndex < packedPokemon.size(); ++pokemonIndex)
+            {
+                if (packedPositionOfPokemon[pokemonIndex] < capacity)
+                    boxes[boxIndex][packedPositionOfPokemon[pokemonIndex]] = std::move(packedPokemon[pokemonIndex]);
+            }
+            for (size_t unmappedIndex = 0; unmappedIndex < unmappedEntries.size(); ++unmappedIndex)
+                unmappedEntries[unmappedIndex].entryIndex = packedPositionOfUnmappedEntry[unmappedIndex];
+        }
+        return anythingMoved;
+    }
+
+    bool Trainer2GSC::isBoxSlotUnmapped(size_t boxIndex, size_t slotIndex) const noexcept
+    {
+        if (boxIndex >= unmappedBoxEntries.size())
+            return false;
+        for (const UnmappedListEntry &unmappedEntry : unmappedBoxEntries[boxIndex])
+        {
+            if (unmappedEntry.entryIndex == slotIndex)
+                return true;
+        }
+        return false;
+    }
+
+    std::vector<size_t> Trainer2GSC::getUnmappedPartySlots() const
+    {
+        if (unmappedPartyEntries.empty())
+            return {};
+        std::vector<::Pokemon::Pokemon *> partyPokemon;
+        for (const auto &pokemon : party)
+            partyPokemon.push_back(pokemon.get());
+        // The same order updatePartyBlock() writes, so the party view shows what a reload shows.
+        return unmappedListPositions(orderListEntries(partyPokemon, unmappedPartyEntries, MAX_PARTY_SLOTS, false));
+    }
+
     void Trainer2GSC::updatePartyBlock()
     {
         std::vector<::Pokemon::Pokemon *> ptrs;
         for (auto &p : party)
             ptrs.push_back(p.get());
-        writeList(offsets->party, 6, partySize(), ptrs);
+        writeList(offsets->party, 6, partySize(), ptrs, unmappedPartyEntries);
     }
 
     void Trainer2GSC::updateBoxBlock()
@@ -422,7 +516,8 @@ namespace Trainer
             std::vector<::Pokemon::Pokemon *> ptrs;
             for (size_t slotIndex = 0; slotIndex < capacity && slotIndex < BOX_SLOTS; ++slotIndex)
                 ptrs.push_back(boxes[boxIndex][slotIndex].get());
-            writeList(boxOffset(boxIndex), capacity, storedSize(), ptrs);
+            const std::vector<UnmappedListEntry> noUnmappedEntries;
+            writeList(boxOffset(boxIndex), capacity, storedSize(), ptrs, boxIndex < unmappedBoxEntries.size() ? unmappedBoxEntries[boxIndex] : noUnmappedEntries);
         }
         // Re-synchronise the mirror from the bank AFTER writing it -- Gen 2's mirror is the stale
         // copy, so it is an output here, never an input. (Gen 1 is the other way round.)

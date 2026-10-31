@@ -232,6 +232,10 @@ namespace Trainer
                 const uint32_t expv = rd32(payload + 0x10);
                 decryptedRecord[0x148] = static_cast<std::byte>(::Pokemon::getLevelFromExp(expv, ::Pokemon::getGrowthRate(species)));
             }
+            // The Gen 3 party tail's mail id: 0xFF is "no mail", and 0 names the first mail slot
+            // (PKHeX SAV3.SetPartyValues writes HeldMailID = -1).
+            if (static_cast<PKSMGen>(bankTag) == PKSMGen::Gen3)
+                decryptedRecord[0x55] = std::byte{0xFF};
 
             const uint32_t encryptionConstant = rd32(payload); // encryption constant / PID, the crypto seed
             std::span<const std::byte> decSpan(decryptedRecord.data(), decryptedRecord.size());
@@ -371,6 +375,8 @@ namespace Trainer
             return "Let's Go";
         case PKSMGen::Gen8:
             return "Gen 8";
+        case PKSMGen::Gen9:
+            return "Gen 9";
         default:
             return "Unknown";
         }
@@ -431,7 +437,7 @@ namespace Trainer
             headerSize = V1_HEADER;
             entrySize = V12_ENTRY;
             payloadSize = V12_PAYLOAD;
-            boxes = (size - V1_HEADER) / (V12_ENTRY * SLOTS_PER_BOX);
+            boxes = ((size - V1_HEADER) / V12_ENTRY + SLOTS_PER_BOX - 1) / SLOTS_PER_BOX;
             break;
         default:
             importReport.error = "Unsupported PKSM bank version " + std::to_string(version) + " -- it was written by a newer PKSM than this build knows about.";
@@ -441,20 +447,22 @@ namespace Trainer
         importReport.headerBoxes = boxes;
 
         // Trust the header, but never past what the file can actually hold: a truncated or damaged
-        // header would otherwise walk the entry loop off the end of the buffer. Whole entries only.
+        // header would otherwise walk the entry loop off the end of the buffer. Whole entries only,
+        // but a partial last box still counts: dropping it would lose the Pokemon in it silently.
         const size_t availEntries = (size > headerSize) ? (size - headerSize) / entrySize : 0;
-        const size_t availBoxes = availEntries / SLOTS_PER_BOX;
+        const size_t availBoxes = (availEntries + SLOTS_PER_BOX - 1) / SLOTS_PER_BOX;
         if (boxes == 0 || boxes > availBoxes)
             boxes = availBoxes;
         importReport.sourceBoxes = boxes;
 
         if (boxes == 0)
         {
-            importReport.error = "The bank file is empty or truncated -- it holds no complete boxes.";
+            importReport.error = "The bank file is empty or truncated -- it holds no Pokemon records.";
             return false;
         }
 
-        for (size_t index = 0; index < boxes * SLOTS_PER_BOX; ++index)
+        const size_t entryCount = std::min(boxes * SLOTS_PER_BOX, availEntries);
+        for (size_t index = 0; index < entryCount; ++index)
         {
             const uint8_t *entry = data + headerSize + index * entrySize;
             const uint32_t bankTag = rd32(entry);

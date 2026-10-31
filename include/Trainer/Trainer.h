@@ -1,7 +1,10 @@
 #ifndef TRAINER_TRAINER_H
 #define TRAINER_TRAINER_H
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <span>
 #include <array>
@@ -27,6 +30,8 @@ namespace Trainer
     // Pokemon storage constants (common across generations)
     constexpr size_t MAX_PARTY_SLOTS = 6; // Maximum Pokemon in party
     constexpr size_t BOX_SLOTS = 30;      // Pokemon per box (6x5 grid)
+    /// Byte offset of the species in a DECRYPTED Gen 4-9 record (Gen 3 keeps it in a shuffled substructure).
+    constexpr size_t RECORD_SPECIES_OFFSET = 0x08;
 
     const char *getSpeciesName(uint16_t speciesId);
 
@@ -37,6 +42,93 @@ namespace Trainer
     const char *getNatureName(uint8_t natureId);
 
     const char *getAbilityName(uint16_t abilityId);
+
+    /**
+     * A counted Gen 1/2 list entry PKSE cannot turn into a Pokemon -- a glitch species such as
+     * MissingNo., or a marker outside the species range. The games and PKHeX's PokeList1/PokeList2
+     * keep every counted entry whatever it holds, so it is carried as the raw bytes of its list
+     * columns and written back verbatim, at its own position, unless something now occupies it.
+     */
+    struct UnmappedListEntry
+    {
+        size_t entryIndex;
+        uint8_t marker;
+        std::vector<uint8_t> bodyBytes;
+        std::vector<uint8_t> originalTrainerNameBytes;
+        std::vector<uint8_t> nicknameBytes;
+    };
+
+    /// One entry a Gen 1/2 list writer emits: a Pokemon, or an UnmappedListEntry kept from the file.
+    struct ListEntrySource
+    {
+        ::Pokemon::Pokemon *pokemon;
+        const UnmappedListEntry *unmappedEntry;
+    };
+
+    /**
+     * The order a Gen 1/2 list is written in. A box hands its slots POSITIONALLY (slot N was list
+     * entry N on load), so an unmapped entry returns to its slot while that slot is still empty. The
+     * party is handed compacted, so an unmapped entry is put back at its original index, or at the
+     * end when fewer entries precede it now.
+     *
+     * The storage view keeps the list within `capacity`: a kept entry's box slot is locked and
+     * counts as occupied (Trainer::isBoxSlotUnmapped), and the party view shows each kept entry in
+     * its party slot (Trainer::getUnmappedPartySlots). If a caller still hands more than fits, the
+     * entries that fit are kept and the overflow is logged as an error, since a list cannot hold
+     * more than `capacity` and something is lost.
+     */
+    inline std::vector<ListEntrySource> orderListEntries(const std::vector<::Pokemon::Pokemon *> &pokemonSlots, const std::vector<UnmappedListEntry> &unmappedEntries, size_t capacity, bool slotsArePositional)
+    {
+        const auto occupied = [](const ::Pokemon::Pokemon *pokemon) { return pokemon && pokemon->speciesID() != 0; };
+        std::vector<ListEntrySource> listEntries;
+        if (slotsArePositional)
+        {
+            for (size_t slotIndex = 0; slotIndex < capacity; ++slotIndex)
+            {
+                ::Pokemon::Pokemon *pokemon = slotIndex < pokemonSlots.size() ? pokemonSlots[slotIndex] : nullptr;
+                // A Pokemon placed on a kept entry's (invisible) slot goes first; the kept entry
+                // follows it rather than being dropped.
+                if (occupied(pokemon))
+                    listEntries.push_back({pokemon, nullptr});
+                for (const UnmappedListEntry &unmappedEntry : unmappedEntries)
+                {
+                    if (unmappedEntry.entryIndex == slotIndex)
+                        listEntries.push_back({nullptr, &unmappedEntry});
+                }
+            }
+        }
+        else
+        {
+            for (::Pokemon::Pokemon *pokemon : pokemonSlots)
+            {
+                if (occupied(pokemon))
+                    listEntries.push_back({pokemon, nullptr});
+            }
+            for (const UnmappedListEntry &unmappedEntry : unmappedEntries)
+            {
+                const size_t insertIndex = std::min(unmappedEntry.entryIndex, listEntries.size());
+                listEntries.insert(listEntries.begin() + static_cast<std::ptrdiff_t>(insertIndex), ListEntrySource{nullptr, &unmappedEntry});
+            }
+        }
+        if (listEntries.size() > capacity)
+        {
+            Utils::logErrorToFile("orderListEntries: a Gen 1/2 list holds " + std::to_string(listEntries.size()) + " entries but has room for " + std::to_string(capacity) + "; the last " + std::to_string(listEntries.size() - capacity) + " are not written");
+            listEntries.resize(capacity);
+        }
+        return listEntries;
+    }
+
+    /// The positions in a written list (orderListEntries' output) that hold an UnmappedListEntry.
+    inline std::vector<size_t> unmappedListPositions(const std::vector<ListEntrySource> &listEntries)
+    {
+        std::vector<size_t> unmappedPositions;
+        for (size_t listPosition = 0; listPosition < listEntries.size(); ++listPosition)
+        {
+            if (listEntries[listPosition].unmappedEntry)
+                unmappedPositions.push_back(listPosition);
+        }
+        return unmappedPositions;
+    }
 }
 
 namespace Trainer
@@ -205,12 +297,11 @@ namespace Trainer
          * that matters, because the language decides which character table the name is written
          * through and the Japanese one is the only place its alphabet exists.
          *
-         * English by default. Only the two Gen 3 groups override it -- Gen 3 is the last
-         * generation whose text is a per-language font
-         * map, so from Gen 4 on the save's language cannot make a name unstorable and there is
-         * nothing here for a newer format to answer. Gen 3 cannot tell its five international
-         * languages apart either (no save byte says which), so an override answers Japanese or
-         * English and nothing finer; PKHeX's SAV3 stops in the same place.
+         * English by default. The Gen 3 groups override it because their text is a per-language
+         * font map; Gen 3 cannot tell its five international languages apart (no save byte says
+         * which), so an override answers Japanese or English and nothing finer, as PKHeX's SAV3
+         * does. The Gen 4 groups override it with the trainer record's language byte, so a Pokemon
+         * created on a non-English save is not stamped English.
          */
         virtual uint8_t language() const noexcept
         {
@@ -255,17 +346,79 @@ namespace Trainer
         }
 
         /**
+         * Whether the save parsed into something PKSE can show and write back. A reader always
+         * returns a trainer (there are no exceptions), so every caller must ask this before opening
+         * or saving one. The block-based formats are valid exactly when their reader produced
+         * blocks; the flat formats answer from their own load.
+         */
+        virtual bool isValid() const noexcept
+        {
+            return !blocks.empty();
+        }
+
+        /**
          * Swaps the Pokemon occupying two box slots. Derived classes may override to also
          * update generation-specific bookkeeping (e.g. LGPE party/starter storage pointers
          * that reference slots by index).
          */
-        virtual void swapBoxSlots(size_t firstBox, size_t firstSlot, size_t secondBox, size_t childStatus)
+        virtual void swapBoxSlots(size_t firstBox, size_t firstSlot, size_t secondBox, size_t secondSlot)
         {
             if (firstBox >= boxes.size() || secondBox >= boxes.size())
                 return;
-            if (firstSlot >= BOX_SLOTS || childStatus >= BOX_SLOTS)
+            if (firstSlot >= BOX_SLOTS || secondSlot >= BOX_SLOTS)
                 return;
-            std::swap(boxes[firstBox][firstSlot], boxes[secondBox][childStatus]);
+            std::swap(boxes[firstBox][firstSlot], boxes[secondBox][secondSlot]);
+        }
+
+        /**
+         * Whether a box slot belongs to one of the game's battle teams. The game keeps each team as
+         * (box, slot) pointers, so moving, replacing or sorting such a slot leaves the team pointing
+         * at whatever lands there; PKHeX refuses to overwrite these slots (team member or locked
+         * team alike), and so must every storage action. False for a format without battle teams.
+         */
+        virtual bool isBoxSlotLocked(size_t boxIndex, size_t slotIndex) const noexcept
+        {
+            (void)boxIndex;
+            (void)slotIndex;
+            return false;
+        }
+
+        /**
+         * Whether a box slot holds a kept UnmappedListEntry: a counted Gen 1/2 list entry PKSE cannot
+         * read (MissingNo., a species past the game's range). The slot reads as null, but it is not
+         * free -- the entry is written back there -- so it counts toward the box's capacity, and the
+         * storage view shows it as a locked placeholder that nothing can be dropped onto. False for
+         * every format without counted lists.
+         */
+        virtual bool isBoxSlotUnmapped(size_t boxIndex, size_t slotIndex) const noexcept
+        {
+            (void)boxIndex;
+            (void)slotIndex;
+            return false;
+        }
+
+        /**
+         * The party slots (0-based, in written order) that hold a kept UnmappedListEntry. `party`
+         * holds only the Pokemon, compacted; these entries sit between them when the party is
+         * written, and they count toward MAX_PARTY_SLOTS. Empty for every format without counted
+         * lists.
+         */
+        virtual std::vector<size_t> getUnmappedPartySlots() const { return {}; }
+
+        /// The index into `party` of the Pokemon shown in party slot `partySlotIndex`, or -1 when
+        /// that slot holds an unmapped entry (getUnmappedPartySlots) or nothing.
+        int partyIndexAtSlot(size_t partySlotIndex) const
+        {
+            size_t unmappedBeforeCount = 0;
+            for (const size_t unmappedSlotIndex : getUnmappedPartySlots())
+            {
+                if (unmappedSlotIndex == partySlotIndex)
+                    return -1;
+                if (unmappedSlotIndex < partySlotIndex)
+                    ++unmappedBeforeCount;
+            }
+            const size_t partyIndex = partySlotIndex - unmappedBeforeCount;
+            return partyIndex < party.size() ? static_cast<int>(partyIndex) : -1;
         }
 
         virtual bool compactStorage() { return false; }
@@ -401,6 +554,75 @@ namespace Trainer
          * Protected to prevent direct instantiation of base class.
          */
         Trainer() = default;
+
+        /// The battle-team pointer list PKHeX reads in BoxLayout7, TeamIndexes8 and BoxLayout8b:
+        /// six teams of six s16 entries, each (box << 8) | slot, negative for an empty team place.
+        /// True when any entry names this box slot.
+        static bool battleTeamsHoldSlot(const uint8_t *teamPointerBytes, size_t byteCount, size_t boxIndex, size_t slotIndex) noexcept
+        {
+            constexpr size_t BATTLE_TEAM_POINTER_COUNT = 6 * 6;
+            for (size_t pointerIndex = 0; pointerIndex < BATTLE_TEAM_POINTER_COUNT && pointerIndex * 2 + 2 <= byteCount; ++pointerIndex)
+            {
+                const int16_t pointer = static_cast<int16_t>(teamPointerBytes[pointerIndex * 2] | (teamPointerBytes[pointerIndex * 2 + 1] << 8));
+                if (pointer >= 0 && static_cast<size_t>(pointer >> 8) == boxIndex && static_cast<size_t>(pointer & 0xFF) == slotIndex)
+                    return true;
+            }
+            return false;
+        }
+
+        /// battleTeamsHoldSlot() over the SwishCrypto block with this key (TeamIndexes8).
+        bool battleTeamBlockHoldsSlot(size_t teamIndexesKey, size_t boxIndex, size_t slotIndex) const noexcept
+        {
+            for (const auto &block : blocks)
+            {
+                if (block.key == teamIndexesKey)
+                    return battleTeamsHoldSlot(block.data.data(), block.data.size(), boxIndex, slotIndex);
+            }
+            return false;
+        }
+
+        /**
+         * Whether the encrypted record at `slotBytes` is exactly `pokemon` as it was loaded, so a
+         * writer can leave the file's bytes alone. Writers re-encrypt (and some re-checksum) every
+         * record they touch; skipping an unchanged one is what keeps an unedited save byte-exact and
+         * what keeps a Bad Egg's invalid checksum invalid, the way PKHeX leaves slots it never set.
+         * It also catches a record moved elsewhere: the bytes still hold the old occupant, so they
+         * no longer match whatever now sits in that slot.
+         */
+        template <typename DecryptRecord>
+        static bool slotHoldsLoadedRecord(const ::Pokemon::Pokemon *pokemon, const uint8_t *slotBytes, size_t recordSize, DecryptRecord decryptRecord)
+        {
+            if (!pokemon || pokemon->getDataSize() < recordSize)
+                return false;
+            std::byte *decryptedRecord = decryptRecord(std::span<const std::byte>(reinterpret_cast<const std::byte *>(slotBytes), recordSize));
+            const bool recordMatches = std::memcmp(decryptedRecord, pokemon->getData().data(), recordSize) == 0;
+            delete[] decryptedRecord;
+            return recordMatches;
+        }
+
+        /**
+         * Whether the encrypted record at `slotBytes` already reads as an empty slot: it decrypts to
+         * species 0 AND is not all zeros. Empty slots carry stale bytes the game never cleared, and
+         * differ from each other, so the only way to leave them byte-exact is to not write them.
+         *
+         * The all-zero test is not redundant: the cipher seeds its PRNG with the encryption
+         * constant, a zeroed slot has EC 0, and the first PRNG word from seed 0 is 0x0000 -- so an
+         * all-zero slot decrypts to species 0 too while the rest is checksum-rejected garbage (the
+         * game shows a Bad Egg). That slot must be repaired, not kept.
+         */
+        template <typename DecryptRecord>
+        static bool slotHoldsGameBlank(const uint8_t *slotBytes, size_t recordSize, size_t speciesOffset, DecryptRecord decryptRecord)
+        {
+            bool anyNonZero = false;
+            for (size_t byteIndex = 0; byteIndex < recordSize && !anyNonZero; ++byteIndex)
+                anyNonZero = (slotBytes[byteIndex] != 0);
+            if (!anyNonZero)
+                return false;
+            std::byte *decryptedRecord = decryptRecord(std::span<const std::byte>(reinterpret_cast<const std::byte *>(slotBytes), recordSize));
+            const uint16_t speciesId = Utils::readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(decryptedRecord) + speciesOffset);
+            delete[] decryptedRecord;
+            return speciesId == 0;
+        }
     };
 }
 

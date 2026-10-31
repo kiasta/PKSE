@@ -18,9 +18,12 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 #include <cstdio>
 
 #include "Test/TestSuite.h"
+#include "Conversion/Convert.h"
+#include "Enums/LanguageID.h"
 #include "Trainer/Bank.h"
 #include "Globals.h"
 
@@ -145,6 +148,50 @@ namespace Test
             {
                 context.skip("the scratch bank was not written, so bank-file protection was not tested");
                 return;
+            }
+
+            // A damaged RECORD in an otherwise good file. load() drops it, and the next save would
+            // write the bank without it, so the file as it was read must be kept beside it.
+            {
+                const std::string damagedPath = bankPath + ".damaged";
+                std::remove(damagedPath.c_str());
+                std::vector<uint8_t> originalFile;
+                if (FILE *bankFile = std::fopen(bankPath.c_str(), "rb"))
+                {
+                    int character = 0;
+                    while ((character = std::fgetc(bankFile)) != EOF)
+                        originalFile.push_back(static_cast<uint8_t>(character));
+                    std::fclose(bankFile);
+                }
+                constexpr size_t firstRecordOffset = 16; // past the bank header: the first slot's tag
+                if (context.check(originalFile.size() > firstRecordOffset + 4, "could not read the scratch bank to damage a record in it"))
+                {
+                    std::vector<uint8_t> damagedFile = originalFile;
+                    damagedFile[firstRecordOffset + 3] = 0x7F; // a tag no format writes
+                    auto writeBank = [&](const std::vector<uint8_t> &bankBytes)
+                    {
+                        if (FILE *bankFile = std::fopen(bankPath.c_str(), "wb"))
+                        {
+                            std::fwrite(bankBytes.data(), 1, bankBytes.size(), bankFile);
+                            std::fclose(bankFile);
+                        }
+                    };
+                    writeBank(damagedFile);
+                    Trainer::Bank damagedRecordBank;
+                    context.check(damagedRecordBank.lastLoadRejects() == 1, "a bank with one damaged record did not reject exactly that record", "rejects=" + std::to_string(damagedRecordBank.lastLoadRejects()));
+                    context.check(!damagedRecordBank.lastLoadProblem().empty(), "a bank that dropped a damaged record opened with no message");
+                    std::vector<uint8_t> keptFile;
+                    if (FILE *keptBank = std::fopen(damagedPath.c_str(), "rb"))
+                    {
+                        int character = 0;
+                        while ((character = std::fgetc(keptBank)) != EOF)
+                            keptFile.push_back(static_cast<uint8_t>(character));
+                        std::fclose(keptBank);
+                    }
+                    context.check(keptFile == damagedFile, "a bank that dropped a damaged record did not keep the file it read as bank.dat.damaged", "kept=" + std::to_string(keptFile.size()) + " bytes");
+                    writeBank(originalFile);
+                }
+                std::remove(damagedPath.c_str());
             }
 
             // An interrupted save.
@@ -312,10 +359,54 @@ namespace Test
                     context.check(reloadedPokemon->getGameGroup() == expectedGroup, "a deposited Pokemon came back tagged as a different game", whereLabel + " deposited=" + Enums::getGameVersionName(sample.group) + " expected=" + Enums::getGameVersionName(expectedGroup) + " got=" + Enums::getGameVersionName(reloadedPokemon->getGameGroup()));
                     size_t firstDifferenceOffset = 0;
                     context.check(sameBytes(*sample.pokemon, *reloadedPokemon, firstDifferenceOffset), "a deposited Pokemon's bytes changed across save/reload (the bank's byte-in == byte-out contract)", whereLabel + " " + hexField("offset", firstDifferenceOffset, 4));
+
+                    // WITHDRAWING IT BACK INTO THE GAME IT CAME FROM. It reloads as its format's
+                    // representative group, so a Ruby, Diamond, Black, X or Sun Pokemon is withdrawn
+                    // across groups -- and must come back as its own game's entity, bytes unchanged,
+                    // with no handler stamped. Both the withdraw path and the storage pane's convert
+                    // ask canConvert() first and then convert().
+                    if (reloadedPokemon->getGameGroup() != sample.group)
+                    {
+                        Conversion::Result gateResult = Conversion::Result::Ok;
+                        const bool allowed = Conversion::canConvert(*reloadedPokemon, sample.group, gateResult);
+                        context.check(allowed && gateResult == Conversion::Result::Ok, "a banked Pokemon cannot be withdrawn into the game it was deposited from", whereLabel + " deposited=" + Enums::getGameVersionName(sample.group) + " result=" + Conversion::resultMessage(gateResult));
+                        Conversion::Result convertResult = Conversion::Result::Ok;
+                        Conversion::ReceivingTrainer receivingTrainer{u"Other", 1, static_cast<uint8_t>(Enums::LanguageID::French)};
+                        auto withdrawnPokemon = Conversion::convert(*reloadedPokemon, sample.group, convertResult, 0, &receivingTrainer);
+                        if (context.check(withdrawnPokemon != nullptr && convertResult == Conversion::Result::Ok, "a banked Pokemon was refused on withdrawal into the game it was deposited from", whereLabel + " result=" + Conversion::resultMessage(convertResult)))
+                        {
+                            context.check(withdrawnPokemon->getGameGroup() == sample.group, "a banked Pokemon was withdrawn as the wrong game's entity", whereLabel + " got=" + Enums::getGameVersionName(withdrawnPokemon->getGameGroup()));
+                            context.check(sameBytes(*sample.pokemon, *withdrawnPokemon, firstDifferenceOffset), "a banked Pokemon's bytes changed when withdrawn into the game it was deposited from", whereLabel + " " + hexField("offset", firstDifferenceOffset, 4));
+                        }
+                    }
                 }
             }
 
             checkBankFileProtection(context, bankDirectory);
+
+            // SAVE-TIME VERIFICATION APPLIES LOAD'S TEST. A record whose checksum no longer holds
+            // round-trips byte for byte, and is then dropped by the next load; verification must
+            // count it now, while the slot is still in memory.
+            for (const auto &sample : samples())
+            {
+                if (!sample.pokemon || !sample.pokemon->isStructurallyValid() || sample.pokemon->checksum() == 0)
+                    continue;
+                auto tamperedPokemon = sample.pokemon->clone();
+                if (!tamperedPokemon)
+                    continue;
+                tamperedPokemon->setTID16(static_cast<uint16_t>(tamperedPokemon->tid16() ^ 0x0101)); // inside the checksum, which is not refreshed
+                if (tamperedPokemon->isStructurallyValid())
+                    continue; // a format whose structural test is not its checksum
+                Trainer::Bank verifyBank;
+                for (auto &box : verifyBank.boxes)
+                    for (auto &slot : box)
+                        slot.reset();
+                verifyBank.boxes[0][0] = std::move(tamperedPokemon);
+                verifyBank.save();
+                context.check(verifyBank.lastVerifyFailures() == 1, "the bank's save-time verification passed a record the next load drops", sample.origin + " failures=" + std::to_string(verifyBank.lastVerifyFailures()));
+                std::remove((bankDirectory + "/bank.dat.damaged").c_str());
+                break;
+            }
 
             Trainer::Bank::setRootOverride("");
             context.check(!Trainer::Bank::rootOverridden(), "the bank path override was not cleared after the test");

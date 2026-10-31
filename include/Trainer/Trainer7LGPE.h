@@ -83,8 +83,8 @@ namespace Trainer
         /**
          * Creates a species-0, checksum-valid blank PB7 entity via the encrypt->decrypt round-trip:
          * zeroed SIZE_PARTY7_LGPE buffer -> encryptArray7LGPE(seed 0) -> Pokemon7LGPE. Starting point
-         * for the Pokemon creator. (LGPE's own empty box slots are raw zeros because the read path
-         * gates on a non-zero EC, but a live blank entity still needs a valid decrypted PB7 buffer.)
+         * for the Pokemon creator. (LGPE's own empty slots are the encrypted blank behind a zero
+         * EC, which the read path skips; a live blank entity still needs a valid decrypted PB7.)
          */
         std::unique_ptr<::Pokemon::Pokemon> createBlankPokemon() const override;
 
@@ -156,10 +156,10 @@ namespace Trainer
          * the starter reference slots by index box*25+slot), so the party/starter follow their
          * Pokemon to the new slot. Storage stays gapless (both slots remain occupied).
          */
-        void swapBoxSlots(size_t firstBox, size_t firstSlot, size_t secondBox, size_t childStatus) override
+        void swapBoxSlots(size_t firstBox, size_t firstSlot, size_t secondBox, size_t secondSlot) override
         {
             const uint16_t firstFlatSlot = static_cast<uint16_t>(firstBox * SLOTS_PER_BOX7_LGPE + firstSlot);
-            const uint16_t secondFlatSlot = static_cast<uint16_t>(secondBox * SLOTS_PER_BOX7_LGPE + childStatus);
+            const uint16_t secondFlatSlot = static_cast<uint16_t>(secondBox * SLOTS_PER_BOX7_LGPE + secondSlot);
             for (size_t partySlotIndex = 0; partySlotIndex < MAX_PARTY_SLOTS; ++partySlotIndex)
             {
                 if (partyIndices[partySlotIndex] == firstFlatSlot)
@@ -171,7 +171,7 @@ namespace Trainer
                 starterIndex = secondFlatSlot;
             else if (starterIndex == secondFlatSlot)
                 starterIndex = firstFlatSlot;
-            Trainer::swapBoxSlots(firstBox, firstSlot, secondBox, childStatus);
+            Trainer::swapBoxSlots(firstBox, firstSlot, secondBox, secondSlot);
         }
 
         /**

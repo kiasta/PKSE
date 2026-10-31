@@ -63,6 +63,10 @@ namespace Trainer
         /// Bytes per box name -- 40, holding 20 UTF-16 units of which the game writes at most 8
         /// characters (PKHeX SAV4Sinnoh/SAV4HGSS BOX_NAME_LEN).
         static constexpr size_t GEN4_BOX_NAME_LEN = 40;
+        /// Offset of the language byte inside the trainer record (PKHeX SAV4: Trainer1 + 0x19).
+        static constexpr size_t GEN4_LANGUAGE_OFFSET = 0x19;
+        /// Offset of the ROM code inside the trainer record (PKHeX SAV4.ROMCode: Trainer1 + 0x1C).
+        static constexpr size_t ROM_CODE_OFFSET4_HGSS = 0x1C;
 
         Trainer4HGSS(std::vector<uint8_t> raw, std::string path);
 
@@ -81,9 +85,26 @@ namespace Trainer
         std::unique_ptr<::Pokemon::Pokemon> createBlankPokemon() const override;
 
         GameVersion getGameGroup() const noexcept override { return GameVersion::HGSS; }
-        /// HeartGold, claiming the pair. Same reasoning as Diamond/Pearl: there is no game byte
-        /// anywhere in a Gen 4 save to tell HeartGold from SoulSilver.
-        GameVersion getGameVersion() const noexcept override { return GameVersion::HG; }
+        /// The trainer record's ROM code (PKHeX SAV4HGSS.Version = ROMCode, Trainer1 + 0x1C): 7 for
+        /// HeartGold, 8 for SoulSilver. Diamond/Pearl leave that byte unused, so only this group asks.
+        GameVersion getGameVersion() const noexcept override
+        {
+            if (valid && generalBlock()[ofsTrainer() + ROM_CODE_OFFSET4_HGSS] == static_cast<uint8_t>(GameVersion::SS))
+                return GameVersion::SS;
+            return GameVersion::HG;
+        }
+
+        /// The save's language (PKHeX SAV4.Language, Trainer1 + 0x19), so a Pokemon created here is
+        /// stamped with it. A byte Gen 4 cannot hold (0, the unused 6, past Korean) answers English.
+        uint8_t language() const noexcept override
+        {
+            using Enums::LanguageID;
+            if (!valid)
+                return static_cast<uint8_t>(LanguageID::English);
+            const uint8_t languageId = generalBlock()[ofsTrainer() + GEN4_LANGUAGE_OFFSET];
+            const bool gen4Language = languageId >= static_cast<uint8_t>(LanguageID::Japanese) && languageId <= static_cast<uint8_t>(LanguageID::Korean) && languageId != static_cast<uint8_t>(LanguageID::UNUSED_6);
+            return gen4Language ? languageId : static_cast<uint8_t>(LanguageID::English);
+        }
 
         size_t getBoxCount() const noexcept override { return 18; }
         size_t getSlotsPerBox() const noexcept override { return 30; }
@@ -118,6 +139,12 @@ namespace Trainer
         size_t ofsBox(size_t boxIndex) const noexcept { return boxIndex * 0x1000; }
         size_t ofsBoxNames() const noexcept { return 0x12008; }
         size_t ofsCurrentBox() const noexcept { return 18 * 0x1000; }
+        /// u32 bitfield, one bit per box: which boxes the game copies on its next save. An unflagged
+        /// box keeps its old data under the new checksum, so a box PKSE changed must be flagged.
+        size_t ofsBoxContentChanged() const noexcept { return ofsCurrentBox() + 4; }
+        /// All 18 boxes, as PKHeX's SAV4HGSS writes on every export.
+        static constexpr uint32_t BOX_CONTENT_CHANGED_ALL4_HGSS = 0x3FFFF;
+        uint32_t boxContentChangedFlags() const noexcept { return valid ? readUInt32LittleEndian(storageBlock() + ofsBoxContentChanged()) : 0; }
 
         /// True when `bytes` is a Gen 4 save whose General block is `gsize`. Mirrors PKHeX
         /// SaveUtil.IsValidGeneralFooter2: it checks the block in the SECOND partition, because a

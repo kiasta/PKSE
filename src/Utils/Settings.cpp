@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <sys/stat.h>
 
 #include "Globals.h"
@@ -12,9 +13,74 @@
 
 namespace Utils
 {
+    namespace
+    {
+        std::string g_settingsFileOverride;
+        std::string g_lastSaveFolder;
+        std::string g_lastImportFolder;
+        std::vector<std::string> g_favoriteFolders;
+
+        std::string &lastFolderFor(LastFolderKind kind)
+        {
+            return kind == LastFolderKind::ImportFiles ? g_lastImportFolder : g_lastSaveFolder;
+        }
+    }
+
     static std::string settingsPath()
     {
+        if (!g_settingsFileOverride.empty())
+            return g_settingsFileOverride;
         return BASE_SAVE_DIRECTORY + "/settings.cfg";
+    }
+
+    void setSettingsFileOverride(const std::string &settingsFilePath)
+    {
+        g_settingsFileOverride = settingsFilePath;
+    }
+
+    const std::string &lastFolder(LastFolderKind kind)
+    {
+        return lastFolderFor(kind);
+    }
+
+    void setLastFolder(LastFolderKind kind, const std::string &directory)
+    {
+        std::string &rememberedFolder = lastFolderFor(kind);
+        if (rememberedFolder == directory)
+            return;
+        rememberedFolder = directory;
+        saveSettings();
+    }
+
+    const std::vector<std::string> &favoriteFolders()
+    {
+        return g_favoriteFolders;
+    }
+
+    bool isFavoriteFolder(const std::string &directory)
+    {
+        for (const std::string &favoriteFolder : g_favoriteFolders)
+        {
+            if (favoriteFolder == directory)
+                return true;
+        }
+        return false;
+    }
+
+    bool toggleFavoriteFolder(const std::string &directory)
+    {
+        for (auto favoriteFolder = g_favoriteFolders.begin(); favoriteFolder != g_favoriteFolders.end(); ++favoriteFolder)
+        {
+            if (*favoriteFolder == directory)
+            {
+                g_favoriteFolders.erase(favoriteFolder);
+                saveSettings();
+                return false;
+            }
+        }
+        g_favoriteFolders.push_back(directory);
+        saveSettings();
+        return true;
     }
 
     void loadSettings()
@@ -29,8 +95,16 @@ namespace Utils
         // No config yet -> keep the compiled-in defaults, but still fall through to the language
         // pin below. Returning early here skipped it, which is the FIRST run on every console --
         // exactly the case the pin exists for.
+        // Cleared first so a second load (the self test re-reads its own file) replaces the folders
+        // rather than appending to them.
+        g_lastSaveFolder.clear();
+        g_lastImportFolder.clear();
+        g_favoriteFolders.clear();
+
         FILE *f = fopen(settingsPath().c_str(), "r");
-        char line[128];
+        // Sized for a folder path, not just the short toggles: fgets splits a longer line, and the
+        // tail of a split path would be read as a line of its own.
+        char line[1024];
         while (f && fgets(line, sizeof(line), f))
         {
             // Trim the trailing newline / carriage return.
@@ -75,6 +149,19 @@ namespace Utils
             else if (strcmp(key, "debugLogging") == 0)
             {
                 g_debugLogging = (strcmp(value, "0") != 0);
+            }
+            else if (strcmp(key, "lastSaveFolder") == 0)
+            {
+                g_lastSaveFolder = value;
+            }
+            else if (strcmp(key, "lastImportFolder") == 0)
+            {
+                g_lastImportFolder = value;
+            }
+            else if (strcmp(key, "favoriteFolder") == 0)
+            {
+                if (*value != '\0' && !isFavoriteFolder(value))
+                    g_favoriteFolders.push_back(value);
             }
             else if (strcmp(key, "language") == 0)
             {
@@ -121,6 +208,14 @@ namespace Utils
         fprintf(f, "injectToGame=%d\n", g_injectToGameSave ? 1 : 0);
         fprintf(f, "debugLogging=%d\n", g_debugLogging ? 1 : 0);
         fprintf(f, "language=%s\n", Names::nameLanguageSuffix(Names::displayLanguageIndex()));
-        fclose(f);
+        if (!g_lastSaveFolder.empty())
+            fprintf(f, "lastSaveFolder=%s\n", g_lastSaveFolder.c_str());
+        if (!g_lastImportFolder.empty())
+            fprintf(f, "lastImportFolder=%s\n", g_lastImportFolder.c_str());
+        for (const std::string &favoriteFolder : g_favoriteFolders)
+            fprintf(f, "favoriteFolder=%s\n", favoriteFolder.c_str());
+        // The final flush happens in fclose; on a full SD card it is the call that fails.
+        if (fclose(f) != 0)
+            logErrorToFile("Failed to finish writing settings file", settingsPath().c_str());
     }
 }
