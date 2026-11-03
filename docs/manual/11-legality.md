@@ -2,276 +2,331 @@
 
 ## What it is, and what it deliberately is not
 
-```cpp
-// include/Legality/Legality.h
-enum class Severity : uint8_t { Info, Warning, Invalid };
-
-struct Issue  { Severity severity; std::string text; };
-
-struct Report {
-    std::vector<Issue> issues;
-    int  problemCount() const noexcept;   // Warning + Invalid (Info notes are not problems)
-    bool ok() const noexcept;             // problemCount() == 0
-    bool empty() const noexcept;          // NOTHING to show, not even an Info note
-};
-
-Report analyze(const Pokemon::Pokemon& pk, Enums::GameVersion originGroup);
-```
+PKSE's legality checker is a **port of PKHeX's legality analysis**: the same checks, run in the same
+order, reaching the same verdicts at the same severities. PKHeX is the reference for every rule here,
+and a difference from PKHeX is a bug in PKSE, measured by the parity harness (below).
 
 **It is informational.** It never blocks an edit and never auto-fixes anything. PKSE can edit saves,
 so a user's box may genuinely hold something illegal, and that is their business.
 
-**A clean report means "no problems found", never "this is legal."** Event / Mystery Gift
-distributions are not modelled, and neither are PID/seed correlations. Where a check would need data
-PKSE does not have, it says so as an **Info** note rather than staying silent.
+```cpp
+// include/Legality/Legality.h
+enum class Severity : uint8_t { Info, Warning, Invalid };
 
-`ok()` and `empty()` are different questions, and the UI uses both. A Pokémon with no problems can
-still have Info notes worth reading (which encounter it matched, or that a check could not run) — so
-the details modal opens its issue list on `empty()`, not on `ok()`.
+struct Issue
+{
+    Severity severity;
+    CheckIdentifier identifier;   // PKHeX CheckIdentifier
+    ResultCode code;              // PKHeX LegalityCheckResultCode
+    std::string text;             // what the user reads
+    IssueSource source = IssueSource::Check;   // or Move: one move slot's verdict
+};
 
-**No RTTI, no exceptions.** Every check calls base `Pokemon` virtuals; per-generation differences
-branch on the game group or a capability flag, never on concrete type.
+struct Report
+{
+    std::vector<Issue> issues;
+    int invalidCount() const noexcept;   // PKHeX calls a Pokemon legal when this is 0
+    int warningCount() const noexcept;   // PKHeX's "Fishy" findings
+    int problemCount() const noexcept;   // Warning + Invalid
+    bool empty() const noexcept;         // nothing to show, not even an Info note
+};
 
-## The three layers
-
-| Layer | File | Question |
-|---|---|---|
-| **1 — structural** | `Legality.cpp` | Are the field values in range? EV/AV caps, nature and ball ids, known species/move/item ids, name lengths, checksum. |
-| **2 — consistency** | `Legality.cpp` | Is the Pokémon consistent with itself and its species data? Level vs EXP, met level vs level, gender vs gender ratio, ability against the species' slots, move learnability, per-game species presence. |
-| **3 — encounter** | `EncounterMatch.cpp` | Is there a **real encounter** in the game it says it came from that could have produced it? |
-
-Layers 1 and 2 run in `analyze()`; layer 3 is `checkEncounter(pk, report)`, called at the end of it.
-
-## Layers 1 and 2, in order
-
-The checks in `analyze()`, in the order they run (grep `// ---- L` to find each):
-
-```
-L1  species id known (name-table sentinel = "Unknown")
-L1  nature range (+ stat/mint nature on Gen 8+)
-L1  EVs                         <- three completely different rules; see below
-L1  AVs (Let's Go only, <= 200 each)
-L1/L2 ability slot valid + ability id legal for the species/form
-L1  moves are known ids + no duplicates
-L2  move learnability          <- union of the origin's pool and the current one; see below
-L1  held item is a known id (skipped when none)
-L1  ball / language ranges (skipped when unwired == 0)
-L2  level <-> EXP               <- EXP-derived level is authoritative
-L2  met level <= current level
-L2  gender vs the species gender ratio
-L2  species/form obtainable in this game (personal presence bitmask)
-L2  OT presence (a non-egg should have an OT name + a nonzero trainer id)
-L1  name lengths (<= 12 UTF-16 chars)
-L3  encounter matching
+Report analyze(const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup);
+Report analyze(const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup, const AnalysisOptions &options);
 ```
 
-### A move is checked against every game the Pokémon could have learned it in
+**Severities are PKHeX's.** PKHeX's `Invalid` is `Severity::Invalid`; its `Fishy` is
+`Severity::Warning`; its `Valid` results are never reported. **"Legal" means `invalidCount() == 0`**,
+which is PKHeX's `LegalityAnalysis.Valid`: a Pokémon with only warnings is legal, with warnings.
+`Severity::Info` has no PKHeX counterpart. No check emits it any more (the retired interim sweep
+was its only user), and the parity harness ignores it.
 
-The pool is a game's own learn methods unioned with the species' whole pre-evolution chain, and it
-stays a **Warning** rather than Invalid because it cannot express *when* a move was legal (tutors
-that came and went, event moves, trade-backs). A fateful-encounter Pokémon's warning says so: event
-moves are not modelled.
+**No RTTI, no exceptions.** Every check reads base `Pokemon` virtuals. A per-format difference
+branches on the format generation, the game group or a capability predicate, never on a concrete
+type. Where PKHeX tests a template's class (`enc is EncounterStatic3 s`), PKSE asks the template
+(`encounterAs<EncounterStatic3>(encounter)`, below). Where PKHeX throws, the port returns the "no
+match" answer.
 
-**A Pokémon keeps the moves it learned in earlier games**, so checking only its current game (or only
-its current game and its origin) flagged every legitimate Chespin that kept an XY level-up move in
-Sun, and every Virtual Console move PKSE's own transfer produces. `getLearnGroups(pokemon, format)`
-is PKHeX's `LearnGroup` walk:
+## The shape of one analysis
 
-- every group of the format's generation and of each earlier one back to the origin's;
-- the Virtual Console path: a Gen 1/2 origin reaches Gen 7 through both Gen 1 and Gen 2 (the Time
-  Capsule), except a Korean Gen 2 record, which has no Gen 1 trade;
-- the HOME era: Sword/Shield looks back at every earlier group; another HOME-era game reaches the
-  other HOME-era games only when the record carries a HOME tracker.
+`analyze()` in `src/Legality/Legality.cpp` is PKHeX's `LegalityAnalysis` constructor, in its order:
 
-A move is unknown only when NO group in that list knows it.
+```
+analyze(pokemon, formatGroup, options)
+  ├─ species 0                    -> empty report
+  ├─ unknown species id, bad checksum
+  ├─ the encounter               (the encounter engine, for every origin)
+  │    LegalityInfo + EncounterFinder::findVerifiedEncounter
+  │    EncounterFinder::updateVirtualConsoleTransferInfo
+  │    context.encounter = makeEncounterInfo(legalityInfo, pokemon)
+  │    legalityInfo.reportParse(context)                             (Fishy -> Warning, Invalid -> Invalid)
+  ├─ verifyMoves(context)         the per-slot move verdicts; PKHeX prints them right after the encounter
+  └─ runVerifiers(context)        every PKHeX verifier, in LegalityAnalysis.UpdateChecks order
+```
 
-### "Optional fields that are unwired read 0 and are skipped"
+`runVerifiers()` is PKHeX's `ParsePK1` … `ParsePK9` with the same format gates: a Game Boy format runs
+Nickname, Level, TrainerName, Misc, MovePP, EffortValues (and HeldItem for Gen 2); everything from
+Gen 3 runs PID, Language, Nickname, TrainerName, TrainerId, IndividualValues, EffortValues, Level,
+Ribbons, Ability, Ball, Form, Misc, MovePP, Gender, HeldItem, ContestStats, Markings, then GroundTile
+for formats 4–6, SlotType, the Gen 6+ History / ConsoleRegion (6–7) / Memories / Medals, the Gen 7+
+HyperTraining / TrashBytes, the Gen 8+ Marks, and finally Transfer, ColosseumXD and AwakeningValues.
+**The order is part of the port**: it is the order of the lines in PKHeX's report, and the order the
+parity harness expects.
 
-That is the file's stated policy, and it is what keeps a format with fewer fields from producing a
-wall of false flags. In practice, prefer the **capability predicate** (`hasBall()`, `hasNature()`,
-`hasPID()`) over the `== 0` heuristic where one exists — chapter 06.
+## Where everything lives
 
-### The EV check is three rules, not one
+| Directory / file | What it is |
+|---|---|
+| `Legality/Legality.h`, `Legality.cpp` | `Report`, `Issue`, `analyze()`, `runVerifiers()` |
+| `Legality/AnalysisContext.h` | `AnalysisContext` (PKHeX's `LegalityAnalysis` as the verifiers see it), `AnalysisOptions`, `ActiveTrainer`, `StorageSlotType`, the era rules |
+| `Legality/ResultCode.h`, `src/Legality/ResultCodeText.cpp` | PKHeX's 34 `CheckIdentifier`s and 374 result codes with their English templates. Generated by `tools/gen_legalitycodes.py` |
+| `Legality/Verifiers/` | one function per PKHeX verifier class, one `.cpp` each (`PIDVerifier.cpp`, `BallVerifier.cpp` …), declared together in `Verifiers.h`, plus the rule tables they read (`BreedingRules`, `NameRules`, `RibbonRules`, `MarkRules`, `HandlerRules`, `WordFilter`, the generated `*Table` files) |
+| `Legality/Encounters/` | the encounter engine, namespace `Legality::Encounters`: templates, per-generation generated data, generators and enumerators, `EncounterFinder`, `EncounterVerifier`, `EvolutionVerifier`, `LegalityInfo` |
+| `Legality/Evolutions/` | the evolution engine, namespace `Legality::Evolutions`: PKHeX's `EvolutionTree`, `EvolutionChain`, `EvolutionHistory` |
+| `Legality/LearnSource/` | move verification, namespace `Legality::LearnSource`: `LearnVerifier`, the learn groups, `MoveBreed` |
+| `Legality/RNG/` | PKHeX's RNG library, namespace `Legality::RNG`: the LCRNGs and their reversals, Xoroshiro, `MethodFinder`, `PIDIV`, the per-method correlations |
+| `Legality/EncounterTable.h/.cpp` | generated Gen 3 encounter rows that only the bank's Gen 3 rebuild reads (chapter 10). The checker does not read them |
 
-This is the best worked example in the file of "the same interface slot means different things in
-different formats".
+Every one of those directories is listed separately in the Makefile's `SOURCES`, which does not
+recurse. The encounter engine is deliberately one flat directory, so it needs only the one entry.
+
+## Findings: identifiers, codes and text
+
+**Every finding names the PKHeX check it is.** An `Issue` carries PKHeX's `CheckIdentifier` and
+`LegalityCheckResultCode` (PKSE's `ResultCode`), and that pair, with the severity, is what the
+parity harness compares. Matching on message text would drift the first time either side reworded a
+sentence. `getResultCodeSourceName()` and `getCheckIdentifierSourceName()` return PKHeX's own
+spellings for the harness; the enumerators themselves are renamed under the coding standards.
+
+A verifier reports through the context:
 
 ```cpp
-if (pk.hasAwakeningValues()) {
-    // Let's Go has NO EV training. Nothing in the game writes these bytes and the stat formula
-    // has no EV term, so on a legitimate Pokemon they are all 0.
-    //
-    // The 252/510 caps are the WRONG QUESTION here, not merely a differently-worded one: they
-    // would pass a fully trained 510 spread as perfectly legal while a lone stray 4 slipped by
-    // in silence. What matters is non-zero at all, so that is what is checked.
-    //
-    // Reported as a WARNING, not Invalid: PKHeX has this exact rule but leaves it DISABLED, so
-    // calling it illegal outright would be a stronger claim than the reference is willing to make.
-    if (evTotal != 0) add(r, Severity::Warning, "Let's Go has no EVs, but this Pokemon carries …");
-
-} else if (pk.maxEV() > 255) {
-    // Gen 1/2 have Stat Experience: 16-bit per stat, cap 65535, NO combined limit. Every value
-    // the field can physically hold is legal and there is nothing here to check. That is a real
-    // answer, not a gap.
-    //
-    // Applying the 252/510 rule anyway would be LOUDLY wrong: ev[] comes from the 8-bit
-    // accessors, which SATURATE for these formats, so any well-trained Red/Blue Pokemon reads
-    // 255 in all six slots and gets reported six times for "EV over 252" plus once for "EV total
-    // over 510" -- seven Invalid findings on a Pokemon legitimately trained on a Game Boy.
-
-} else {
-    for (int i = 0; i < 6; ++i)
-        if (ev[i] > 252) add(r, Severity::Invalid, …);
-    if (evTotal > 510) add(r, Severity::Invalid, …);
-}
+context.add(Severity::Invalid, CheckIdentifier::Marking, ResultCode::MarkValueOutOfRange, std::to_string(markingIndex));
 ```
 
-The 252 per-stat cap is Gen 6 onward; Gens 3-5 allow 255 in one stat under the same 510 total, so
-only the total is checked there. The stat-nature check is likewise Gen 8 onward, and the language
-check asks `Enums::groupHasLanguage(originGroup, language)` (Spanish-LatAm, 11, is Z-A only). The
-gender check reads `Pokemon::getGenderRatio(species, form, originGroup)`: ORAS's Cosplay Pikachu are
-female-only there although the cross-game table says the Gen 7 caps are male-only. A Gen 5 Basculin
-with Reckless as its hidden ability is legal (PKHeX `IsEdgeCaseBasculin`).
+`add()` fills `text` from PKHeX's English template for the code, with `{0}` and `{1}` replaced by
+the arguments (`getResultText`). `addText()` takes a ready sentence, for the few findings
+whose text PKHeX builds itself (the medal verifier's bag hits). Per-move verdicts carry `IssueSource::Move`, because PKHeX keeps them apart from its results (in
+`LegalInfo.Moves` / `Relearn`) and its report prints them as their own lines.
 
-Three lessons, all generalisable:
+## AnalysisContext: what a verifier can see
 
-1. **Ask the format what it is, do not assume.** `hasAwakeningValues()`, `maxEV()`.
-2. **The right *question* differs, not just the threshold.** For Let's Go it is "is it non-zero",
-   not "is it under 252".
-3. **Match the reference's confidence.** PKHeX disables its own Let's Go EV rule, so PKSE reports
-   Warning rather than Invalid.
+`AnalysisContext` is what PKHeX passes every verifier as `LegalityAnalysis data`:
 
-## Layer 3 — encounter matching
-
-`include/Legality/EncounterMatch.h`. This asks a different question from layers 1 and 2: *is there a
-real encounter that could have produced this Pokémon?* This species, in this form, at this met
-location, at this met level, with this shiny state, ball, gender and nature.
-
-Three design decisions make that answerable without porting PKHeX's RNG machinery:
-
-**1. Tables are keyed by the mon's ORIGIN version, not by the save it currently lives in.** A met
-location only means anything in its own game's namespace. Z-A and Scarlet/Violet are both Gen 9 and
-share none of theirs, so a Sword Pokémon in a Violet box is checked against **Sword's** tables —
-which is also what PKSE's location display already does.
-
-**2. Evolution is walked backwards.** A Charizard was caught as a Charmander, so the match runs over
-the whole pre-evolution chain (`Pokemon::getPreEvolutionChain`).
-
-**3. Matching is ANY-of.** A row only has to *exist*. A constraint is reported violated only when
-**every** otherwise-matching row violates it.
-
-### Where it deliberately stays silent
-
-- **A fateful Pokémon that matches nothing** is a **Warning**, not Invalid. Mystery Gift distributions
-  ARE in the tables for Gens 3-9, but only the ones PKHeX archived, and Gens 1 and 2 have none (see
-  below) — so a missing card is a gap in the data rather than evidence about the Pokémon.
-- **An origin game PKSE has no tables for** (Pokémon GO, an unknown version byte) produces one
-  **Info** note and no findings.
-- **Cross-game transfers are NOT judged.** PKSE's own bank moves Pokémon along routes no official
-  transfer offers, and flagging its output would be flagging the feature. Where a transfer matters to
-  the checker, the *met location* is the concern, not the origin marker.
-
-### The matching machinery
-
-```
-checkEncounter(pk, report)
-  ├─ resolve the origin version -> getEncounterTable(version)      nullptr -> one Info note, return
-  ├─ build the pre-evolution chain (Candidate[])
-  ├─ if the mon has an egg location, or IS an egg -> checkEgg(...) / matchingGiftEgg(...)
-  ├─ sweep(table, chain, versionBit, metLocation, metLevel, …)
-  │     └─ collects a bitmask of VIOLATIONS across all otherwise-matching rows
-  └─ reportViolations(violations, pk, report)
-```
-
-Helpers worth knowing before you touch this file:
-
-| Helper | Purpose |
+| Member | PKHeX |
 |---|---|
-| `isHomeRemappedLocation(loc)` | a location HOME rewrote on transfer: PKHeX `LocationsHOME` 59994-60000. The check returns after its note; no encounter is looked up |
-| `isExternalTransferLocation(group, loc)` | the "came from another game" marker |
-| `hasEggLocation(loc)` | non-zero, and not BDSP's `0xFFFF` sentinel |
-| `breedable(table, species)` | the per-game breedable bitset |
-| `canHatchAt(egg, loc, versionBit)` | an egg hatches wherever the player is walking, so this is a permitted **set** |
-| `levelMatches(row, metLevel)` | resolves `ENCOUNTER_FLAG_BOOST60` etc. |
-| `highestMetLevel(row)` / `lowestMetLevel(row)` | the row's met-level band: one above `levelMax` for `ENCOUNTER_FLAG_CATCH_COMBO` (Let's Go); ±4 for `ENCOUNTER_FLAG_FLUTE` and up to `levelMax + 33` for `ENCOUNTER_FLAG_DEXNAV` (ORAS, PKHeX `EncounterSlot6AO`; Rock Smash has no DexNav). The level finding's "nearest is" band uses them too |
-| `encounterLocationMatches(rowLoc, metLoc)` | resolves the Wild Area and roamer region sentinels |
-| `getTimeCapsuleScope(group, hasMetData, chain, …)` | which Gen 1/2 games a record can come from, and whether the other generation is asked |
-| `mergeMatchState(state, other)` | folds a second sweep into the first, keeping the further explanation |
-| `eggExplainsWithoutMetData(table, pk, chain, …)` | an egg as the story for a record with no met data — only where it holds |
+| `pokemon`, `formatGroup`, `formatGeneration` | `data.Entity`, its format |
+| `options.slotType` | `StorageSlotType` (`Unknown` is PKHeX's `Ignore`: a file, or a caller that does not know) |
+| `options.activeTrainer` | `ParseSettings.ActiveTrainer`: the open save's trainer, for the handler and trainer checks. Null for a Pokémon file or a bank slot |
+| `allowsGameBoyCartridgeEra()` / `allowsGameBoyAdvanceCartridgeEra()` / `allowsSwitchGameBoyAdvanceEra()` | `ParseSettings.AllowEraCartGB` / `AllowEraCartGBA` / `AllowEraSwitchGBA`, as `InitFromSaveFileData` sets them from the open save |
+| `legalityInfo` | `data.Info`: the engine's match, PID/IV correlation, move results and evolution chains. Set by every analysis; null only in a context a test builds by hand |
+| `encounter` | `EncounterInfo`: the engine's verdict in short form (`type`, `originGroup`), from `makeEncounterInfo` (below) |
+| `evolutionHistory()` | `Info.EvoChainsAllGens`; a hand-built context builds one for an unknown encounter |
 
-`EggRule::eggLocation == 0` means the **format** has no such field — Gen 3 alone — which is why an
-egg there has to be inferred instead of read.
+The UI builds the options in `TrainerViewScreen::analyzeLegality`: the box or party slot type and
+`makeActiveTrainer(trainer)` for a save's Pokémon, and **no options at all for a bank slot**, because
+a banked Pokémon belongs to no open save and PKHeX's handler checks would compare it against the
+wrong trainer. `legalitydump` does the same as PKHeX's GUI: `InitFromSaveFileData`, then each slot as
+`Party` or `Box`.
 
-**A Scarlet/Violet egg that has not hatched has origin game 0** (PKHeX `PK9.IsUnhatchedEgg`), so the
-checker reads it as the format's own game rather than reporting a missing origin.
+**Verifiers never modify the Pokémon.** The legality layer is read-only with respect to Pokémon data.
 
-### Which failure gets reported — and the order is a DECLARATION
+## The encounter engine
 
-`Stage` ranks explanations, and "furthest" is simply the larger enumerator. **The evolution floor
-outranks the level band** — an ancestor's row that fits the met level says more about the record
-than the Pokémon's own row missing it — so `STAGE_EVOLUTION` is declared AFTER `STAGE_LEVEL`. It was
-first placed between `STAGE_LOCATION` and `STAGE_LEVEL`, which ranked it above the location (the
-Seadra fix) and silently BELOW the level band — the enum contradicted the comment written above it.
-Nothing on a real save exposed that; it was found by reading the two against each other.
+`Legality/Encounters` is PKHeX's `Legality/Encounters` tree, ported class for class. It answers the
+question every other check depends on: *which real encounter produced this Pokémon?*
 
-The case that pins it is FireRed's **Route 16**: wild Rattata at 18-22, wild Raticate at
-23-25, and Raticate evolves at 20. A Raticate met at 18 and now level 19 fits the Rattata row and
-misses its own; what it cannot have done is evolve. With the old order it was told *"no encounter for
-Raticate at Route 16 is met at level 18 (nearest is 23-25)"*. Reordering changed no finding on any of
-36 real saves — it only changes which true sentence the user reads.
+**Templates.** One C++ class per PKHeX template class (`EncounterSlot3`, `EncounterStatic4`,
+`EncounterTrade5BW`, `EncounterEgg6`, `MysteryGiftWC8` …), each deriving from `Encounterable`, which
+is PKHeX's `IEncounterable` + `IEncounterTemplate` + `IEncounterMatch`. A template answers its
+species, form, level range, version, generation, context, location, egg location, `name()` (PKHeX's
+`Name`) and `longName()` (PKHeX's `LongName`, which the parity harness compares), and overrides the
+optional properties PKHeX's class implements (`fixedBall`, `shiny`, `ability`, `fixedGender`,
+`flawlessIVCount`, `isFatefulEncounter` …).
 
-### Gen 1 and Gen 2: two generations, one question
+**No RTTI means two substitutes for `is`:**
 
-**The Time Capsule carried Pokémon both ways**, and neither format records which game a Pokémon came
-from, so PKHeX asks BOTH generations' encounters of any Gen 1 or Gen 2 record that could have crossed
-(`EncounterGenerator12`). Asking only the format's own group reported Crystal's Articuno — a Red one
-that crossed over — as a species Johto never had. `getTimeCapsuleScope` answers two narrowing facts,
-both PKHeX's (`EncounterEnumerator2`, `GBRestrictions`):
+- **The class.** `templateType()` returns one `EncounterTemplateType` enumerator per PKHeX class,
+  every generation already listed. `encounterAs<EncounterStatic3>(encounter)` is the checked cast,
+  null when the template is another class; each class's `isTemplateType()` also accepts its derived
+  classes, as `is` does.
+- **The interfaces.** A multi-member PKHeX interface (`IFixedTrainer`, `IMoveset`, `IRelearn`,
+  `IRandomCorrelation`, `IEncounterSlot34` …) is a mix-in class plus an `as…()` query on
+  `Encounterable` returning null by default: a template inherits `public Encounterable, public
+  MovesetTemplate` and overrides `asMoveset() { return this; }`. A new PKHeX interface is a new mix-in
+  and a new `as…()` **appended** to the list in `Encounterable.h`.
 
-- **Crystal's caught data pins the game.** A record carrying it was caught or hatched in Crystal, so
-  only Crystal's rows are asked — Gold and Silver never write the word, and a Gen 1 game has nowhere to
-  keep it.
-- **A Gen 2 record WITHOUT caught data came from Crystal only if it could have visited Gen 1**,
-  because crossing the Time Capsule is the one way to clear the word: its chain has to reach a Gen 1
-  species (`CanVisitGen1`). That is what keeps a caught-data-less Celebi off Crystal's GS Ball template.
+**Data.** Each generation's templates are generated by `tools/gen_encountersN.py` into
+`EncounterDataN.h/.cpp`: one `const` array per PKHeX array, **unmerged and in PKHeX's order**
+(`SLOTS_R`, `STATIC_E`, `TRADE_GIFT_FR`), of the template classes themselves. Table templates are
+`constexpr`-constructible from a nested aggregate `Properties` (PKHeX's `init` properties with
+PKHeX's defaults); a slot keeps a `parent` pointer to its area as PKHeX does. No `std::string` or
+`std::vector` in a template. PKHeX's `ConvertToPKM` ("Generating") regions are not ported: PKSE
+matches encounters, it does not create Pokémon from them.
 
-When the record could have crossed, the other generation's table is swept as well, and the two
-states merge (`mergeMatchState`): a match in either explains the Pokémon (*"Matches a static encounter
-in Red/Blue/Yellow, traded through the Time Capsule"*), and failures name both generations.
+**Generators and enumerators are coroutines.** PKHeX writes its search as C# `IEnumerable` with
+`yield return`, and its per-generation enumerators (`EncounterEnumeratorN.MoveNext`) as a `goto`
+state machine. `EncounterSequence.h` gives C++20 the same shape: `EncounterCandidates` yields
+`EncounterReference`s, `MatchedEncounters` yields `MatchedEncounter{encounter, rating}`, and
+`PeekEnumerator` is PKHeX's. A state machine is written as a straight-line coroutine in the same
+order: each `case YieldState.X: if (TryGetNext(db)) return true;` becomes a loop that `co_yield`s,
+and the deferred / rating fallback is yielded last, exactly as PKHeX does. A static table entry is
+yielded with `borrowEncounter(entry)` (no allocation); a template built on the fly (an egg) with
+`makeEncounter<EncounterEgg3>(…)`.
 
-**Without met data an egg is only POSSIBLE.** Gold and Silver write nothing when an egg hatches, so
-PKHeX's `VerifyEncounterEgg2` accepts a Gen 2 egg without caught data outright — which is what Elm's
-Togepi from Gold needed. But nothing in such a record evidences an egg the way met level 0 at a hatch
-location does, so `eggExplainsWithoutMetData` explains a Pokémon only when the story holds (a breedable
-base, at least the hatch level, past every evolution level) and otherwise says nothing, leaving the
-sweep's finding in place. Routing every breedable species to the egg path instead turned *"Butterfree
-at level 9 would have to evolve from Metapod at 10"* into a sentence about a Caterpie egg.
+**The search.** `EncounterGenerator::getEncounters` dispatches on the origin generation to
+`EncounterGeneratorN`. Gens 1 and 2 go through `EncounterGenerator12`, which asks both, because the
+Time Capsule carried Pokémon both ways and neither format records which game a Pokémon came from.
+`EncounterFinder::findVerifiedEncounter` is PKHeX's `FindVerifiedEncounter`: for each candidate,
+`EncounterVerifier::verifyEncounter` (basic compatibility, the egg rules), then the secondary checks
+(relearn moves, current moves through `EncounterMoveSeam`, evolution, the PID/IV correlation), then
+the template's own `getMatchRating`; the first candidate that survives is the match, and running out
+leaves the last one with an `EncounterInvalid` finding. A generator that yields its last-resort
+candidate for a bad PID/IV or frame sets `manualFlag`, which becomes `PIDTypeMismatch` or
+`EncounterConditionBadRNGFrame`.
 
-Crystal's own rules, each a finding the console reported on a Pokémon PKHeX calls legal:
+**`LegalityInfo`** is PKHeX's `LegalInfo`: `encounterMatch()` (never null after the search;
+`EncounterInvalid` at worst), `encounterOriginal()` (a Virtual Console transfer's Game Boy encounter),
+`parse` (the search's findings, reported ahead of the verifiers'), `pidiv`, the move results, and
+`evolutionChainsAllGens()`. A verifier reads it through the bridge helpers in `LegalityInfo.h`:
+`getEncounterMatch(context)` returns the engine's template (null only in a context a test builds by
+hand), and `isEncounterFateful` / `isEncounterEgg` answer from it.
 
-- **An in-game trade is met at `LinkTrade2NPC` (126) at met level 0** (`EncounterTrade2`), and its
-  level is the LOWEST the received Pokémon can have, with no ceiling. The generator emitted every Gen 2
-  trade at location 0 with a single level, so Kyle's Onix (as a Steelix) and Kirk's Shuckle both read
-  as "not a place". The rows now carry `ENCOUNTER_FLAG_MET_LEVEL_ZERO`: the met level must be 0 and the
-  span bounds the CURRENT level.
-- **Raikou, Entei and Gold/Silver's Suicune roam**, so their template's location 2 is only where they
-  start. `EncounterStatic2.IsRoaming` is COMPUTED (those species, anywhere but Tin Tower), not a
-  property the generator could read, which is why it was missed. `ENCOUNTER_LOCATION_ROAMER2` carries
-  PKHeX's sixteen Johto routes.
-- **A Crystal egg hatches anywhere up to location 95.** `HatchLocationC` (16) is only what PKHeX's
-  `EncounterEgg2` STAMPS when it builds one; its verifier accepts any met location up to 95 ("Any met
-  location is fine"). Taking the stamp for the rule flagged every egg hatched elsewhere — a Cleffa at
-  19, a Togetic at 8.
-- **The Virtual Console GS Ball Celebi is ONE template, not an array** (`Encounters2.CelebiVC`, Ilex
-  Forest, level 30), and `assert_all_arrays_used` only knew arrays. It now also asserts single
-  `static readonly Encounter… X = new(…)` declarations, which is how the omission would have been caught.
+**Every origin is ported.** `analyze()` runs the engine for every Pokémon; an origin no generator
+knows (an unknown version byte) gets `EncounterInvalid`, as in PKHeX. `EncounterVerifier` answers
+Valid (unknown, never Invalid) for a context whose rules are not ported.
 
-**Gen 1's events are deliberately NOT rows.** Every one fixes a trainer: the Virtual Console Mew is OT
-"GF" with trainer id 22796, the Stadium gifts 1999/2000, the tours fixed OT names (`EncounterGift1`).
-`EncounterRow` has no trainer fields, so as a plain row the VC Mew would make every **glitch Mew** read
-legal — and the level 7 Mews in real Red, Blue, Silver and Crystal saves are exactly that. They stay
-Invalid, as PKHeX calls them; the cost is that a genuine GF Mew is flagged too until rows can carry a
-trainer id.
+**Pokemon GO searches by met location.** Version 34 (GO) has no generation of its own: a Let's Go
+record searches GO Park (`EncounterGenerator7X`, `EncounterSlot7GO`, met location 50), and a Gen 8+
+record searches `EncounterGeneratorGO`, which picks GO Park or GO to HOME (`EncounterSlot8GO`, met
+location 30012) by the met location, as PKHeX does. The templates come from `gen_encountersgo.py`.
+An open-ended GO window runs to today in UTC+12, read from the clock, so a met date in the future is
+outside it. The HOME enumerator searches its table backwards for an evolution that contradicts the
+first template (Maushold and Dudunsparce by encryption constant, form-argument evolutions, Wurmple's
+line), and that backwards search stops before the first table entry, as PKHeX's `Index > 0` loop
+does. Keep that quirk.
+
+**Gen 1 and Gen 2 search together.** `EncounterGenerator12` is PKHeX's lump generator: Crystal alone
+when the caught-data word is set (or a Gen 7 record has a female OT), else the tradeback guess
+(`GBRestrictions::getTradebackStatusInitial`) picks Gen 1, Gen 2, or both merged by PKHeX's
+`GBEncounterPriority` (a Korean record: Gold/Silver, then Crystal, then Gen 1). It sets
+`info.generation` to each candidate's generation as it yields it (PKHeX `StoreMetadata`), so the
+finder's verifier dispatch follows the candidate. Three things follow PKHeX outside the generator:
+
+- **The Virtual Console hand-off.** `EncounterFinder::updateVirtualConsoleTransferInfo` (PKHeX
+  `UpdateVCTransferInfo`, called from `ParsePK7` only) keeps the Game Boy match as
+  `encounterOriginalGameBoy` and swaps in the `EncounterTransfer7` template, discarding the parse. A
+  VC record in a Gen 8+ format keeps its Game Boy match, as in PKHeX. `makeEncounterInfo` gives such a
+  record `Unchecked`, the Pokemon-derived case the `context.encounter` readers already answer.
+- **The Gen 1 tradeback check.** `verifySecondaryChecks` rejects a PK1 candidate that knows a Gen 2
+  move unless its catch-rate byte is a Gen 2 held item, even when it is the last candidate.
+- **The era switch.** `allowEraCartGB` (a Game Boy save is open) swaps the Virtual Console events
+  (Mew, Celebi) for the cartridge-era gifts and lets a Japanese record match Crystal's Odd Egg.
+
+PKSE has no `GameVersion` for PKHeX's RB, GS or Stadium lumps: `gen_encounters1.py` and
+`gen_encounters2.py` emit them as RD and GD (no rule asks for the lump itself), and a Stadium gift is
+told apart by `EncounterGift1::isStadium()`. Yellow's catch rates, which PKSE's Red/Blue personal
+table lacks, are generated alongside (`getCatchRateYellow`).
+
+**Colosseum and XD.** A Gen 3 record whose version is 15 goes to `EncounterGenerator3GC`, PKHeX's
+generator of the same name. Its templates come from `tools/gen_encounters3gc.py`
+(`EncounterData3GC`). That file also holds every shadow template's locked team (`RNG::TeamLock`),
+which `LockFinder` replays. PKSE has no `GameVersion` for PKHeX's COLO, XD or CXD lumps. All three
+are `GAME_VERSION_COLOSSEUM_XD` (`EncounterRules3GC.h`), and "COLO" and "XD" survive only in the
+template names. A shadow template must pass its lock check: an e-Reader shadow is checked from the
+PID's own seeds, because the e-Reader has no IVs to search. A template that fails the PID or lock
+check is yielded last as a partial match, as in PKHeX. Code that reads the Colosseum/XD templates
+should ask `isShadowEncounter` (PKHeX `IShadow3`), not the version. The National Ribbon rule does
+this. `makeRibbonArguments` takes such a template's generation from the template, because version
+15 has no save-format group.
+
+## The evolution engine
+
+`Legality/Evolutions` is PKHeX's `Legality/Evolutions`: one `EvolutionTree` per PKHeX entity context
+(generated by `tools/gen_evolutiontree.py` from PKHeX's `evos_*.pkl` and personal tables), and
+`getEvolutionChainsAllGens` (PKHeX `EvolutionChain.GetEvolutionChainsAllGens`), which walks a
+Pokémon back from its current species through every context it can have visited, given the encounter
+it came from. The result, `EvolutionHistory`, is what PKHeX's verifiers ask "was this Pokémon ever
+species X in game Y" — the memory, ribbon, transfer, ball and move checks all read it.
+
+**A devolution that drops a stage does not crash or look wrong.** It shrinks a chain, and every
+verifier asking that question then answers no for a legitimate Pokémon. The `evolution` self-test
+suite and `evolution_diff.py` (below) are where that shows up first.
+
+In a context a test builds by hand (no engine), `AnalysisContext::evolutionHistory()` builds the
+history for an unknown encounter. An unknown encounter is not an invalid one: species 0 lets every
+pre-evolution count as the one encountered, and level 1 rules no evolution out.
+
+## Moves: PKHeX's learn verifiers, one verdict per slot
+
+The move checks are a port of PKHeX's `LearnSource` (namespace `Legality::LearnSource`):
+`LearnVerifier` gives every current move slot a `MoveResult` (how the move was learned, or why it
+cannot have been), `LearnVerifierRelearn` does the same for the relearn slots, `MoveBreed`
+decides which egg movesets breeding can produce, and `ChainBreed` (PKHeX `ChainBreedLegality`)
+decides whether an egg's inherited moves can come from one chain of fathers, which `EggVerifier`
+reports as `EggMoveCombination`. The learn data is `Pokemon/LearnSourceTable`, generated by
+`tools/gen_learnsources.py` from PKHeX's own learn and personal tables, including each personal
+row's gender ratio, egg groups and `IsPresentInGame` flag for the father search.
+
+**A Pokémon keeps the moves it learned in earlier games.** The learn groups are PKHeX's walk: each
+group checks every evolution stage the Pokémon held in its context, then names the group to step back
+to (Gen 7 back to Gen 6 … Gen 3, the Virtual Console path to Gen 1/2, Sword/Shield back to the 3DS
+games, and HOME for a record with a HOME tracker). A move is Unobtainable only when no group explains
+it.
+
+**Where the verdicts come from.** For an engine-judged origin, `findVerifiedEncounter` runs the
+verifiers against each candidate through `EncounterMoveSeam.cpp` (which turns an `Encounterable` into
+the `LearnEncounter` the move code reads, so the move code never includes the template classes) and
+keeps the results in `LegalityInfo::moves` / `relearn`; `verifyMoves` only reports them, and reports
+nothing where the engine did not run. **A result left unparsed is invalid**, as PKHeX's
+`MoveResult.Valid` is false for `LearnMethod.None`: that is what makes the finder reject a candidate
+whose moves do not fit (a Gen 1 tradeback falls through to its Gen 2 slot) and what flags a move no
+source explains. The one exception is a template that fixes moves PKSE cannot see
+(`LearnEncounter::hasUnknownMoves`, today only `EncounterStatic8N`), whose unparsed slots stay
+unknown. A Game Boy record matched to no encounter takes RBY / GSC as its version, as PKHeX's
+`PK1.Version` / `PK2.Version` do, so its egg-move base set still resolves.
+
+**Reporting.** Each invalid slot is one Invalid finding, `CurrentMove` or `RelearnMove`, with PKHeX's
+text ("Invalid Move 2: Invalid Move.") and `IssueSource::Move`. Relearn verdicts are reported for
+Gen 6+ formats only, as PKHeX's report does. PKHeX's move suggestions (`GetAllMoves`) are not ported.
+
+## The RNG library
+
+`Legality/RNG` is PKHeX's `Legality/RNG`: the LCRNGs (`LCRNG`, `XDRNG`, `ARNG`, `MRNG`) with their
+seed reversals, the Xoroshiro128+ variants, `MethodFinder` (PKHeX's PID/IV correlation search, which
+returns a `PIDIV` of type and origin seed), and the per-method and per-event correlations (`MethodH`,
+`MethodJ`, `MethodK`, `MethodCXD`, `CuteCharm4`, `ChannelJirachi`, `Wishmkr`, `Overworld8RNG`,
+`RaidRNG`, `Tera9RNG`, `LumioseRNG` …). The encounter generators call `MethodFinder` and match the
+correlation against the template's; the PID verifier reads the result.
+
+**A seed reversal that loses a candidate does not crash or look wrong either.** It stops matching a
+correlation, and the checker then calls a real Pokémon's PID unrelated to its IVs. The `rng`
+self-test suite holds PKHeX's own unit-test vectors, and `pidiv_diff.py` compares `MethodFinder`
+with PKHeX's over every Pokémon in the test saves.
+
+The same library builds the Gen 3 bank rebuild's correlated PID/IVs (Method 1 / Method H; chapter 10).
+
+## EncounterInfo: the engine's verdict in short form
+
+The interim encounter sweep (`EncounterMatch.cpp`'s `checkEncounter`, its `EncounterInfo::row`
+bridge and `Verifiers/EncounterTemplate.h`) is retired: every origin is judged by the engine. What is
+left of it is the minimum some verifiers and the bank still read:
+
+- **`AnalysisContext::encounter`** is an `EncounterInfo` with two fields, filled by
+  `Encounters::makeEncounterInfo` from the engine's match. `type` is the template's
+  `encounterType()`, `Unmatched` for `EncounterInvalid` and `Unchecked` for a Virtual Console
+  transfer. `originGroup` is the game group whose met-location namespace the met location is in
+  (the format's own group when no origin byte is stored; `Invalid` when the origin is newer than the
+  format, when a transfer to Gen 5+ replaced a Gen 3/4 met location, or for HOME's remapped
+  locations 59994-60000). About 140 verifier branches read them; a new check should ask the
+  template itself (`getEncounterMatch`, `encounterAs<T>()`).
+- **`EncounterTable.h/.cpp`** (generated by `tools/gen_encounters.py`, now Gen 3 only:
+  `TABLE_GAMES`) is read by the bank's Gen 3 rebuild alone (`gen3LandingFor`, chapter 10): its rows,
+  version bits, egg rule and breedable bitset. `gen_encounters.py` also keeps the helpers the
+  per-generation generators import (`read_cs`, `parse_array`, `csharp_value`, the ribbon
+  helpers …).
+
+A verifier with no matched template (only a hand-built context) **skips the check**.
 
 ## Where the report surfaces
 
@@ -279,65 +334,162 @@ trainer id.
 (touch id `95`) opens the full issue list overlay. When the report is `empty()` there is nothing to
 show, so the button is greyed and does nothing.
 
-```cpp
-const Legality::Report legalityRep = Legality::analyze(*p, p->getGameGroup());
+**The box summary panel**, bottom-left, answered as the cursor moves. Both places use the same three
+states:
+
+| Report | Text | Colour |
+|---|---|---|
+| `invalidCount() > 0` | *"Legality: N issue(s)"* (N is `problemCount()`) | red |
+| only warnings | *"Legality: legal, N warning(s)"* | green |
+| neither | *"Legality: no problems found"* | green |
+
+The overlay's headline says *"Legal, with warnings."* or *"No problems found."*. **It still says "no
+problems found" rather than "Legal" for a clean report**, because not every verifier is ported in
+full, and even PKHeX's verdict is not HOME's.
+
+The analysis passes the **entity's** group, not the save's: a bank slot holds a foreign Pokémon and
+must be judged as what it is.
+
+## Adding or porting a PKHeX check
+
+PKSE does not invent legality rules; it ports PKHeX's. A check is "added" by finding the PKHeX code
+that makes it and porting that.
+
+1. **Find the PKHeX source.** Every finding starts in a verifier under
+   `PKHeX.Core/Legality/Verifiers/`, the encounter search, or the learn verifiers. Find the result
+   code it reports (`LegalityCheckResultCode`); `ResultCode.h` has the same code under its PKSE name,
+   in PKHeX's order.
+2. **Put it where PKHeX has it.** A branch of an existing PKHeX verifier goes into that verifier's
+   PKSE file (`ConsoleRegionVerifier.cs` → `src/Legality/Verifiers/ConsoleRegionVerifier.cpp`). A new
+   PKHeX verifier class gets its own file, one function in `Verifiers.h`, and a call in
+   `runVerifiers()` at PKHeX's position behind PKHeX's format gate (`LegalityAnalysis.UpdateChecks`
+   and the `ParsePK*` methods). An encounter-phase check goes into `EncounterVerifier.cpp` or the
+   template's own `isMatchExact` / `getMatchRating`.
+3. **Port the logic line for line; rename every identifier.** PKHeX is the source of truth for logic,
+   never for names (`docs/CODING_STANDARDS.md` §3.7): `evo` is `evolution`, `enc` is `encounter`, `pk`
+   is `pokemon`. Keep provenance as a comment — `// Port of PKHeX PKHeX.Core/Legality/Verifiers/X.cs`.
+   PKHeX's constants become named `constexpr`s; PKHeX's data tables become a `tools/gen_*.py`
+   generator, never a hand-typed array.
+4. **Report PKHeX's severity, identifier and code.** `context.add(Severity::Invalid,
+   CheckIdentifier::X, ResultCode::Y, arguments…)`. Fishy is Warning. Never emit a Valid result.
+   PKHeX's default `ParseSettings` apply unless the open save sets them.
+5. **Read the encounter from the engine.** A check that needs the matched template asks
+   `Encounters::getEncounterMatch(context)` and casts with `encounterAs<T>()` or an `as…()` mix-in.
+   Where that is null (only a context a test builds by hand), **skip the check**: missing data is
+   unknown, never a negative.
+6. **Gate on capability, not on a magic zero.** `hasBall()`, `hasNature()`, `hasHomeTracker()`,
+   `hasColoredMarkings()`; ask the format for its limits (`maxIV()`, `maxEV()`), never hardcode them.
+   Add an entity accessor when PKHeX reads a field PKSE does not expose.
+7. **Run parity** (below). The finding's gaps and extras must go to zero, with no new extras
+   anywhere.
+8. **Plant a case for every branch no corpus reaches.** `src/Test/SuiteLegality.cpp` builds a control
+   Pokémon without the defect and the same Pokémon with it, and requires the finding on one and not the
+   other (`expectVerifierFlags`, `expectFlagged`). Real saves are nearly all legal, so most Invalid
+   branches are reached only this way.
+
+## Porting a generation's encounters
+
+The encounter engine is ported one generation at a time, and Gen 3 (`EncounterGenerator3`,
+`EncounterEnumerator3`) is the reference implementation: copy its files' shape. Everything goes in
+the flat `Legality/Encounters/` directories, namespace `Legality::Encounters`.
+
+1. **Templates.** One header (and a `.cpp` when it is not trivial) per PKHeX class: `EncounterSlot4.h`,
+   `EncounterStatic4.h`, `EncounterTrade4PID.h`, `EncounterEgg4.h`, `EncounterArea4.h` …. Port PKHeX's
+   matching region (`IsMatchExact`, `GetMatchRating` and their helpers) verbatim in logic; skip
+   `ConvertToPKM`. Make table templates `constexpr`-constructible from a `Properties` aggregate with
+   PKHeX's defaults. The `name()` must be PKHeX's English `Name` string ("Wild Encounter (R)"),
+   because the harness compares it.
+2. **Data.** `tools/gen_encountersN.py`, copied from `gen_encounters3.py`, reads PKHeX's
+   `Resources/legality/wild` blobs and its `Encounters/Data/GenN/*.cs` initializers (the helpers
+   `read_cs`, `parse_array`, `parse_template`, `csharp_value` and `load_enum` come from
+   `gen_encounters.py`) and writes `EncounterDataN.h/.cpp`: one array per PKHeX array, same order,
+   unmerged, plus span accessors. Never hand-edit the output.
+3. **Generator and enumerator.** `EncounterGeneratorN` is PKHeX's `EncounterGeneratorN`
+   (`GetEncounters` with its deferral, PID/IV and lead logic, `TryGetEgg`, `TryGetSplit`), and
+   `EncounterEnumeratorN` is PKHeX's enumerator, both as coroutines. Replace the generation's
+   placeholder in `EncounterGenerator::getEncounters` with the call.
+4. **Verifier.** Add the generation's egg and template rules to `EncounterVerifier.cpp`
+   (`verifyEncounterEggHatched` / `verifyEncounterEggUnhatched`, named after PKHeX's
+   `VerifyEncounterEgg4` …), and its `EggHatchLocationN` as `isValidMetN(…)` in `EggHatchLocation`.
+5. **Measure.** Run parity, and fix until the
+   `Encounter*`, `PIDTypeMismatch`, `Egg*` and `Evolution*` findings for that origin have no gaps and
+   no extras. Compare the matched template's `longName()` with legalitydump's `encounter` field
+   (`legality --encounter` and `encounter_diff.py`, below). Add planted cases for branches no
+   corpus reaches.
+
+**Shared files are append-only.** `EncounterGenerator.cpp` (the dispatch and the switch),
+`EncounterVerifier.cpp` (each generation's own branches) and `Encounterable.h` (a new mix-in at the
+end) are edited by every generation's port; add to them, never restructure them.
+
+A new **game** follows the same five steps once PKHeX has its encounter classes; chapter 13 lists the
+rest of what a new game needs from this layer.
+
+## Running parity and reading its output
+
+**PKHeX is the reference, so the test is PKHeX itself.** `tools/legalitydump` is a .NET program that
+builds PKHeX.Core from a checkout and runs the real `LegalityAnalysis` over the same saves, writing one
+JSON line per Pokémon; `legality --json` writes PKSE's in the same shape; `parity_diff.py` compares
+them.
+
+```bash
+./tools/harness/build-parity.sh ~/Desktop/PokemonSaves                 # both corpora, full listing
+./tools/harness/build-parity.sh ~/Desktop/PokemonSaves --summary-only  # totals only
+./tools/harness/build-parity.sh ~/Desktop/PokemonSaves --title Violet --verbose
 ```
 
-Note it passes the **entity's** group, not the save's — a bank slot holds a foreign mon and must be
-judged as what it is.
+It needs the .NET SDK and a PKHeX checkout (`PKHEX_LOCAL`, default `~/repos/PKHeX`), and runs two
+corpora: **the real saves** (the files PKSE opened, listed in the `.manifest` beside its JSON, so both
+sides analyse exactly the same files) and **PKHeX's own test files** (`$PKHEX_LOCAL/Tests`, whose
+`Legal/` and `Illegal/` trees reach checks real catches never do). PKHeX's side depends only on the
+saves and the checkout, so it is cached in `build-harness/pkhex-cache/`; **`PARITY_REFRESH_PKHEX=1`**
+recomputes it after a PKHeX pull or a change of test saves. **`PKSE_HARNESS_OUT=<dir>`** moves PKSE's
+side out of `build-harness/`, so several people or agents can run it in one tree.
 
-**The box summary panel**, bottom-left: *"Legality: no problems found"* (green) or *"Legality: N
-issue(s)"* (red), answered as the cursor moves rather than one Pokémon at a time. It says **"no
-problems found", never "Legal"** — Layer 3 errs toward silence, so a clean report means nothing was
-found, not that HOME will accept it. It is not a tap target of its own (the whole panel already is
-one); the issue list stays on `R` in the editor.
+```
+=== Real saves ===
+Pokemon compared: 2380, agreeing: 1797, differing: 583
+Unpaired (only in PKSE): 12
+Gap findings (PKHeX reports, PKSE does not): 896
+Extra findings (PKSE reports, PKHeX does not): 32
 
-**Reading findings across a whole box.** When you run the checker over real saves to judge a change,
-treat findings as **warnings, not failures**, and the reason is worth internalising:
+GAPS by check:
+    397  Fishy Level/LevelEXPThreshold
+     11  Invalid PID/PIDTypeMismatch
+...
+EXTRAS by check:
+...
+```
 
-> PKSE can edit saves, so a user's box may genuinely hold something illegal. **The value is the
-> rate**: one Invalid in a box of thirty is a Pokémon; thirty is a bug.
+(The numbers are an illustration from one run during the port, not a target.)
 
-That framing is what would have caught the Gen 1 saturated-EV misread immediately.
+- **A finding is `(severity, identifier, code)`.** A **gap** is one PKHeX reports and PKSE does not: a
+  check not ported, or ported wrong. An **extra** is one PKSE reports and PKHeX does not: PKSE calling
+  a Pokémon worse than the reference, which is the worse failure. Per-move lines are compared by
+  identifier and severity only, shown as `(move)`, because PKHeX's code there is a learn method.
+- **Pokémon are paired by identity, not slot.** The two programs number boxes differently for some
+  saves (PKHeX counts X/Y's Battle Box among its boxes), so a Pokémon is keyed by title, species, PID,
+  encryption constant and occurrence. "Unpaired" counts the ones only one side saw; a rising count
+  means a loader disagrees, not a check.
+- **`--verbose` lists every differing Pokémon** with PKHeX's matched encounter and both sides'
+  messages, which is where a gap's cause is read. `--title` narrows to one save.
+- **The exit status is 0 only with no gaps and no extras** in both corpora.
 
-## Adding a check
+Three narrower comparisons isolate one engine at a time, each against a `legalitydump` mode:
 
-1. **Decide the layer.** Field range → L1. Cross-field or species-data consistency → L2. "Could this
-   have been obtained" → L3.
+| PKSE | PKHeX | Diff | Compares |
+|---|---|---|---|
+| `legality --pidiv <out>` | `legalitydump pidiv saves\|files …` | `pidiv_diff.py` | `MethodFinder`: inputs (PID, EC, IVs) and outputs (PID type, origin seed) |
+| `legality --evolution <out> [--evolution-encounters <pkhex.jsonl>]` | `legalitydump evolution saves\|files …` | `evolution_diff.py` | every context's chain in the evolution history, and the origin chain. `--evolution-encounters` hands PKSE the encounter PKHeX matched, so the chain search is compared on equal inputs |
+| `legality --encounter <out>` | `legalitydump saves\|files …` (its `encounter` field; the parity cache) | `encounter_diff.py` | the matched template's `longName()` against PKHeX's `LongName`, mismatches grouped by origin |
 
-2. **Decide the severity, honestly.**
+`legality --files <dir> --json <out>` sweeps a directory of Pokémon files instead of saves, which is
+how the PKHeX test-file corpus is run. Each diff separates an *input* mismatch (the two loaders read
+different data) from a real disagreement. The harness modes are documented in
+[`docs/DEV_TESTING.md`](../DEV_TESTING.md).
 
-   | Severity | Means |
-   |---|---|
-   | `Invalid` | The games cannot produce this. You are certain. |
-   | `Warning` | Suspicious, or the reference itself is not certain (the Let's Go EV case). |
-   | `Info` | A fact worth having: which encounter matched, or *a check could not run*. |
-
-   **An unrunnable check must produce an Info note, never silence.** Silence is indistinguishable
-   from a pass.
-
-3. **Gate on capability, not on a magic zero.**
-
-   ```cpp
-   if (!pk.hasBall()) { /* nothing to check */ }
-   else if (pk.ball() > MAX_BALL) add(r, Severity::Invalid, …);
-   ```
-
-4. **Ask the format for its limits.** `maxIV()`, `maxEV()`, `getMaxNicknameLength()` — never a
-   hardcoded 31 / 252 / 12.
-
-5. **Write the message so it names the value.**
-
-   ```cpp
-   add(r, Severity::Invalid, std::string(statName(i)) + " EV over 252 (" + std::to_string(ev[i]) + ")");
-   ```
-
-   "EV out of range" sends the user hunting. "Atk EV over 252 (255)" does not.
-
-6. **Verify against real saves before shipping it.** Run the analyzer over every Pokémon in real
-   saves, one per generation at least, and look at the rate (above). The sharpest version of that test
-   is a Pokémon genuinely caught on real hardware: the analyzer must produce **no** Invalid finding on
-   it, and a new check that false-flags shows up immediately.
+**The sweep is still worth reading.** `build-legality.sh` without `--json` prints PKSE's findings over
+the real saves grouped by shape. **Read findings across a
+whole box as a rate**: one Invalid in a box of thirty is a Pokémon; thirty is a bug.
 
 ## The failure mode to avoid
 
@@ -347,338 +499,38 @@ Every legality bug in this codebase's history has the same shape:
 
 `getLearnableBits()` returns `nullptr` for a species+form absent from a game. That means *"PKSE has
 no data"*, not *"it can learn nothing"* — and the difference matters twice over, because the bank's
-transfer sanitizer **deletes** whatever `isLearnable()` denies.
+transfer sanitizer **deletes** whatever `isLearnable()` denies. The port keeps the same rule at every
+seam: a Virtual Console transfer's `EncounterInfo` is `EncounterType::Unchecked`, never
+`Unmatched`; a context `EncounterVerifier` has not ported answers Valid; an unparsed move result is
+never reported; a verifier whose template property is unknown skips the check.
 
 When you add a lookup to a check, write down what `nullptr` / `0` / `""` means from that lookup, and
 branch on it separately from the real negative.
 
 ---
 
-## Rules: Layer 3 and the encounter tables
+## Rules: the checker
 
-The sections above describe the machinery; these are the rules it has to obey, with the measurement
-or the defect each one came from.
+### Scope and stance
 
-### Scope
+- **Informational, always.** PKSE never refuses an edit because a Pokémon looks illegal, and no check
+  writes to the Pokémon.
+- **PKHeX parity is the goal, measured, not asserted.** A check is done when parity shows no gaps and
+  no extras for its codes on both corpora. Severity is PKHeX's exactly: the maintainer chose to match
+  PKHeX rather than soften a finding PKSE's own features can trigger. A Pokémon PKSE's bank converted
+  along a route no official transfer offers is reported as PKHeX reports it (for example a missing
+  HOME tracker, `Encounter/TransferTrackerMissing`, Invalid); an earlier "Warning, never Invalid"
+  policy for those is reversed.
+- **No PKSE heuristics.** Where PKHeX and PKSM differ, follow PKHeX. Where PKHeX disables one of its
+  own rules, PKSE does not enable it.
 
-Three layers, all **informational** — PKSE never refuses an edit because a Pokémon looks illegal.
-Layer 3 covers **all nineteen groups**, keyed by the mon's ORIGIN version rather than the save it sits
-in, walks the pre-evolution chain, and matches ANY-of.
+### Names
 
-### Gen 1 and Gen 2 are checked on different terms, and the record decides which
-
-A PK1 stores no met location and no met level at all, and Gold/Silver leave Gen 2's caught-data word
-zero — only Crystal writes it. So `hasMetData()` is the switch: where it is true the ordinary check
-runs, and where it is false the sweep does not compare the location (there is nothing to compare, and
-the 0 those accessors return would reject every row) and compares the row's level FLOOR against the
-Pokémon's CURRENT level instead of its met level. A Pokémon only ever grows, so "caught at or above
-this row's minimum" is the strongest true statement available — it catches a level-2 Mewtwo and
-little else. **That is deliberately weaker than the check every other generation gets**, and it is
-worded differently for that reason; a record that cannot say where or when it was caught cannot be
-held to either. The Time Capsule scope, Crystal's traps and Gen 1's events are in "Gen 1 and Gen 2:
-two generations, one question" above.
-
-### Eggs
-
-**An egg's met level is not the level it hatches at**, and conflating them is what made every bred
-Gen 3 Pokémon read as impossible. PKHeX keeps the two apart on purpose: `EggLevel23 = 5` is the
-CURRENT level an egg hatches at in Gens 2 and 3, while `EggStateLegality.GetEggLevelMet` gives the MET
-level as **0 for Gens 3 and 4** and 1 from Gen 5 on (Crystal 1; Gold and Silver record none). PKSE's
-`EggRule` once carried 5 for both Gen 3 groups and Gen 2, and 1 for Gen 4. Consequences, all silent: a
-genuinely bred Gen 3 Pokémon never reached the egg path and was reported as having no encounter at
-all, and the Gen 3 rebuild stamped a met level the games never write — which the checker then
-ACCEPTED, because both halves read the same wrong constant. **A bug that is self-consistent across a
-writer and its reader produces no finding anywhere**; the only thing that catches it is a real save (a
-Ruby Wynaut, met level 0 on Route 111) or the source it was derived from.
-
-**Met level 0 is what marks a Gen 3 egg**, which is why the format needs no egg-location field to be
-readable: no Gen 3 encounter is met at level 0, so met level 0 at a place an egg may hatch is a pair
-only breeding produces. Gen 2 is the same shape one level up (Crystal: met level 1 at
-`HatchLocationC`).
-
-**An `EggRule` carries three legal egg locations, not two.** Gen 5 is why: PKHeX's
-`IsEggLocationBred5` accepts the daycare, the ordinary link trade AND the id Spin Trade writes
-(*"incorrectly used ... two legal values!"*, its own comment). Everywhere else the second alternate is
-0. **Widening that row is not a safe edit** — the `EGG_RULES` tuples are positional, and adding the
-third entry turned an `EGG_RULES[game][2]` that meant "hatch level" into one that meant "second
-alternate", quietly moving BDSP's two gift eggs to met level 0. `hatch_level()` exists so the next one
-cannot happen, and the generated diff is what caught this one. Platinum and HGSS use the second alternate too: Faraway Place (3002, PKHeX `IsEggLocationBred4`).
-BDSP's egg location is 30001, never the 60002 of the other games (`IsEggLocationBred8b`).
-
-**Every generation has a hatch-location set and PKHeX ships all of them** — `EggHatchLocation3`
-through `9`, not just 8/8b/9 as this chapter once said. Acting on that wrong reading cost two things:
-Gens 4 through 7 got no hatch check at all, and Gen 3 got a mask holding exactly ONE location, on the
-belief that a Gen 3 egg's met location is stamped where it was RECEIVED. It is not. **An egg is met
-WHERE IT HATCHED in every generation, Gen 3 included** — the one hatched Pokémon in a real Ruby save
-is a Wynaut met on Route 111, several routes from the Route 117 day care — and `LocationPermitted3`
-accordingly permits 103 places for FR/LG and 100 across R/S/E. `canHatchAt` still reads an ABSENT mask
-as "not checked" rather than "nowhere", because that is the only safe reading of missing data, but
-nothing in PKSE relies on it any more. Four things the normalisation has to get right, none of them
-guessable:
-
-- **PKHeX's version bits are not PKSE's**, and the mapping is written out per game in
-  `HATCH_MASK_SOURCES` rather than inferred: PKHeX groups R/S and keeps Emerald apart, numbers White
-  before Black, and indexes Gen 4 as DP/Pt/HGSS.
-- **Gen 6 is an arithmetic RULE, not a table** — every EVEN location in a range, minus one unused id —
-  so it is transcribed as the rule. A 185-entry hand-typed span nobody can proofread is the shape that
-  goes wrong silently.
-- **Poké Pelago (30016) is a hatch location no mask can hold.** `EggHatchLocation7` accepts it
-  alongside its byte table, and a byte-per-location mask reaching 30016 would be thirty kilobytes of
-  zeros, so it rides along as `EggRule::hatchLocationExtra`.
-- **Gen 2 is the one genuinely fixed case, and it is Crystal-only.** Gold and Silver write no met data
-  at all; PKHeX's `EncounterEgg2` stamps `HatchLocationC` and met level 1 for Crystal and nothing for
-  G/S.
-
-### Which failure is reported: the evolution floor outranks the met location
-
-A Pokémon is swept against every row of every ancestor and only the furthest STAGE any of them reached
-is described, so that ranking decides the sentence the user reads. A level 15 Seadra met on Route 24
-was told *"Route 24 is not a place Seadra can be encountered in FireRed"* — true of Seadra, irrelevant
-to this Pokémon, and it named the one field the record had RIGHT. Horsea is fished on Route 24; what a
-level 15 Seadra cannot have done is evolve, which takes 32. Seadra's own rows, at seventeen other
-places, failed on LOCATION and outranked Horsea's row failing on the floor.
-
-Two halves, and both are needed: the floor is asked **after** the location test, so it is only ever
-claimed about a row matching where the Pokémon says it was met; and `STAGE_EVOLUTION` ranks **above**
-both `STAGE_LOCATION` and `STAGE_LEVEL`, since the ancestor's row may cover the met level perfectly
-well (the declaration order and the Route 16 case are in "Which failure gets reported" above). Neither
-half changes which rows MATCH — a row failing the floor was skipped before and is skipped now, so no
-finding is created or destroyed, only worded correctly. It was wrong in every generation with a
-level-gated evolution, not only Gen 3.
-
-**An evolution level is a claim about the CURRENT level, and it has to be chain-aware.** Layer 3
-matches an evolved Pokémon against its pre-evolution's slots, so it also has to ask whether the
-Pokémon could have made the trip: a Hoothoot row explains a Noctowl only from level 20. `EvoEdge`
-carries that level (0 when the evolution is a stone, a trade or friendship, which is most of them),
-taken as the MINIMUM across every method reaching one destination — a species with both a level-up
-and a stone route is not level-gated at all, and taking the first method would invent a floor the
-games do not impose. **Flat "Noctowl must be level 20" would be wrong**: Gold and Silver put wild
-Noctowl on Route 2 at level 7, alongside Butterfree, Beedrill, Pidgeotto, Ledian and Ariados, every one
-of them below its own evolution level. So the floor belongs to a CHAIN POSITION, not to a species —
-position 0 always answers 0, and only an ancestor's row has to pay. The egg path asks the same
-question of the chain's base, which is what finally makes a level 12 Noctowl impossible in FireRed:
-the egg is a Hoothoot either way.
-
-**`buildChain` asked for form 0 twice.** Its own comment described trying the Pokémon's form and
-falling back to form 0; both calls passed 0, so the fallback was the only branch that ever ran and an
-Alolan Raichu resolved to a KANTONIAN Pichu. Fixing it removed a real false positive on a Z-A Vivillon,
-whose form-6 lineage had been resolving to form 0's. Which form answered is now remembered, because the
-evolution level has to be read off the same edge.
-
-### Origins
-
-**A format that records no origin falls back to its own group**, which is the same rule
-`checkRelearnMoves` already applies: a PK1 and a PK2 store no version byte anywhere, so the group
-whose format it is in is the only answer available. And because such a record cannot say WHICH of that
-group's games it came from, every one of them counts — the version mask is all bits, so a row for any
-of Red, Green, Blue or Yellow is a row this Pokémon could have come from. Red/Green/Blue/Yellow is the
-only group of FOUR; PKHeX tags the international Blue's slot data as Green, because they are the same
-game, and keeps the Japanese Blue apart.
-
-**An origin from a later generation than the record is impossible, and has to be caught before the
-table lookup.** That lookup keys on the version byte alone, so a PK3 stamped with origin 7 resolves to
-HeartGold's table and gets measured in a namespace it never used — which shipped as *"location253 is
-not a place Bulbasaur can be encountered in HeartGold"*, said confidently about a game the Pokémon was
-never in. It is Invalid rather than a skip because nothing legitimate makes one: every PKSE conversion
-clamps the origin to a game the destination format has. **Nor is a met location portable in the other
-direction**: Pal Park (Gen 3 → 4) and Poké Transfer (Gen 4 → 5) REPLACE it, in the destination's
-namespace, while the origin byte still names the game it was caught in — so an ordinary transferred
-Geodude read as *"Granite Cave is not a place Geodude can be encountered in FireRed"*, Granite Cave
-being what 55 means in Gen 3 and Pal Park what it means in Gen 4. PKSE's own Gen 3 → later conversion
-does what those transfers left behind: met location Poké Transfer (30001) and met level the level at
-transfer. Everything from Gen 5 on carries the original location across, which is why a Sword Pokémon
-in a Z-A box still matches its Galar encounter.
-
-### Layer 3 errs toward silence — and what a correct table must still do
-
-**Silence is a design rule, not a limitation.** An origin PKSE has no tables for produces one Info
-note and no findings; cross-game transfers are not judged at all (PKSE's own bank makes them, and
-flagging its output would be flagging the feature). So a sweep of real saves — every title, not one
-sample per generation, which never opens half of them — should be **near-silent**: a wall of findings
-means the tables are wrong, not the saves.
-
-**But a clean sweep proves nothing on its own**: a table that matches nothing and a table that matches
-everything both look quiet next to a box of ordinary Pokémon. A correct set of tables must therefore
-also satisfy six properties, each of which a broken table fails:
-
-1. **A Pokémon moved to a met location no game has draws a complaint.** The negative case: without it,
-   a table that accepts anything passes.
-2. **A Pokémon posed as the game's own first distribution row matches.** Proves the event rows were
-   generated and are reachable.
-3. **A Pokémon posed at one of the game's own WILD slots matches.** This is the one that catches a
-   **mis-parsed slot table** — the failure mode every new generation risks, since a wrong header
-   length or stride still builds, still produces plausible rows, and simply never matches anything,
-   invisibly behind a sweep of a save full of foreign Pokémon. Two things make the pose meaningful: the
-   donor must not be an unhatched EGG (an egg is routed down the egg path before the sweep is ever
-   reached, so it reports nothing and reads as a table failure), and the row must belong to the
-   donor's own VERSION — half of every paired generation is version-exclusive (Caterpie is
-   HeartGold's, Weedle SoulSilver's), so posing a SoulSilver Pokémon at a HeartGold-only slot fails for
-   a reason that has nothing to do with the table.
-4. **A Pokémon posed as an EVOLUTION of a wild slot's species, one level below the level that
-   evolution needs, draws a complaint.** This exists because real saves never exercise it: the
-   evolution floor is the one Layer 3 constraint about the CURRENT level rather than the met level, and
-   a box of ordinary Pokémon clears every one of its own evolution levels comfortably. The evolution
-   must be one the game cannot produce on its own, or the sweep matches the evolution's own row at
-   chain position 0, where no floor applies — correct behaviour, but the property would then hold for
-   the wrong reason.
-5. **The same pose where that evolution IS catchable elsewhere in the game draws the SAME
-   complaint** — the evolution-floor-outranks-location rule above.
-6. **The reported Seadra case**, built from the tables with no save at all (Horsea fished on FireRed's
-   Route 24, Seadra not), reads correctly in both directions: a level 15 Seadra met there at level 10
-   is told about the evolution and not the location, and a level 40 one — an ordinary evolved catch —
-   draws nothing at all. Only the pair is worth anything.
-
-**A format with no met location cannot be given a bogus one**, so property 1 does not apply to Gen 1
-or Gold/Silver — `setMetLocation` is a no-op there and the sweep does not compare locations at all, so
-the Pokémon stays clean because the property is meaningless, not because the table failed to bite. Any
-check of it should say how many it skipped. Property 3 poses such a donor on its own terms too: it
-raises the donor's LEVEL to the row's floor rather than its met level, because the floor is what gets
-compared. Likewise **every Gen 3 distribution FR/LG can receive is an egg** (below), so property 2 has
-no plain event row to pose in Kanto, and that is the data being right.
-
-### Generating `EncounterTable.cpp`
-
-`EncounterTable.cpp` is generated by `tools/gen_encounters.py` and holds wild / static / gift / trade
-/ raid / **event** rows in one shape. **New groups are APPENDED to its `GAMES` list, never inserted**
-— the tables are emitted in that order, so inserting one rewrites every table after it and buries the
-real change in a diff that is the only review gate the generated data has.
-
-The readers, each of which silently produces a table that matches nothing when got wrong:
-
-- **Gen 3 and Gen 4 share one wild-slot reader.** Both store 10-byte slots of `species u16, form,
-  slotNumber, levelMin, levelMax, …`; only the area header differs, 4 bytes in Gen 3 and 6 in Gen 4
-  (PKHeX's `EncounterArea4` slices from `data[6..]`). Gen 4's trailing four bytes say which slot a
-  swarm REPLACES, which is a question about that day's game state and not about the Pokémon in hand.
-- **Gens 1 and 2 share one too**: a 4-byte area header then 4-byte slots of `species, slotNumber,
-  levelMin, levelMax`, the species a single BYTE. **Gen 2 puts a rate table in front of its slots** for
-  every slot type past Surf — the rods, Rock Smash, Headbutt, the Bug Contest — one byte per slot,
-  ahead of the slots themselves. Read them as slot data and rates become species.
-- **Gens 5, 6 and 7 share ONE wild reader**, and it is not Gen 3/4's: a 4-byte area header (location
-  u16, slot type) then 4-byte slots of `species | form << 11` u16, levelMin, levelMax, with the species
-  masked to `0x3FF`. `EncounterArea5`, `EncounterArea6XY`, `EncounterArea6AO` and `EncounterArea7` are
-  the same twenty lines four times over. **A zero slot is padding**: Gen 5 areas carry a fixed slot
-  count per type and leave the unused ones zeroed — 574 of Black's 2974 — which would otherwise become
-  rows claiming species 0 is catchable.
-- **Ruby/Sapphire/Emerald is the only group of THREE, so `versions` is not a two-bit field.** Every
-  other group in every generation is a pair or a single title. PKHeX also spells its Gen 3 games
-  `R`/`S`/`E` and their pairing `RS` where PKSE's enum says `RU`/`SA`/`EM`, so the tokens are mapped by
-  an explicit table — `"RS"` contains neither `"RU"` nor `"SA"`, and anything clever would silently
-  hand Emerald every Ruby-only legendary.
-- **One PKHeX file can be two PKSE groups.** Diamond/Pearl and Platinum share `Encounters4DPPt.cs`
-  while PKSE splits them (different save layouts), so a version token has to be able to say "belongs
-  to no game in this group" — distinct from "unrecognised", which keeps the row. Without that
-  distinction Platinum's table inherits Dialga.
-- **The version is not always the third argument.** B2W2's Join Avenue trades take only an OT-name
-  array and the version, so `version_from_args` scans for the argument that IS a version token rather
-  than indexing a position. It cannot mistake a PID for a game, because a PID is not one of the group's
-  version names — and a template with no version token at all (N's Pokémon) belongs to the whole group,
-  which is what PKHeX fixes on those records anyway.
-- **Two things are not `new(...)` at all.** ORAS writes its six Cosplay Pikachu as C# record copies
-  (`BaseCosplay with {Form = 1, …}`), and without resolving them the scanner walks past to the `new(`
-  inside the override's own move list and parses THAT as the entry — an entry with no Species, which is
-  how it announced itself. `parse_template` + `parse_array(bases=…)` resolve them, and the count is
-  asserted. X/Y's **Friend Safari is not in the binary either**: PKHeX appends it as a hand-written area
-  at location 148, so reading only the `.pkl` leaves it empty and every Friend Safari Pokémon — a great
-  many of them — reads as impossible.
-- **`Location` is OPTIONAL in the C# record.** Sun/Moon has a gift EGG whose only placement is its
-  `EggLocation`, because a gift egg is met wherever the player hatches it.
-- **A single template must be checked like an array.** `assert_all_arrays_used` once knew only arrays,
-  which is how Crystal's standalone VC GS Ball Celebi went missing; it now also asserts single
-  `static readonly Encounter… X = new(…)` declarations.
-
-**A roamer is met where it was cornered**, not where its template starts it, so Latias/Latios and the
-six Gen 4 roamers carry a region SENTINEL rather than a location (Gen 2's is
-`ENCOUNTER_LOCATION_ROAMER2`). Matching their template's Location literally would flag every roamer
-anyone has ever caught. Gen 4 additionally narrows the set by the GroundTile the Pokémon was standing
-on; PKSE takes the union of grass and water, which can only widen what is accepted.
-
-### Mystery Gift distributions
-
-**Distributions cover every generation PKSE has tables for** — Gen 3 through Gen 9. **A Mystery Gift
-IS an encounter template**: distributions are emitted as ordinary `EncounterRow`s of kind
-`ENCOUNTER_KIND_EVENT` rather than into a table of their own — a parallel table would have duplicated
-the species index, the pre-evolution walk and every constraint check, and the two would have drifted.
-For Gens 5–9 PKHeX ships the database as flat arrays of fixed-size records
-(`Resources/legality/mgdb/*.pkl`), one per format, so they need no container decoding. Gens 3 and 4
-need their own readers because neither is that shape:
-
-- **Gen 3's are a hand-written C# array**, not a database. `EncountersWC3.cs` spans BOTH Gen 3 groups
-  (tokens run R/S/RS for Hoenn, FRLG for Kanto, EFL and Gen3 across them), so each group filters the
-  same list. Every one is met at **location 255** in a Poké Ball; only species, level and version vary.
-  `Encounter_WC3` is a spread of the four component arrays — reading it as well doubles every row.
-  Pokémon Center New York and Japan are deliberately absent: PKHeX builds those from their own
-  resources and they are a different shape again.
-
-  **Each group has to recognise the other's version tokens**, and the reason is the generator's own
-  fallback: an unrecognised token means "every game in this group", which is right for a template
-  carrying no version at all and catastrophic here. Without those aliases FireRed and LeafGreen
-  carried **59** distributions only Ruby and Sapphire ever received, Hoenn carried 8 of Kanto's, and
-  Ruby and Sapphire took the 15 `EFL` eggs that went to Emerald alone — `EFL` is the whole of FR/LG but
-  only Emerald of the trio. PKHeX refuses each of those outright: `EncounterGift3.IsMatchExact` opens
-  with *"Gen3 Version MUST match"*. The failure is a false NEGATIVE, so it never flagged a legal
-  Pokémon; it quietly accepted ones no cartridge could produce.
-
-  **Every Gen 3 distribution FR/LG can receive is an EGG.** PKHeX names FR/LG, EFL or Gen3 only inside
-  its `Eggs` array — `Common`, `International` and `Japan` are Ruby/Sapphire throughout — so Kanto
-  having no plain event row is the data being right, not a parse that came up empty.
-- **A Gen 4 card wraps a whole PK4, and its met location is BIASED BY 3000 in the egg-location
-  field.** `PCD.IsMatchExact` compares `wc.EggLocation + 3000` against the Pokémon's met location, so
-  the raw values read 60 and 1 rather than anything that looks like a place; the game adds the bias on
-  redemption. The PK4 is stored DECRYPTED (PKHeX only re-encrypts on write), so the ordinary PK4
-  offsets read straight through. **Nothing stamps Platinum**: a Gen 4 card carries the origin version
-  itself rather than leaving it to the redeeming game, and every one says Diamond or HeartGold — so
-  Platinum's table has no distributions and a Platinum-origin event Pokémon is not judged.
-- **`pgf.pkl` is not a flat array.** Its records are packed at the FRONT and one "receivability" byte
-  per record follows them all (PKHeX `PGF.GetArray`: count = length / (Size + 1)), so reading it as
-  fixed-size records leaves a remainder and refuses the whole file.
-- **That trailing byte is what separates the two Gen 5 pairs.** One database serves Black/White and
-  Black 2/White 2 both, and its low nibble is PKHeX's `RestrictVersion`, one bit per Gen 5 game in
-  GameVersion order (White, Black, White 2, Black 2); zero means no restriction. Without it each
-  group's table carries the other's distributions — 143 rows for BW and 89 for B2W2 become the same
-  232 for each.
-- **Gens 6 and 7 keep their database in two files.** `wc6.pkl` holds bare cards and `wc6full.pkl`
-  holds full ones with the card at a fixed offset inside (`Size - WC6.Size`), and PKHeX unions them
-  (`WC6Full.GetArray`). Reading only the bare file loses every distribution archived with its metadata,
-  which is most of them.
-- **The Pokémon card type is spelled differently in every generation.** It is 1 in PGT/PCD (2 is an
-  egg, 3 an item), 1 in PGF, 0 in WC6 and WC7, 0 in WB7, and 1 in WC8/WA8/WB8/WC9/WA9. Reading the
-  wrong value does not fail; it silently swaps items for Pokémon. **WB7 inverts it**: Let's Go predates
-  PKHeX's `GiftType` enum, so its `IsEntity` is `CardType == 0` and its `IsItem` is `CardType == 1`.
-  Assuming one convention kept every Let's Go *item* card and threw away all fifteen of its Pokémon —
-  silently, because the result was simply an empty table. PGF's shiny byte is its own vocabulary too:
-  0 means NEVER there and Random in Gen 6's `ShinyType6`.
-- **WC9 and WA9 store Gen 9 INTERNAL species numbering**, not National Dex. The generator converts
-  through PKHeX's `SpeciesConverter.Table9InternalToNational`; reading the field raw gives a plausible
-  wrong species. Its deltas are written zero-padded (`065`, `-07`), so parsing them with `int(v, 0)`
-  reads `010` as octal 8.
-- **Gen 3 has no mgdb pickle.** Its distributions live in the hand-written arrays above, so a FR/LG
-  fateful Pokémon that matches none of them still takes the softened "event Pokémon are not checked"
-  path. That is a gap in the data, not a verdict.
-
-**A distribution egg never reaches the sweep** — every EGG row is skipped there, so `matchingGiftEgg`
-on the egg path is the only thing that can match one, and it has to do it in two shapes. Where the
-format carries an egg-location field, that field IS the distribution's signature and a hatched Pokémon
-still has it, so the row is found by comparing it (and an egg location of 0 is "none", never a value to
-compare, or every ordinary record would pair with a row that records none either). **Gen 3 has no such
-field**, so the only record that can name a distribution is an egg that has NOT hatched: it sits at the
-event location (255) carrying the row's met level, which is exactly what PKHeX compares before it gives
-up on a hatched one — `EncounterGift3.IsMatchExact` answers `if (hatchedEgg) return true; // defer egg
-specific checks to later`. A hatched Gen 3 gift egg is therefore indistinguishable from a bred one here
-for the same reason it is there. Without the second shape, Gen 3's **66** distribution-egg rows could
-never match anything at all, which looks exactly like never having generated them.
-
-**Only an EVENT row may be named, and that distinction cost a false positive.** The same matcher
-reaches the games' own in-game gift eggs — that is what it was written for, so that Riolu, which BDSP
-cannot breed, is not accused of being an impossible egg. Several of those rows carry the **day care's
-own egg location** (SM/USUM's Eevee gift is 60002), so a note attached to every match told a player who
-had simply bred an Eevee that they had been handed a distribution. The suppression still accepts any
-gift row; only `kind == ENCOUNTER_KIND_EVENT` earns the note.
-
-**A HOME gift is met at 30018 by definition.** The GO/HOME abstain (`isExternalTransferLocation`)
-used to `return` before the sweep on the grounds that no row could carry those ids. Adding the
-distributions made that false, and it threw away every HOME-gift row unread. It is a **fallback** now:
-the sweep runs first and the note is only emitted when nothing matched. On one real Violet save that
-turned three "not modelled" Pokémon into three positively identified distributions.
+PKHeX's identifiers are renamed under the coding standards; the common ones are in chapter 15's
+naming table (`LegalInfo` → `LegalityInfo`, `EvoCriteria` → `EvolutionCriteria`, `LegalityAnalysis`
+→ `AnalysisContext`). The generated `ResultCode` enumerators follow the same rule, while
+`getResultCodeSourceName()` keeps PKHeX's spelling for the harness. `TID16` / `SID16` / `ID32` stay as
+PKHeX spells them.
 
 ### The HOME tracker
 
@@ -686,5 +538,80 @@ turned three "not modelled" Pokémon into three positively identified distributi
 per-Pokémon u64 on anything that passes through it, so a Gen 4 Pokémon sitting in a Violet box must
 have one whatever its origin byte says. `hasHomeTracker()` gates it for the same reason every other
 capability predicate exists — 0 is the real "never tracked" value. **The offset differs per format**:
-`0x135` for PK8/PB8 (G8PKM), `0x14D` for PA8, `0x127` for PK9/PA9. The finding is a **Warning, never
-Invalid**, because PKSE's own bank produces trackerless transfers legitimately.
+`0x135` for PK8/PB8 (G8PKM), `0x14D` for PA8, `0x127` for PK9/PA9. `verifyTransfer`
+(`src/Legality/Verifiers/TransferVerifier.cpp`) ports PKHeX's rule (`HomeTrackerUtil.IsRequired`: the
+encounter predates Gen 8, comes from another context, or is a GO/HOME gift) and reports a missing
+tracker as **Invalid** `Encounter/TransferTrackerMissing`.
+
+### Gen 1 and Gen 2 EVs saturate
+
+Gen 1/2 Stat Experience is 16-bit per stat with no total, and the 8-bit `ev()` accessors saturate at
+255 for those formats. The checker once applied the 252/510 rule to them and reported seven Invalid
+findings on a legitimately trained Red Pokémon. PKHeX's `VerifyEVsGB` reads the wide value
+(`evWide()`); any Game Boy check that compares EVs must do the same (chapter 14).
+
+---
+
+## Rules: the Gen 3 landing table and the shared generator helpers
+
+The interim sweep these rules once governed is retired. They still hold for `gen_encounters.py`,
+whose Gen 3 rows the bank's rebuild reads and whose helpers every per-generation generator imports,
+and their lessons apply to the engine's generators too.
+
+**An egg's met level is not the level it hatches at.** PKHeX's `EggLevel23 = 5` is the CURRENT level a
+Gen 2/3 egg hatches at, while `EggStateLegality.GetEggLevelMet` gives the MET level as **0 for Gens 3
+and 4** and 1 from Gen 5 (Crystal 1). PKSE once carried 5 for both, and the Gen 3 rebuild stamped a
+met level the games never write, which the checker then ACCEPTED, because writer and reader read the
+same wrong constant. **A bug that is self-consistent across a writer and its reader produces no
+finding anywhere**; only a real save or the source catches it. `EggRule` keeps `hatchLevel` (met)
+and `hatchCurrentLevel` apart, and `hatch_level()` exists so a positional tuple cannot swap them.
+
+### Generating `EncounterTable.cpp`
+
+`tools/gen_encounters.py` emits wild / static / gift / trade / event rows in one shape, for the groups
+in `TABLE_GAMES` (Ruby/Sapphire/Emerald and FireRed/LeafGreen). **New groups are APPENDED to its
+`GAMES` list, never inserted** — the tables are emitted in that order, so
+inserting one rewrites every table after it and buries the real change in the diff that is the only
+review gate the generated data has. The readers, each of which silently produces a table that matches
+nothing when got wrong:
+
+- **Gens 3 and 4 share one wild-slot reader** (10-byte slots; the area header is 4 bytes in Gen 3 and
+  6 in Gen 4). **Gens 1 and 2 share another** (4-byte slots, species a byte), and **Gen 2 puts a rate
+  table in front of its slots** for every slot type past Surf — read them as slots and rates become
+  species. **Gens 5, 6 and 7 share a third** (`species | form << 11`, species masked to `0x3FF`), and
+  **a zero slot is padding** — 574 of Black's 2974.
+- **Ruby/Sapphire/Emerald is the only group of three**, and PKHeX spells its tokens `R`/`S`/`E`/`RS`
+  where PKSE's enum says `RU`/`SA`/`EM`, so the tokens are mapped by an explicit table: `"RS"`
+  contains neither `"RU"` nor `"SA"`.
+- **One PKHeX file can be two PKSE groups** (`Encounters4DPPt.cs`), so a token must be able to say
+  "no game in this group", distinct from "unrecognised". Without that, Platinum inherits Dialga.
+- **The version is not always the third argument** (B2W2's Join Avenue trades); `version_from_args`
+  scans for the argument that IS a version token.
+- **Not everything is `new(...)`**: ORAS's Cosplay Pikachu are C# record copies (`BaseCosplay with
+  {…}`), and X/Y's **Friend Safari** is a hand-written area appended at location 148, not in the
+  binary. `Location` is optional in the record (Sun/Moon's gift egg has only an `EggLocation`).
+- **A roamer is met where it was cornered**, so Latias/Latios and the Gen 4 roamers carry a region
+  sentinel rather than a location.
+
+### Mystery Gift distributions
+
+**A Mystery Gift is an encounter template**, so distributions are emitted as `ENCOUNTER_KIND_EVENT`
+rows rather than a parallel table that would duplicate every check and drift. Gens 5–9 read PKHeX's
+`mgdb/*.pkl` flat arrays; Gens 3 and 4 need their own readers. The traps:
+
+- **Gen 3's are a hand-written C# array** spanning both Gen 3 groups, all met at location 255. **Each
+  group must recognise the other's version tokens**, because an unrecognised token means "every game
+  in this group": without the aliases FR/LG carried 59 distributions only Ruby and Sapphire received.
+  PKHeX refuses those outright (*"Gen3 Version MUST match"*). **Every Gen 3 distribution FR/LG can
+  receive is an egg.**
+- **A Gen 4 card wraps a decrypted PK4, and its met location is biased by 3000** in the egg-location
+  field. Nothing stamps Platinum: every card names Diamond or HeartGold.
+- **`pgf.pkl` is not a flat array**: one receivability byte per record follows them all, and its low
+  nibble (`RestrictVersion`) is what separates Black/White from Black 2/White 2.
+- **Gens 6 and 7 keep two files** (`wc6.pkl` bare, `wc6full.pkl` full), and PKHeX unions them.
+- **The Pokémon card type is spelled differently in every generation, and WB7 inverts it**
+  (`IsEntity` is `CardType == 0`): assuming one convention once kept every Let's Go item card and threw
+  away all fifteen Pokémon. PGF's shiny byte is its own vocabulary too.
+- **WC9 and WA9 store Gen 9 INTERNAL species numbering**, converted through
+  `SpeciesConverter.Table9InternalToNational`; its deltas are zero-padded, so `int(v, 0)` reads `010`
+  as octal 8.

@@ -17,6 +17,7 @@
 #include "Names/RibbonNames.h"   // the ribbon editor reads and writes through the format's ribbon table
 #include "Enums/Ball.h"          // getBallList -> the per-game Ball picker
 #include "Legality/Legality.h"   // analyze() -> gate the details-page Legality (R) button when clean
+#include "Legality/AnalysisContext.h" // the slot type and active trainer analyzeLegality passes
 
 #include "Globals.h"
 #include "Save/GetSaveFileContents.h"
@@ -1494,6 +1495,19 @@ namespace UI
                 return trainer.boxes[selectedBoxIndex][selectedItemIndex].get();
             return nullptr;
         }
+    }
+
+    Legality::Report TrainerViewScreen::analyzeLegality(const Pokemon::Pokemon &pokemon, EditSource source) const
+    {
+        if (source == EditSource::Bank)
+        {
+            return Legality::analyze(pokemon, pokemon.getGameGroup());
+        }
+        const Legality::ActiveTrainer activeTrainer = Legality::makeActiveTrainer(trainer);
+        Legality::AnalysisOptions options;
+        options.slotType = source == EditSource::Party ? Legality::StorageSlotType::Party : Legality::StorageSlotType::Box;
+        options.activeTrainer = &activeTrainer;
+        return Legality::analyze(pokemon, pokemon.getGameGroup(), options);
     }
 
     // After editing detailsTargetPokemon(), keep an LGPE party member's two representations (its box
@@ -4921,12 +4935,12 @@ namespace UI
                 return;
             }
             // Open the legality issue list: R, or tapping the legality summary (id 95) -- but ONLY
-            // when the report has something in it. That includes a clean pokemon with Layer 3 notes
+            // when the report has something in it. That includes a clean pokemon with encounter notes
             // (which encounter it matched, or why the check could not run); a truly empty report
             // has nothing to show, so the button is disabled (greyed in the guide) and this does nothing.
             if ((buttonsDown & HidNpadButton_R) || touchedButton == 95)
             {
-                if (pokemon && !Legality::analyze(*pokemon, pokemon->getGameGroup()).empty())
+                if (pokemon && !analyzeLegality(*pokemon, details.source).empty())
                     details.legalityOverlay = true;
                 return;
             }

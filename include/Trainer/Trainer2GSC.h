@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "Save/SaveFileName.h"
 #include "Trainer/Trainer.h"
 #include "Pokemon/Pokemon2GSC.h"
 
@@ -104,6 +105,7 @@ namespace Trainer
         const std::vector<uint8_t> &serialize();
         const std::vector<uint8_t> &getSaveData() const noexcept { return saveData; }
         const std::string &fileName() const noexcept { return savePath; }
+        bool isVirtualConsole() const noexcept override { return Save::isGameBoyVirtualConsoleFileName(savePath); }
         bool isValid() const noexcept { return valid; }
         Gen2Layout layout() const noexcept { return saveLayout; }
         bool japanese() const noexcept { return offsets->japanese; }

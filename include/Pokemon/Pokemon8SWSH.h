@@ -55,6 +55,14 @@ namespace Pokemon
 
         const char *species() const noexcept override;
 
+        bool hasContestStats() const noexcept override { return true; }
+        uint8_t contestStat(int statIndex) const noexcept override { return (statIndex >= 0 && statIndex < 6) ? static_cast<uint8_t>(data[0x2C + statIndex]) : 0; }
+        uint8_t markingCount() const noexcept override { return 6; }
+        uint16_t markingValue() const noexcept override { return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x18)); }
+        bool hasColoredMarkings() const noexcept override { return true; }
+        bool hasFavoriteFlag() const noexcept override { return true; }
+        bool isFavorite() const noexcept override { return (static_cast<uint8_t>(data[0x16]) & 0x08) != 0; }
+
         uint16_t heldItem() const noexcept override
         {
             return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x0A));
@@ -95,6 +103,11 @@ namespace Pokemon
         {
             return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x1C));
         }
+
+        /// Nickname 0x58, OT name 0xF8 and handler name 0xA8: 13 UTF-16 units each.
+        std::span<const std::byte> nicknameBytes() const noexcept override { return data.subspan(0x58, 26); }
+        std::span<const std::byte> originalTrainerNameBytes() const noexcept override { return data.subspan(0xF8, 26); }
+        std::span<const std::byte> handlingTrainerNameBytes() const noexcept override { return data.subspan(0xA8, 26); }
 
         std::u16string nickname() const override
         {
@@ -173,7 +186,7 @@ namespace Pokemon
         }
 
         /// Low nibble is days remaining (0 = cured), high nibble the strain.
-        uint8_t pokerus() const noexcept
+        uint8_t pokerus() const noexcept override
         {
             return static_cast<uint8_t>(data[0x32]);
         }
@@ -208,6 +221,7 @@ namespace Pokemon
             refreshChecksum();
         }
 
+        bool hasBattleVersion() const noexcept override { return true; }
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xDE]); }
         void setOriginGame(uint8_t version) noexcept override
         {
@@ -250,6 +264,10 @@ namespace Pokemon
         }
 
         uint8_t otFriendship() const noexcept override { return static_cast<uint8_t>(data[0x112]); }
+        uint8_t otMemoryIntensity() const noexcept override { return static_cast<uint8_t>(data[0x113]); }
+        uint8_t otMemory() const noexcept override { return static_cast<uint8_t>(data[0x114]); }
+        uint16_t otMemoryVariable() const noexcept override { return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x116)); }
+        uint8_t otMemoryFeeling() const noexcept override { return static_cast<uint8_t>(data[0x118]); }
         void setOTFriendship(uint8_t value) noexcept override
         {
             data[0x112] = static_cast<std::byte>(value);
@@ -359,6 +377,8 @@ namespace Pokemon
 
         /// HOME arrived with Gen 8; this format carries a tracker.
         bool hasHomeTracker() const noexcept override { return true; }
+        bool hasFormArgument() const noexcept override { return true; }
+        uint32_t formArgument() const noexcept override { return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0xE4)); }
         uint64_t homeTracker() const noexcept override
         {
             return readUInt64LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x135));
@@ -713,6 +733,30 @@ namespace Pokemon
         void regeneratePID(uint32_t trainerID32) noexcept override;
 
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
+
+        uint8_t heightScalar() const noexcept override { return static_cast<uint8_t>(data[0x50]); }
+        uint8_t weightScalar() const noexcept override { return static_cast<uint8_t>(data[0x51]); }
+        /// The game a HOME transfer made the Pokemon battle-ready in (PKHeX IBattleVersion); 0 when none.
+        uint8_t battleVersion() const noexcept override { return static_cast<uint8_t>(data[0xDF]); }
+        uint8_t dynamaxLevel() const noexcept { return static_cast<uint8_t>(data[0x90]); }
+        bool canGigantamax() const noexcept { return (static_cast<uint8_t>(data[0x16]) & 0x10) != 0; }
+        uint32_t sociability() const noexcept { return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x48)); }
+        /// Camp curry fullness and enjoyment (PKHeX IFullnessEnjoyment).
+        uint8_t fullness() const noexcept { return static_cast<uint8_t>(data[0xDC]); }
+        uint8_t enjoyment() const noexcept { return static_cast<uint8_t>(data[0xDD]); }
+        /// Sword/Shield Technical Record learned flags, kept through HOME (PKHeX ITechRecord).
+        bool isTRFlagSet(int recordIndex) const noexcept { return recordIndex >= 0 && recordIndex < 112 && ((static_cast<uint8_t>(data[0x127 + (recordIndex >> 3)]) >> (recordIndex & 7)) & 1) != 0; }
+        bool hasAnyTRFlag() const noexcept
+        {
+            for (int byteIndex = 0; byteIndex < 14; ++byteIndex)
+            {
+                if (data[0x127 + byteIndex] != std::byte{0})
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
     };
 }
 

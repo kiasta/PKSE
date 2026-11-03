@@ -419,7 +419,8 @@ include/            Public headers. Mirrors src/ exactly.
   Conversion/       Cross-generation Pokémon conversion.
   Encryption/       Per-game encrypt/decrypt/checksum.
   Enums/            Shared enums only. No logic, no tables.
-  Legality/         Legality evaluation. Read-only w.r.t. Pokémon data.
+  Legality/         Legality evaluation, ported from PKHeX. Read-only w.r.t. Pokémon data.
+    Encounters/  Evolutions/  LearnSource/  RNG/  Verifiers/
   Libs/             Vendored third-party headers. DO NOT EDIT.
   Names/            Generated name/lookup tables (declarations).
   Pokemon/          Pokémon record types + generated per-species tables.
@@ -435,6 +436,7 @@ tools/              Python table generators (gen_*.py), the romfs asset fetchers
                     (gen_fonts/typeicons/marks/hdsprites.py + asset_fetch.py),
                     pkhex_source.py, regenerate.py, syntax_check.py.
   formdump/         .NET tool that calls PKHeX's FormConverter and dumps JSON.
+  legalitydump/     .NET tool that runs PKHeX's LegalityAnalysis, for legality parity.
   harness/          Host test programs over real saves; uihost/ drives the real UI headless.
 nanovg/             Vendored. DO NOT EDIT.
 memecrypto/         Vendored (Gen 7 save signing). DO NOT EDIT; re-sync from upstream.

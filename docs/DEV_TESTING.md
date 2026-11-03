@@ -31,7 +31,8 @@ production compiles it, plus `src/Test` and every file that names the gate with 
 define (those rows are labelled `[development]`).
 
 The host harnesses do not use the Makefile at all. Each `build-*.sh` compiles the sources it needs
-with the host compiler into `build-harness/`.
+with the host compiler into `build-harness/`, or into `$PKSE_HARNESS_OUT` where that is set
+(`build-legality.sh` and `build-parity.sh` honour it), so several runs can share one tree.
 
 ---
 
@@ -57,7 +58,8 @@ release done.** Anything the self test cannot reach — the SD card, ROMFS, an i
 | an offset, a parse, a conversion, a table | `build.sh` / `build-gen1.sh` / `build-oldgens.sh` / `build-selftest.sh` |
 | the PKSM importer | `build-pksmimport.sh` |
 | Pokemon file import/export (`PokemonFile*.cpp`) | `build-pokemonfile.sh`, then `build-selftest.sh` |
-| a legality rule or an encounter/event table | `build-legality.sh` |
+| a legality check, an encounter template, the RNG or evolution engine | `build-parity.sh`, then `build-selftest.sh` |
+| the Gen 3 landing table (`gen_encounters.py`) | `build-selftest.sh` (conversion suite) |
 | a screen, panel, dialog or modal | `uihost/run.sh` |
 | the bank | `build-selftest.sh` (scratch bank), then the on-console self test |
 | the save write path, ROMFS assets | the on-console self test |
@@ -79,8 +81,9 @@ with an ordinary `g++`, so it can run against real save files on a PC instead of
 ./tools/harness/build-oldgens.sh [save-root]             # Gens 2, 4-7 + every save envelope
 ./tools/harness/build-pksmimport.sh [bank.bnk]           # PKSM bank import
 ./tools/harness/build-pokemonfile.sh [PKHeX Tests dir]   # .pkX files against PKHeX's 200 test files
-./tools/harness/build-legality.sh <save-root> [--verbose]  # legality sweep + seven bite checks
-./tools/harness/build-selftest.sh [report] [save-root]   # 7 of the 13 self-test suites
+./tools/harness/build-legality.sh <save-root> [--verbose]  # legality sweep over real saves
+./tools/harness/build-parity.sh <save-root> [--summary-only|--verbose|--title T]  # legality vs PKHeX itself
+./tools/harness/build-selftest.sh [report] [save-root]   # 10 of the 15 self-test suites
 ./tools/harness/uihost/run.sh [report] [save-root]       # headless UI: real screens, synthetic input
 ```
 
@@ -313,10 +316,26 @@ was added).
 ./tools/harness/build-legality.sh <save-root> [--verbose]
 ```
 
-Layer 3 is the only part of PKSE that can call a legitimately-obtained Pokemon illegal, so the
-measure that matters is what it complains about on saves from actual playthroughs — where nearly
-everything IS legal. A healthy run is mostly "matched"; **a wall of findings means the tables are
-wrong, not the save.**
+The legality checker is the only part of PKSE that can call a legitimately-obtained Pokemon illegal,
+so one measure that matters is what it complains about on saves from actual playthroughs — where
+nearly everything IS legal. **A wall of findings means the checker is wrong, not the save.** Whether
+it is wrong in the same way PKHeX is wrong is a different question, answered by `build-parity.sh`
+(next section); this sweep is the human-readable view. The seven bite checks it once ended with
+guarded the retired interim encounter sweep and went with it: every origin is now held to PKHeX by
+`build-parity.sh`, and the branches no corpus reaches by planted cases in `SuiteLegality.cpp`.
+
+**Modes.** The same binary (`build-harness/legality`) writes machine-readable output for the parity
+tools:
+
+| Flag | Writes |
+|---|---|
+| `--json <file>` | one JSON line per Pokemon in `tools/legalitydump`'s shape (title, slot, species, form, PID, EC, every finding's PKHeX identifier, code, severity and message), plus `<file>.manifest`: the title and path of every save opened, which `build-parity.sh` hands to `legalitydump` so both sides read exactly the same files |
+| `--files <dir>` | sweeps a directory of `.pkX` / `.ekX` files instead of a save tree (title `file`, slot the relative path); with `--json`, the PKHeX test-file corpus |
+| `--pidiv <file>` | `MethodFinder`'s PID type and origin seed per Pokemon, for `pidiv_diff.py` against `legalitydump pidiv` |
+| `--evolution <file>` | every context's evolution chain and the origin chain per Pokemon, for `evolution_diff.py` against `legalitydump evolution`. `--evolution-encounters <pkhex.jsonl>` reads the encounter PKHeX matched from that same `legalitydump evolution` output, so the chain search is compared on PKHeX's encounter |
+| `--encounter <file>` | the matched template's `longName()` per Pokemon, for `encounter_diff.py` against `legalitydump`'s `encounter` field (PKHeX's `LongName`) |
+
+Several flags can be combined in one run.
 
 **It sweeps every title folder the self test knows** — Red through Legends: Z-A, 35 saves on the
 development tree — not one save per generation. The sample it used to take never opened Silver,
@@ -325,48 +344,44 @@ those was invisible to the gate. Two loader rules came with that: an emulator **
 trimmed** exactly as `Save::openExternalSave` trims it (untrimmed, every Gen 2 save swept as
 "0 Pokemon"), and title folders are matched the way the console matches them (`SaveTree::folderFor`).
 
-**A clean sweep proves nothing on its own**, which is why the run ends with **seven bite checks**. All
-seven fail the run, because a checker that never fires is not a clean result.
+### `build-parity.sh` — does the checker agree with PKHeX?
 
-1. **Met location.** A Pokemon moved to a met location no game has must draw a complaint. Two details
-   decide whether it bites for the right reason. The bogus location must be one the FORMAT can hold —
-   900 is stored as 132 in Gen 3's byte and as 4 in Gen 2's seven bits, both real places — so the
-   first of 900, 250 and 125 that reads back exactly is used. And the donor must be clean BECAUSE it
-   matched an encounter: a hatched donor is clean through its egg, and with the egg location cleared a
-   species its game never offers can only say "no encounter produces it", which has nothing to do with
-   the location (Sun's first Pokemon is exactly such a Shinx). **A format with no met location cannot
-   be given a bogus one**, so this check skips Gen 1 and Gold/Silver and says how many it skipped —
-   there the Pokemon stays clean because the check is meaningless, not because the table failed to
-   bite.
-2. **Event.** Reads the game's own table, poses a Pokemon as the first Mystery Gift distribution row
-   in it, and requires the verdict to name that distribution. That exercises the whole path — the row
-   generated, the species index reaching it, the sweep accepting its constraints, the verdict naming
-   it — for data no one can eyeball.
-3. **Wild.** Poses a Pokemon at one of its game's own wild slots and requires a match. **This is the
-   one that catches a mis-parsed slot table** — the failure mode every new generation risks, since a
-   wrong header length still builds, still produces plausible rows and simply never matches
-   anything. It needs two things to be worth having: the donor must not be an unhatched EGG (eggs
-   route down the egg path before the sweep, which reads as a table failure), and the row must belong
-   to the donor's own VERSION (half of every paired generation is version-exclusive). A Gen 1 or
-   Gold/Silver donor is posed on its own terms: its LEVEL is raised to the row's floor rather than its
-   met level.
-4. **Evolution, caught nowhere.** Poses an evolution of a wild slot's species a level below the level
-   that evolution needs, and requires a complaint naming the evolution. **Real saves never exercise
-   this**: a box of ordinary Pokemon clears every evolution level comfortably, so the pose has to be
-   built, and the evolution must be one the game cannot produce on its own or the sweep matches the
-   evolution's own row at chain position 0 where no floor applies. For a Gen 1 or Gen 2 format "caught
-   nowhere" has to hold in BOTH generations, because Layer 3 asks both: Gold and Crystal have a level 7
-   Butterfree, so a level 9 Gen 1 one is rightly explained as a catch from there.
-5. **Evolution, caught elsewhere.** The same pose where that evolution IS catchable elsewhere in the
-   game must draw the SAME complaint — the stage-ordering rule in chapter 11.
-6. **Seadra.** The reported case, built from the tables with no save at all, in both directions.
-7. **Catch combo.** Let's Go spawns a slot's Pokemon up to one level above its range, so its wild rows
-   carry `ENCOUNTER_FLAG_CATCH_COMBO`. The donor is posed at a flagged row's max + 1, which must match,
-   and at max + 2, which must draw the met-level finding quoting the widened band. The row's species
-   has no pre-evolution and no other row at that place reaches max + 2, so nothing else can explain
-   the second pose. Only games whose table has flagged rows are counted, which today means the two
-   Let's Go saves. Before the flag existed, the Let's Go Eevee test save drew nine false "is met at
-   level" warnings.
+```bash
+./tools/harness/build-parity.sh <save-root> [parity_diff.py options: --summary-only --verbose --title T]
+```
+
+PKHeX is the source of truth for legality, and PKSE's checker is a port of it, so the decisive test
+runs PKHeX itself. The script:
+
+1. builds and runs `legality <save-root> --json`, which also writes the manifest of saves it opened;
+2. runs `legality --files $PKHEX_LOCAL/Tests --json` over PKHeX's own `.pkX` test files, whose `Legal/`
+   and `Illegal/` trees reach checks real catches never do;
+3. runs `tools/legalitydump` (`dotnet run`, building PKHeX.Core from `PKHEX_LOCAL`, default
+   `~/repos/PKHeX`) over exactly the manifest's files and the same test directory. `legalitydump`
+   opens a save the way PKHeX's GUI does (`InitFromSaveFileData`, the slot's `Party`/`Box` type),
+   and analyses a test file with no active trainer, as PKHeX's own tests do;
+4. diffs each corpus with `parity_diff.py`.
+
+**PKHeX's side is cached** in `build-harness/pkhex-cache/` (`saves.jsonl`, `files.jsonl`), because it
+depends only on the saves and the PKHeX checkout. **`PARITY_REFRESH_PKHEX=1`** recomputes it; do that
+after pulling PKHeX or changing the test saves, and never as a way to make a diff go away.
+**`PKSE_HARNESS_OUT=<dir>`** moves PKSE's build and output (the cache stays shared).
+
+Reading the output: a finding is `(severity, identifier, code)`, with PKHeX's `Fishy` for PKSE's
+Warning. A **gap** is a finding PKHeX reports and PKSE does not; an **extra** is one PKSE reports and
+PKHeX does not, the worse of the two. Per-move lines are compared by identifier and severity only.
+Pokemon are paired by title, species, PID, encryption constant and occurrence, not by slot, because
+the two programs number some saves' boxes differently; an "Unpaired" count means the loaders disagree.
+`--verbose` prints every differing Pokemon with PKHeX's matched encounter and both messages. **The
+exit status is 0 only with no gaps and no extras in both corpora.** Manual chapter 11 has a worked
+reading.
+
+Three narrower diffs isolate one engine each: `pidiv_diff.py <pkse.jsonl> <pkhex.jsonl>` (from `legality
+--pidiv` and `legalitydump pidiv saves|files ...`), `evolution_diff.py` (from `legality --evolution`
+and `legalitydump evolution ...`) and `encounter_diff.py` (from `legality --encounter` and the parity
+cache's `saves.jsonl` / `files.jsonl`). The first two report an input mismatch (the loaders read
+different PID, EC, IVs or species) separately from a real disagreement; `encounter_diff.py` counts
+unported origins apart and groups mismatches by origin. All three exit non-zero on a disagreement.
 
 ### `build-selftest.sh` — the self test on the host
 
@@ -374,10 +389,13 @@ seven fail the run, because a checker that never fires is not a clean result.
 ./tools/harness/build-selftest.sh [report-path] [save-root]
 ```
 
-Runs **eight of the thirteen suites** in seconds — the framework's own regression test, and a fast loop
+Runs **ten of the fifteen suites** in seconds — the framework's own regression test, and a fast loop
 for whichever half you are changing.
 
 - `tables` and `gentables` need nothing and run for **all nineteen save-format groups at once**.
+- `rng` and `evolution` need nothing either: they check `Legality/RNG` and `Legality/Evolutions`
+  against PKHeX's own unit-test vectors (and, for evolution, histories PKHeX computed for real
+  Pokemon).
 - `entity`, `setters`, `legality`, `pokemonfile` and `conversion` run against **real saves, read-only**, from a tree
   laid out as `roundtrip.cpp` expects — one folder per title (`FireRed/`, `Red/`, `Ruby/`,
   `Sapphire/`, `Emerald/`, `Let's Go Pikachu/`, `Ultra Sun/`, `Shield/`, `Violet/`, `Legends Z-A/`,
@@ -711,7 +729,7 @@ Phases: `GlobalSuites → (TargetLoad → TargetSuites → TargetDone)* → Cros
 discarded: a run abandoned three suites in because the first one was clearly broken is still a run
 whose findings are worth reading.
 
-### The thirteen suites, in run order
+### The fifteen suites, in run order
 
 Defined once, in `src/Test/TestSuite.cpp` (one `src/Test/Suite*.cpp` each), and **the order is
 load-bearing**.
@@ -719,18 +737,20 @@ load-bearing**.
 | # | Suite | Scope | Checks |
 |---|---|---|---|
 | 1 | `tables` | Global | generation-independent data tables |
-| 2 | `assets` | Global | ROMFS: fonts, type icons, every sprite |
-| 3 | `picker` | Global | drives the save picker (console only) |
-| 4 | `browser` | Global | drives the file browser over a fixture directory it builds, including favorite folders and the last folder, read back through a scratch `settings.cfg` |
-| 5 | `gentables` | PerTarget | per-generation tables (items, learnsets, dex) |
-| 6 | `entity` | PerTarget | every Pokemon in the save |
-| 7 | `setters` | PerTarget | set → get on a blank entity, field by field |
-| 8 | `legality` | PerTarget | the analyzer over the save |
-| 9 | `ui` | PerTarget | **drives real screens** with synthetic input |
-| 10 | `pokemonfile` | PerTarget | .pkX export, read back, the .ekX form, refusal of renamed or corrupted files, bank import |
-| 11 | `save` | PerTarget | save structure, round trip, **edit persistence** (an empty slot filled, a new item added), save envelopes |
-| 12 | `conversion` | Cross | the cross-generation conversion matrix, plus a synthetic Poke Transporter pass; a Pokemon converted into Legends: Arceus must arrive with the height and weight its size scalars give |
-| 13 | `bank` | Cross | deposit / save / reload / verify, discard by reload, a bank file never written over |
+| 2 | `rng` | Global | the legality RNG library (`Legality/RNG`) against PKHeX's own unit-test vectors: LCRNG and Xoroshiro, PID/IV correlations, Method J, raid seeds |
+| 3 | `evolution` | Global | the evolution engine (`Legality/Evolutions`) against PKHeX's unit test and evolution histories PKHeX computed for real Pokemon |
+| 4 | `assets` | Global | ROMFS: fonts, type icons, every sprite |
+| 5 | `picker` | Global | drives the save picker (console only) |
+| 6 | `browser` | Global | drives the file browser over a fixture directory it builds, including favorite folders and the last folder, read back through a scratch `settings.cfg` |
+| 7 | `gentables` | PerTarget | per-generation tables (items, learnsets, dex) |
+| 8 | `entity` | PerTarget | every Pokemon in the save |
+| 9 | `setters` | PerTarget | set → get on a blank entity, field by field |
+| 10 | `legality` | PerTarget | the analyzer over the save, plus planted defects for every verifier |
+| 11 | `ui` | PerTarget | **drives real screens** with synthetic input |
+| 12 | `pokemonfile` | PerTarget | .pkX export, read back, the .ekX form, refusal of renamed or corrupted files, bank import |
+| 13 | `save` | PerTarget | save structure, round trip, **edit persistence** (an empty slot filled, a new item added), save envelopes |
+| 14 | `conversion` | Cross | the cross-generation conversion matrix, plus a synthetic Poke Transporter pass; a Pokemon converted into Legends: Arceus must arrive with the height and weight its size scalars give |
+| 15 | `bank` | Cross | deposit / save / reload / verify, discard by reload, a bank file never written over |
 
 Three of them DRIVE the app rather than calling into it: `ui`, `picker` and `browser`.
 
@@ -767,9 +787,11 @@ a clean pass.
 **3. Legality findings are warnings.** PKSE can edit saves, so a box may genuinely hold something
 illegal. **The value is the rate**: one Invalid in a box of thirty is a Pokemon, thirty is a bug
 (which is how the Gen 1 saturated-EV misread would have been caught). A checker that never fires would
-pass that, so the `legality` suite also **plants defects**: a blank Pokemon with a duplicated move, and
-(Gen 3 onward, not Let's Go) an EV total over 510, must be flagged Invalid for exactly that, and the
-same Pokemon without the defect must not be. Those are failures.
+pass that, so the `legality` suite also **plants defects**: a control Pokemon and the same Pokemon with
+one defect (a duplicated move, an EV total over 510, a PID whose gender disagrees, a bad marking,
+a missing HOME tracker …), and the defective one must draw exactly PKHeX's identifier, code and
+severity while the control must not. Every ported verifier branch that no real save reaches gets one
+(`expectVerifierFlags`, `expectFlagged`). Those are failures.
 
 **3a. Every check can fail.** No `context.check(true, ...)`. A check counts only when its condition was
 computed from something independent of the code under test: a stated expectation, PKHeX's value, the
@@ -902,7 +924,8 @@ The problem it exists for:
 - `SuiteTables` bounds `personal.type1`/`type2` against `Names::getTypeCount()` (18), not
   `getTypeNameCount()` (19) — merging the two would let a corrupt personal type of 18 pass.
 - `checkTitleRouting` — every `TESTED_TITLES` row resolves to a group (above).
-- `Pokemon::isAbilityLegal(const Pokemon &)` is the one check Layer 2 and the self test share.
+- `Pokemon::isAbilityLegal(const Pokemon &)` is shared by the entity sweep and `SuiteTables`. The
+  legality checker no longer calls it: its ability check is the port of PKHeX's `AbilityVerifier`.
 
 ### The `browser` suite
 

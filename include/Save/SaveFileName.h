@@ -99,6 +99,33 @@ namespace Save
         }
         return false;
     }
+
+    /// The last component of `path`, which is what PKHeX's SaveFile.Metadata.FileName holds.
+    inline std::string_view getFileNameFromPath(std::string_view path)
+    {
+        const size_t separatorIndex = path.find_last_of("/\\");
+        return separatorIndex == std::string_view::npos ? path : path.substr(separatorIndex + 1);
+    }
+
+    /// PKHeX SAV1/SAV2.IsVirtualConsole: the 3DS Virtual Console names a Game Boy save `sav.dat`.
+    /// Case-sensitive, as PKHeX compares it.
+    inline bool isGameBoyVirtualConsoleFileName(std::string_view path)
+    {
+        const std::string_view fileName = getFileNameFromPath(path);
+        return fileName.starts_with("sav") && fileName.find(".dat") != std::string_view::npos;
+    }
+
+    /// PKHeX SAV3.IsVirtualConsoleFileName: the Nintendo Switch release names its saves
+    /// `FireRed_*.sav` and `LeafGreen_*.sav`. Case-sensitive, as PKHeX compares it.
+    inline bool isGameBoyAdvanceVirtualConsoleFileName(std::string_view path)
+    {
+        const std::string_view fileName = getFileNameFromPath(path);
+        if (fileName.find(".sav") == std::string_view::npos)
+        {
+            return false;
+        }
+        return fileName.starts_with("FireRed_") || fileName.starts_with("LeafGreen_");
+    }
 }
 
 #endif  // SAVE_SAVEFILENAME_H

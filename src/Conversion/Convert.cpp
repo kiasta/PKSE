@@ -1,5 +1,6 @@
 #include "Conversion/Convert.h"
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -40,6 +41,14 @@
 #include "Pokemon/Trade.h"          // applyReceivingTrainer -- the receiving player becomes the handler
 #include "Pokemon/PersonalRecord.h" // personalMaxSpecies / formCount -- the narrower sibling's dex
 #include "Trainer/Bank.h"           // groupAsBanked / makePokemon / encryptRecord -- one entity format, many groups
+#include "Legality/Encounters/EncounterData3.h" // the wild slot a Gen 3 rebuild lands on, for its RNG frame
+#include "Legality/Encounters/EncounterSlot3.h"
+#include "Legality/LearnSource/LearnSources.h"  // a rebuilt Pokemon left with no move gets its encounter moves
+#include "Legality/RNG/ClassicEraRNG.h"         // Method 1 PID/IV pairs
+#include "Legality/RNG/LCRNG.h"
+#include "Legality/RNG/MethodH.h"              // Method H wild frames
+#include "Legality/RNG/SlotMethod.h"
+#include "Pokemon/AbilityInfo.h"               // getAbilitySlots -- which species tie the ability to PID bit 0
 #include "Legality/EncounterTable.h" // a Gen 3 landing spot comes from a REAL encounter
 #include "Names/ItemNames.h"       // itemG3ToModern / itemModernToG3 (Gen 3 <-> modern held item)
 #include "Names/ItemPresence.h"    // isHeldItemPresent -> sanitize the held item to the destination
@@ -1654,6 +1663,10 @@ namespace Conversion
             return destinationBytes;
         }
 
+        /// Gen3Landing::landedKind values beyond the encounter table's ENCOUNTER_KIND_* range.
+        constexpr uint8_t LANDED_NOTHING = 0xFF;
+        constexpr uint8_t LANDED_EGG = 0xFE;
+
         /// Where a FOREIGN pokemon lands when it is written into a Gen 3 game.
         struct Gen3Landing
         {
@@ -1664,6 +1677,12 @@ namespace Conversion
             /// the rebuild is on and the encounter it landed on starts above that -- see the
             /// note on raising a level in gen3LandingFor.
             uint8_t currentLevel;
+            /// What the met data was derived from, so the rebuild can give the PID/IV pair the
+            /// correlation that encounter's RNG method produces: the chain link's species and form
+            /// and its ENCOUNTER_KIND_*, or LANDED_NOTHING (the fallback town) / LANDED_EGG.
+            uint16_t landedSpecies = 0;
+            uint8_t landedForm = 0;
+            uint8_t landedKind = LANDED_NOTHING;
         };
 
         /// A met location + level that the destination game could actually have produced.
@@ -1678,11 +1697,11 @@ namespace Conversion
         /// Derived from a REAL ENCOUNTER, which is what PKHeX does wherever it has to synthesize one
         /// (IEntityRejuvenator: `MetLocation = enc.Location`). PKSM instead stamps a fixed sentinel --
         /// 0xFD, "(gift egg)" -- with a comment saying it is a guess; PKSE has the encounter tables
-        /// Layer 3 already checks against, so it can answer properly.
+        /// the legality checker already checks against, so it can answer properly.
         ///
         /// THIS DOES NOT MAKE THE POKEMON LEGAL AND IS NOT TRYING TO. No transfer into Gen 3 has ever
-        /// existed, so anything that did not originate there is illegal whatever it carries, and the PID
-        /// is rerolled besides (it will not match a real Gen 3 RNG frame). The goal is a location that is
+        /// existed, so anything that did not originate there is illegal whatever it carries (the rebuild
+        /// then gives it the PID/IV frame its encounter's RNG produces). The goal is a location that is
         /// POSSIBLE in the destination instead of one that is provably not -- and where no encounter
         /// exists, to leave the legality checker free to say so.
         Gen3Landing gen3LandingFor(uint16_t national, uint8_t form, uint8_t destOriginVersion, uint8_t sourceMetLevel, uint8_t currentLevel)
@@ -1878,6 +1897,9 @@ namespace Conversion
                     bestLocation = static_cast<uint8_t>(row.location);
                     bestLevelMin = row.levelMin;
                     landing.metLocation = bestLocation;
+                    landing.landedSpecies = species;
+                    landing.landedForm = chainForm[link];
+                    landing.landedKind = row.kind;
                     landing.originVersion = tryVersion;
                     // Keep the original met level where the encounter allows it, so the pokemon's
                     // own history survives as far as it can; clamp into range otherwise. When no
@@ -1921,6 +1943,17 @@ namespace Conversion
                 landing.metLevel = bestLevelMin;
             }
 
+            // AN EVOLUTION AFTER THE MEETING TAKES A LEVEL. Landed on a pre-evolution's encounter, the
+            // Pokemon was met as that species and evolved since -- and a level-up evolution happens on a
+            // level-up, so it cannot still stand at the level it was met at. Rebuilding every Pokemon in a
+            // real collection showed it: a level 35 Noctowl landed on Emerald's level 35 Hoothoot slot, met
+            // at 35, now 35, which no Gen 3 game can produce. One level up is the smallest true story, and
+            // the rebuild only ever raises.
+            if (haveRow && g_autoLegalizeTransfers && landing.landedSpecies != national && landing.currentLevel <= landing.metLevel && landing.metLevel < 100)
+            {
+                landing.currentLevel = static_cast<uint8_t>(landing.metLevel + 1);
+            }
+
             // NOTHING IN THIS GAME PRODUCES IT -- so say it HATCHED. FireRed/LeafGreen never have
             // the Johto starters, the babies, Mareep or Houndour, and no met data can make a caught
             // one legal. An egg can: Gen 3 records no egg location (the field does not exist), so a
@@ -1950,6 +1983,9 @@ namespace Conversion
                 // answer and a silly one; hatchLocation is the id the game itself writes.
                 landing.metLocation = static_cast<uint8_t>(table->egg.hatchLocation);
                 landing.metLevel = table->egg.hatchLevel;
+                landing.landedSpecies = eggSpecies;
+                landing.landedForm = 0;
+                landing.landedKind = LANDED_EGG;
                 landing.originVersion = destOriginVersion; // an egg hatches where you are walking
                 // A Gen 3 egg hatches at level 5, so a pokemon arriving below that did not hatch.
                 // The rebuild raises it for the same reason it raises one into an encounter's band:
@@ -1958,6 +1994,162 @@ namespace Conversion
                     landing.currentLevel = table->egg.hatchCurrentLevel;
             }
             return landing;
+        }
+
+        /// The traits a rebuilt Gen 3 PID has to keep: everything Gen 3 derives from the PID.
+        struct Gen3PIDRequest
+        {
+            uint32_t trainerId32 = 0;
+            uint8_t nature = 0;
+            uint8_t gender = 0;
+            uint8_t genderRatio = 0;
+            bool shiny = false;
+            /// Only a species with two abilities ties the ability to PID bit 0.
+            bool checkAbility = false;
+            uint8_t abilityBit = 0;
+            /// Unown's letter is the PID; it replaces the nature and the other tests.
+            bool isUnown = false;
+            uint8_t unownLetter = 0;
+        };
+
+        /// A PID and the 30 IV bits the same RNG frame produced.
+        struct Gen3Correlation
+        {
+            uint32_t pid = 0;
+            uint32_t individualValues = 0;
+        };
+
+        /// How many RNG calls a correlated search may spend before the rebuild keeps its plain PID.
+        /// A shiny wild Pokemon, the costliest request, needs about a million on average.
+        constexpr uint32_t GEN3_CORRELATION_CALL_BUDGET = 1u << 26;
+
+        bool isShinyGen3(uint32_t trainerId32, uint32_t pid) noexcept
+        {
+            return ((trainerId32 >> 16) ^ (trainerId32 & 0xFFFFu) ^ (pid >> 16) ^ (pid & 0xFFFFu)) < 8;
+        }
+
+        uint8_t genderFromPIDGen3(uint32_t pid, uint8_t genderRatio) noexcept
+        {
+            if (genderRatio == 255) return 2;
+            if (genderRatio == 254) return 1;
+            if (genderRatio == 0) return 0;
+            return ((pid & 0xFF) < genderRatio) ? 1 : 0;
+        }
+
+        /// The PID tests both methods share (PKHeX's EncounterCriteria checks in SetMethod1 / SetRandom).
+        bool isRequestedPID(const Gen3PIDRequest &request, uint32_t pid) noexcept
+        {
+            if (isShinyGen3(request.trainerId32, pid) != request.shiny)
+                return false;
+            if (request.isUnown)
+                return Pokemon::unownFormFromPID(pid) == request.unownLetter;
+            if (pid % 25 != request.nature)
+                return false;
+            if (genderFromPIDGen3(pid, request.genderRatio) != request.gender)
+                return false;
+            return !request.checkAbility || (pid & 1u) == request.abilityBit;
+        }
+
+        /// PKHeX EncounterStatic3.SetMethod1: a Method 1 PID/IV pair, which every Gen 3 static and
+        /// in-game gift is generated with.
+        bool generateMethod1(const Gen3PIDRequest &request, uint32_t seed, Gen3Correlation &result) noexcept
+        {
+            for (uint32_t callCount = 0; callCount < GEN3_CORRELATION_CALL_BUDGET; callCount += 2)
+            {
+                const uint32_t pid = Legality::RNG::ClassicEraRNG::getSequentialPID(seed);
+                if (!isRequestedPID(request, pid))
+                    continue;
+                result.pid = pid;
+                result.individualValues = Legality::RNG::ClassicEraRNG::getSequentialIVs(seed);
+                return true;
+            }
+            return false;
+        }
+
+        /// PKHeX GenerateMethodH.SetRandom / SetRandomUnown with no lead: a Method H PID/IV pair whose
+        /// preceding frames pick this slot and roll `metLevel`, which is what the encounter search's
+        /// lead check walks back through.
+        bool generateMethodH(const Gen3PIDRequest &request, const Legality::RNG::EncounterSlot3Parameters &slot, uint8_t metLevel, uint32_t seed, Gen3Correlation &result) noexcept
+        {
+            using Legality::RNG::LCRNG;
+            const Legality::RNG::SlotRange range = request.isUnown ? Legality::RNG::SlotMethodH::getRangeGrass(slot.slotNumber) : Legality::RNG::SlotMethodH::getRange(slot.type, slot.slotNumber);
+            const bool checkActivation = !request.isUnown && Legality::RNG::MethodH::isEncounterCheckApplicable(slot.type);
+            uint32_t callCount = 0;
+            while (callCount < GEN3_CORRELATION_CALL_BUDGET)
+            {
+                if (checkActivation)
+                {
+                    Legality::RNG::LeadSeed unusedLead;
+                    if (!Legality::RNG::MethodH::checkEncounterActivation(slot, seed, Legality::RNG::LeadRequired::None, unusedLead))
+                    {
+                        seed = LCRNG::next(seed);
+                        ++callCount;
+                        continue;
+                    }
+                }
+                const uint32_t slotRoll = LCRNG::next16(seed) % 100;
+                ++callCount;
+                if (slotRoll < range.minimum || slotRoll > range.maximum)
+                    continue;
+                const uint32_t levelRandom = LCRNG::next16(seed);
+                // Unown skips the nature roll: its letter decides the PID instead.
+                const uint32_t natureRoll = request.isUnown ? 0 : LCRNG::next16(seed) % 25;
+                callCount += 2;
+                if (!request.isUnown && natureRoll != request.nature)
+                    continue;
+                if (Legality::RNG::MethodH::getRandomLevel(slot, levelRandom, Legality::RNG::LeadRequired::None) != metLevel)
+                    continue;
+                while (callCount < GEN3_CORRELATION_CALL_BUDGET)
+                {
+                    const uint32_t first = LCRNG::next16(seed);
+                    const uint32_t second = LCRNG::next16(seed);
+                    callCount += 2;
+                    // The regular slots store the second call high; Unown's Tanoby slots the first.
+                    const uint32_t pid = request.isUnown ? ((first << 16) | second) : ((second << 16) | first);
+                    // A mismatch the PID-reroll loop can fix keeps rolling; one it cannot (PKHeX's
+                    // "break; // try again") restarts from the slot roll.
+                    if (isShinyGen3(request.trainerId32, pid) != request.shiny)
+                        continue;
+                    if (request.isUnown ? Pokemon::unownFormFromPID(pid) != request.unownLetter : pid % 25 != natureRoll)
+                        continue;
+                    if (!isRequestedPID(request, pid))
+                        break;
+                    result.pid = pid;
+                    result.individualValues = Legality::RNG::ClassicEraRNG::getSequentialIVs(seed);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// The encounter engine's wild slot a Gen3Landing describes, or null.
+        const Legality::Encounters::EncounterSlot3 *findGen3Slot(uint8_t version, uint8_t metLocation, uint16_t species, uint8_t form, uint8_t metLevel)
+        {
+            std::span<const Legality::Encounters::EncounterArea3> areaLists[2];
+            switch (static_cast<GameVersion>(version))
+            {
+            case GameVersion::RU: areaLists[0] = Legality::Encounters::getAreas3SwarmRSE(); areaLists[1] = Legality::Encounters::getAreas3R(); break;
+            case GameVersion::SA: areaLists[0] = Legality::Encounters::getAreas3SwarmRSE(); areaLists[1] = Legality::Encounters::getAreas3S(); break;
+            case GameVersion::EM: areaLists[0] = Legality::Encounters::getAreas3SwarmRSE(); areaLists[1] = Legality::Encounters::getAreas3E(); break;
+            case GameVersion::FR: areaLists[1] = Legality::Encounters::getAreas3FR(); break;
+            case GameVersion::LG: areaLists[1] = Legality::Encounters::getAreas3LG(); break;
+            default: return nullptr;
+            }
+            for (const std::span<const Legality::Encounters::EncounterArea3> &areas : areaLists)
+            {
+                for (const Legality::Encounters::EncounterArea3 &area : areas)
+                {
+                    if (!area.isMatchLocation(metLocation))
+                        continue;
+                    for (uint16_t slotIndex = 0; slotIndex < area.slotCount(); ++slotIndex)
+                    {
+                        const Legality::Encounters::EncounterSlot3 &slot = area.slotAt(slotIndex);
+                        if (slot.speciesId() == species && slot.formId() == form && slot.levelMin() <= metLevel && metLevel <= slot.levelMax())
+                            return &slot;
+                    }
+                }
+            }
+            return nullptr;
         }
 
         // PK8 layout -> PK3 (Gen 3). Returns a 100-byte PARTY record (box writes take the first 80 B).
@@ -1985,8 +2177,9 @@ namespace Conversion
             // read as Jolly in FR/LG). The standard down-convert answer is to reroll the PID so its
             // Gen-3-derived traits match the source's: nature, gender, shiny status and ability slot are
             // preserved. IVs are NOT touched (separate field at 0x48). This DOES change the PID (the pokemon's
-            // identity) and yields a PID/IV pair that won't match a real Gen 3 RNG frame -- the UI warns
-            // the user first. Falls back to the original PID if no match is found within the budget.
+            // identity) and yields a PID/IV pair that matches no Gen 3 RNG frame -- the UI warns the user
+            // first. The rebuild then replaces it with a frame-correlated pair further down. Falls back to
+            // the original PID if no match is found within the budget.
             uint32_t outPid = pidValue;
             {
                 const uint8_t natWant = rd8(sourceBytes, 0x20) % 25;                              // source nature
@@ -2138,6 +2331,9 @@ namespace Conversion
             uint8_t metLocation;
             uint8_t metLevel;
             uint8_t version;
+            uint16_t landedSpecies = 0;
+            uint8_t landedForm = 0;
+            uint8_t landedKind = LANDED_NOTHING;
             const uint16_t carriedMetLocation = rd16(sourceBytes, 0x122);
             constexpr uint16_t highestGen3Location = 0xFF;
             if (originatedInGen3 && carriedMetLocation <= highestGen3Location)
@@ -2171,6 +2367,9 @@ namespace Conversion
                 metLocation = landing.metLocation;
                 metLevel = landing.metLevel;
                 version = landing.originVersion;
+                landedSpecies = landing.landedSpecies;
+                landedForm = landing.landedForm;
+                landedKind = landing.landedKind;
                 // A PK3 has no level byte -- level IS the EXP -- so raising one means rewriting the
                 // EXP the copy above carried across. Only the rebuild ever gets here with a level
                 // that changed; with the toggle off landing.currentLevel is what came in.
@@ -2179,12 +2378,76 @@ namespace Conversion
                     wr32(destinationBytes, 0x24, Pokemon::getExpForLevel(landing.currentLevel, Pokemon::getGrowthRate(national)));
                 }
             }
+            // A Safari Zone slot is caught in a Safari Ball and nothing else (PKHeX EncounterSlot3.FixedBall,
+            // Locations.SafariLocation_RSE 57 and SafariLocation_FRLG 136), so a rebuild that lands there carries one.
+            const bool keptCarriedMetData = originatedInGen3 && carriedMetLocation <= highestGen3Location;
+            if (!keptCarriedMetData && (metLocation == 57 || metLocation == 136))
+            {
+                ball = static_cast<uint8_t>(Enums::Ball::Safari);
+            }
             wr16(destinationBytes, 0x46, static_cast<uint16_t>((metLevel & 0x7F) | ((version & 0x0F) << 7) | ((ball & 0x0F) << 11) | ((otGender & 1) << 15)));
             wr8(destinationBytes, 0x45, metLocation);
 
             // IVs: keep bits 0-29 (IVs) + bit30 (isEgg); set bit31 = ability slot from the PK8 ability number.
             const uint8_t abilNum = rd8(sourceBytes, 0x16); // 1=slot1, 2=slot2, 4=hidden (-> slot1 in Gen 3)
             wr32(destinationBytes, 0x48, (pk8iv & 0x7FFFFFFFu) | ((abilNum == 2) ? 0x80000000u : 0u));
+
+            // THE REBUILD GIVES THE PID AND IVS THE FRAME THEIR ENCOUNTER'S RNG PRODUCES. Every Gen 3
+            // static and gift is generated with Method 1 (PID, then IVs, from consecutive calls) and
+            // every wild slot with Method H (slot roll, level roll and nature roll, then the PID and
+            // IVs), and the legality checker walks those frames back exactly as PKHeX does. The PID
+            // chosen above keeps the traits but sits on no frame at all, so a rebuilt Pokemon was
+            // flagged for a PID/IV mismatch however true its met data was. Nature, gender, shininess,
+            // the ability slot and Unown's letter are kept; the IVs are whatever the frame rolled.
+            // An egg landing needs no frame (a bred PID/IV pair correlates with nothing), an in-game
+            // trade's PID is fixed by the trade itself, and the fallback town claims no encounter.
+            if (!originatedInGen3 && g_autoLegalizeTransfers && (landedKind == Legality::ENCOUNTER_KIND_WILD || landedKind == Legality::ENCOUNTER_KIND_STATIC || landedKind == Legality::ENCOUNTER_KIND_GIFT))
+            {
+                const Pokemon::AbilitySlots abilitySlots = Pokemon::getAbilitySlots(national, 0, destGroup);
+                const bool hasTwoAbilities = abilitySlots.slot[1] != 0 && abilitySlots.slot[1] != abilitySlots.slot[0];
+                Gen3PIDRequest request;
+                request.trainerId32 = rd32(destinationBytes, 0x04);
+                request.nature = static_cast<uint8_t>(outPid % 25);
+                request.genderRatio = getPersonalInfo(national, 0).genderRatio;
+                request.gender = genderFromPIDGen3(outPid, request.genderRatio);
+                request.shiny = isShinyGen3(request.trainerId32, outPid);
+                request.checkAbility = hasTwoAbilities;
+                request.abilityBit = static_cast<uint8_t>(outPid & 1u);
+                request.isUnown = (national == 201);
+                request.unownLetter = Pokemon::unownFormFromPID(outPid);
+                // Deterministic, like every other rebuild choice: seeded from the source's own PID
+                // and encryption constant, so undoing and redoing a transfer gives the same Pokemon.
+                const uint32_t seed = pidValue ^ rd32(sourceBytes, 0x00) ^ 0x5A5A0000u;
+                Gen3Correlation correlation;
+                bool generated = false;
+                const char *methodName = "none";
+                if (landedKind == Legality::ENCOUNTER_KIND_WILD)
+                {
+                    if (const Legality::Encounters::EncounterSlot3 *slot = findGen3Slot(version, metLocation, landedSpecies, landedForm, metLevel))
+                    {
+                        generated = generateMethodH(request, slot->getSlotParameters(), metLevel, seed, correlation);
+                        methodName = "MethodH";
+                    }
+                }
+                else
+                {
+                    generated = generateMethod1(request, seed, correlation);
+                    methodName = "Method1";
+                }
+                if (generated)
+                {
+                    outPid = correlation.pid;
+                    wr32(destinationBytes, 0x00, outPid);
+                    // PKHeX G3PKM.RefreshAbility: the stored bit follows PID bit 0 for a species with a
+                    // second ability and is clear otherwise.
+                    const uint32_t abilityBit = (hasTwoAbilities && (outPid & 1u) != 0) ? 0x80000000u : 0u;
+                    wr32(destinationBytes, 0x48, (correlation.individualValues & 0x3FFFFFFFu) | (pk8iv & 0x40000000u) | abilityBit);
+                }
+                if (g_debugLogging)
+                {
+                    Utils::logEventToFile("CONVERT action=GEN3_CORRELATE species=" + std::to_string(national) + " method=" + methodName + " location=" + std::to_string(metLocation) + " metLevel=" + std::to_string(metLevel) + " result=" + (generated ? "OK pid=" + std::to_string(outPid) : std::string("KEPT_PLAIN_PID")));
+                }
+            }
 
             // WHAT A PK3 HAS ROOM FOR COMES BACK: the fateful-encounter bit (Gen 3's obedience flag,
             // without which an event Mew or Deoxys disobeys), the four markings, and the ten ribbons
@@ -2459,6 +2722,28 @@ namespace Conversion
                     out->setMovePPUps(source, 0);
                 }
                 ++destinationSlot;
+            }
+
+            // A REBUILD THAT LEFT NO MOVE TEACHES THE ONES ITS ENCOUNTER WOULD. A Pokemon knows at
+            // least one move in every game, and one re-created as a Gen 3 native with every move
+            // dropped (or none to begin with) gets what PKHeX gives a Pokemon it generates
+            // (Learnset.SetEncounterMoves): the last four level-up moves at its level, in its origin game.
+            if (isGen3Group(destGroup) && g_autoLegalizeTransfers && !isGen3Group(from) && out->move(0) == 0)
+            {
+                const Legality::LearnSource::LearnEnvironment environment = Legality::LearnSource::getLearnEnvironment(static_cast<GameVersion>(out->originGame()));
+                const Legality::LearnSource::Learnset learnset = Legality::LearnSource::getLearnset(environment, speciesId, formValue);
+                std::array<uint16_t, 4> encounterMoves{};
+                learnset.setEncounterMoves(out->level(), encounterMoves);
+                for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
+                {
+                    out->setMove(moveIndex, encounterMoves[moveIndex]);
+                    out->setMovePPUps(moveIndex, 0);
+                    out->setMovePP(moveIndex, encounterMoves[moveIndex] == 0 ? 0 : Names::getMoveMaxPP(encounterMoves[moveIndex], 0, destGroup));
+                }
+                if (g_debugLogging)
+                {
+                    Utils::logEventToFile("CONVERT action=GEN3_ENCOUNTER_MOVES species=" + std::to_string(speciesId) + " level=" + std::to_string(out->level()) + " first=" + std::to_string(encounterMoves[0]));
+                }
             }
 
             // Clamp each surviving move's PP to what the DESTINATION game allows. The PP bytes

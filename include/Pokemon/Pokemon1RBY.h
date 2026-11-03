@@ -193,6 +193,9 @@ namespace Pokemon
         // disagreement is a real signal for the legality layer, which is why they are exposed.
         uint8_t storedType1() const noexcept { return g1TypeToPKSE(b8(0x05)); }
         uint8_t storedType2() const noexcept { return g1TypeToPKSE(b8(0x06)); }
+        /// The same bytes in Gen 1 ROM numbering, which PKHeX's MiscG1Verifier compares against the species table.
+        uint8_t storedRomType1() const noexcept { return b8(0x05); }
+        uint8_t storedRomType2() const noexcept { return b8(0x06); }
 
         // Catch rate. A real gameplay field in Gen 1 -- and the byte that BECOMES the held item
         // when the Pokemon is traded up to Gen 2, which is why it is not padding and must survive

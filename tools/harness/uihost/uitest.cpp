@@ -572,7 +572,7 @@ namespace
     }
 
     /// THE LEGALITY OVERLAY KEEPS ITS TEXT INSIDE ITS CARD. Drawing each message as one line runs
-    /// Layer 3's -- a game, a species, a place and a level -- straight out of the card's right edge.
+    /// the encounter findings' -- a game, a species, a place and a level -- straight out of the card's right edge.
     /// Whether a line fits is measured text in a fixed-width card, which nobody can eyeball from the
     /// source, so every occupied slot of the first box is opened and every line of its report is held
     /// to the card's edges.
@@ -712,9 +712,10 @@ namespace
             context.note("no legality message in this save's first box was long enough to wrap", "title=\"" + Enums::getGameVersionName(context.version) + "\" opened=" + std::to_string(openedCount));
         }
 
-        // THE POSED PASS. An origin from a LATER generation than the record is reported as
-        // "Origin game X is from Generation N, which this Generation M record cannot have come from",
-        // which is wider than the message column in every format. The version has to survive the
+        // THE POSED PASS. An origin from a LATER generation than the record matches no encounter, and
+        // with the fateful flag also set PKHeX's finder reports it as "Fateful Encounter with no
+        // matching Encounter. Has the Mystery Gift data been contributed?" (FatefulGiftMissing), which
+        // is wider than the message column in every format. The version has to survive the
         // format's own field: Gen 3 keeps four bits, so Legends: Z-A does not fit there and
         // HeartGold (7) does.
         const std::string where = "box=" + std::to_string(box + 1) + " slot=" + std::to_string(firstOccupied + 1) + " posed";
@@ -733,6 +734,7 @@ namespace
         ::Pokemon::Pokemon *posed = trainer.boxes[box][firstOccupied].get();
         const int formatGeneration = Enums::getVersionGeneration(Enums::getGroupRepVersion(posed->getGameGroup()));
         const uint8_t originalOrigin = posed->originGame();
+        const bool originalFateful = posed->isFatefulEncounter();
         bool originPosed = false;
         for (Enums::GameVersion laterVersion : {Enums::GameVersion::ZA, Enums::GameVersion::HG})
         {
@@ -741,24 +743,37 @@ namespace
                 continue;
             }
             posed->setOriginGame(static_cast<uint8_t>(laterVersion));
-            if (posed->originGame() == static_cast<uint8_t>(laterVersion))
+            posed->setFatefulEncounter(true);
+            if (posed->originGame() == static_cast<uint8_t>(laterVersion) && posed->isFatefulEncounter())
             {
                 originPosed = true;
                 break;
             }
             posed->setOriginGame(originalOrigin);
+            posed->setFatefulEncounter(originalFateful);
         }
         if (originPosed)
         {
             screen.details.legalityOverlay = true;
             driver.step("open the legality overlay on the posed Pokemon").frame();
             posed->setOriginGame(originalOrigin);
+            posed->setFatefulEncounter(originalFateful);
 
             const int posedContinuationLines = checkOverlayFrame(where);
-            // "Origin game" opens the message, so it is on its first line whatever the wrap does --
+            // "Fateful Encounter" opens the message, so it is on its first line whatever the wrap does --
             // a phrase from later in the sentence can be split across two lines and never match.
-            driver.expect(driver.frameData().has("Origin game"), "the posed impossible origin was not reported, so the long-message check proved nothing", where);
-            driver.expect(posedContinuationLines > 0, "a message wider than the card was not wrapped onto a second line", where);
+            driver.expect(driver.frameData().has("Fateful Encounter"), "the posed impossible origin was not reported, so the long-message check proved nothing", where);
+            // Where the encounter search instead lands on a shorter fateful finding (FatefulInvalid,
+            // "Fateful Encounter should not be checked.") nothing is wide enough to wrap, so the wrap is
+            // only demanded when the long FatefulGiftMissing sentence is what the overlay drew.
+            if (driver.frameData().has("Fateful Encounter with"))
+            {
+                driver.expect(posedContinuationLines > 0, "a message wider than the card was not wrapped onto a second line", where);
+            }
+            else
+            {
+                context.note("the posed Pokemon drew a fateful finding too short to wrap", where);
+            }
             screen.details.legalityOverlay = false;
         }
         else

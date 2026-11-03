@@ -14,6 +14,7 @@
 #include "UI/NavigationRepeat.h"
 #include "UI/PKSEFramebuffer.h"
 #include "UI/ListSearch.h" // the shared search box every list uses
+#include "Legality/Legality.h" // Report, which analyzeLegality returns
 #include "Trainer/Bank.h"
 #include "Panels/PartyPokemonPanel.h"
 #include "Panels/ItemsPanel.h"
@@ -131,6 +132,9 @@ namespace UI
         bool pendingMoveDropsOriginalTrainerName() const;
         bool pendingTransferOriginIsGuess() const; // ...and whether that title is a representative rather than a fact
         Pokemon::Pokemon *detailsTargetPokemon();  // resolve the editor's current target (party/box/bank)
+        /// Analyze `pokemon` as PKHeX does a slot of the open save: Party or Box, with this save as the
+        /// active trainer. A bank slot belongs to no save and has neither.
+        Legality::Report analyzeLegality(const Pokemon::Pokemon &pokemon, EditSource source) const;
         void mirrorEditedPartyMember(); // after an edit, keep an LGPE party member's box/party copies in sync
         /// End every edit of the details target: recalculate the stats when the edit affects them,
         /// refresh the checksum, mark the game changed (not for a bank Pokemon), mirror a party member.

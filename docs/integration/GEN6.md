@@ -623,10 +623,9 @@ the Gen 6 personal table rather than the S/V one.
 
 ## 9. Legality
 
-Layers 1 and 2 work with a Gen 6 presence gate (`species <= 721`). Layer 3 needs Gen 6 encounter
-tables — a separate project; `getEncounterTable()` returning `nullptr` yields one honest Info note.
-
-New for Gen 6, and worth adding to Layer 2 when you get there:
+The legality checker is a port of PKHeX's verifiers and encounter engine, Gen 6 included
+(`EncounterGenerator6`, `gen_encounters6.py`); manual chapter 11 describes it. The presence gate is
+`species <= 721`. Rules new in Gen 6, all in PKHeX's verifiers and so in the port:
 
 - **Relearn moves must be in the species' egg-move / level-up pool.**
 - **`AbilityNumber` must match the ability id** against the species' slots — PKSE's

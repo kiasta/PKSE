@@ -39,7 +39,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	PKSE
 BUILD		:=	build
-SOURCES		:=	src src/Pokemon src/Encryption src/Enums src/UI src/UI/Panels src/UI/Dialogs src/UI/Modals src/Trainer src/Names src/Utils src/Save src/Legality src/Conversion nanovg memecrypto
+SOURCES		:=	src src/Pokemon src/Encryption src/Enums src/UI src/UI/Panels src/UI/Dialogs src/UI/Modals src/Trainer src/Names src/Utils src/Save src/Legality src/Legality/Verifiers src/Legality/RNG src/Legality/Evolutions src/Legality/Encounters src/Legality/LearnSource src/Conversion nanovg memecrypto
 DATA		:=	data
 INCLUDES	:=	include nanovg memecrypto
 APP_TITLE   :=  PKSE
@@ -59,8 +59,8 @@ APP_AUTHOR  :=  Kiasta
 #
 # NOTE: no trailing comment on either assignment line. Make keeps trailing whitespace in a value, so
 # "0.0.3 \t\t# ..." would have baked spaces into the .nacp version and the -D define.
-APP_VERSION :=	1.2.2
-APP_VERSION_FULL :=	1.2.2
+APP_VERSION :=	1.2.3
+APP_VERSION_FULL :=	1.2.3
 
 # Mirrors what switch_rules does for APP_VERSION: an unset long form falls back to the short one
 # rather than compiling in an empty version string.

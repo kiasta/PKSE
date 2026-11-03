@@ -295,7 +295,7 @@ namespace
         int legalityWarningCount = 0;
         int invalidShownCount = 0;
         int warningShownCount = 0;
-        int glitchMewRefusalCount = 0;
+        int pkhexRefusalCount = 0;
         std::string sampleLines;
         for (size_t entryIndex = 0; entryIndex < entryCount; ++entryIndex)
         {
@@ -439,10 +439,23 @@ namespace
                 constexpr uint16_t mewSpeciesId = 151;
                 constexpr uint16_t virtualConsoleMewTrainerId = 22796;
                 const bool isGlitchMew = pokemon.speciesID() == mewSpeciesId && pokemon.tid16() != virtualConsoleMewTrainerId;
+                // A RECORD PKHeX ITSELF REFUSES. Gen 1's Mr. Mime comes only from an in-game trade with
+                // a fixed OT and nickname. This bank's Mr. Mime (entry 4474) carries the player's OT and
+                // no trade nickname, and PKHeX's own LegalityAnalysis (tools/legalitydump on the record)
+                // reports it Invalid: "Unable to match an encounter", "In-game Trade OT has been altered"
+                // and "In-game Trade Nickname has been altered". The checker agreeing is correct.
+                constexpr size_t pkhexRefusedMrMimeEntry = 4474;
+                constexpr uint16_t mrMimeSpeciesId = 122;
+                const bool isPkhexRefusedRecord = entryIndex == pkhexRefusedMrMimeEntry && pokemon.speciesID() == mrMimeSpeciesId;
                 if (isGlitchMew && invalidCount > 0)
                 {
-                    ++glitchMewRefusalCount;
+                    ++pkhexRefusalCount;
                     std::printf("      (expected: %s is a glitch Mew, which PKHeX also refuses)\n", slotLabel.c_str());
+                }
+                else if (isPkhexRefusedRecord && invalidCount > 0)
+                {
+                    ++pkhexRefusalCount;
+                    std::printf("      (expected: %s is a traded-OT-altered Mr. Mime, which PKHeX also refuses)\n", slotLabel.c_str());
                 }
                 else
                 {
@@ -477,7 +490,7 @@ namespace
         std::printf("      byte-exact round trip  : %d/%d\n", roundTripCount, gen1RecordCount);
         std::printf("      names re-encode exactly: %d/%d\n", namesReencodedCount, gen1RecordCount);
         std::printf("      shiny DV pattern       : %d   nicknamed: %d\n", shinyCount, nicknamedCount);
-        std::printf("      legality: %d/%d with no Invalid finding (%d warnings total, %d glitch Mew refused as PKHeX refuses it)\n", legalityCleanCount, gen1RecordCount, legalityWarningCount, glitchMewRefusalCount);
+        std::printf("      legality: %d/%d with no Invalid finding (%d warnings total, %d refused exactly as PKHeX refuses them)\n", legalityCleanCount, gen1RecordCount, legalityWarningCount, pkhexRefusalCount);
         if (!sampleLines.empty())
         {
             std::printf("%s", sampleLines.c_str());

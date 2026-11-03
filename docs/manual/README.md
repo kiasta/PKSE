@@ -40,7 +40,7 @@ else assumes them. After that, jump to whatever you are working on.
 | [08](08-ui-layer.md) | **The UI layer** | Immediate-mode rendering, screens, panels, dialogs, modals, input, touch, theme. |
 | [09](09-ui-recipes.md) | **UI recipes** | **How do I add a…** Step-by-step, with complete diffs. |
 | [10](10-bank-and-conversion.md) | **Bank and conversion** | Cross-game storage and the format conversion that makes it work. |
-| [11](11-legality.md) | **Legality** | The three-layer checker, and how to add a check. |
+| [11](11-legality.md) | **Legality** | The port of PKHeX's legality analysis: verifiers, the encounter, evolution and move engines, porting a check, and parity against PKHeX. |
 | [12](12-testing.md) | **Verifying a change** | The checks available to a contributor, and what to test by hand. |
 | [13](13-adding-a-game.md) | **Adding a game or generation** | The complete checklist, in dependency order. |
 | [14](14-pitfalls.md) | **Pitfalls** | The failure modes this codebase keeps hitting. Read before shipping. |

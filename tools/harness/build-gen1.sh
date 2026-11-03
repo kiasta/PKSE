@@ -16,10 +16,10 @@ OUT="$ROOT/build-harness"
 mkdir -p "$OUT"
 
 # Same source set as build-pksmimport.sh. The Gen 1 entity itself needs only a handful of
-# these, but the legality analyzer reaches across Pokemon/, Names/, Enums/ and Trainer/, and
+# these, but the legality analyzer reaches across Pokemon/, Names/, Enums/, Trainer/ and Conversion/, and
 # naming files one at a time here means a link failure every time one is added.
 SRC=()
-for d in src/Trainer src/Pokemon src/Encryption src/Names src/Enums src/Legality; do
+for d in src/Trainer src/Pokemon src/Encryption src/Names src/Enums src/Legality src/Conversion; do
   while IFS= read -r f; do SRC+=("$f"); done < <(find "$ROOT/$d" -name '*.cpp')
 done
 SRC+=("$ROOT/src/Save/Block.cpp")

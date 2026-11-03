@@ -192,6 +192,46 @@ namespace Pokemon
         return form == 1 && isSingleMegaSpecies(species);
     }
 
+    // PKHeX FormInfo.IsBattleForm, reached only for species in FormInfo.BattleForms.
+    bool isBattleForm(uint16_t species, uint8_t form)
+    {
+        switch (species)
+        {
+        case 555: // Darmanitan: Zen
+        case 778: // Mimikyu: Busted
+            return (form & 1) == 1;
+        case 658: // Greninja: Ash
+            return form == 2;
+        case 718: // Zygarde: Complete
+            return form == 4;
+        case 774: // Minior: Shields-Down Meteor
+            return form < 7;
+        case 800: // Necrozma: Ultra
+            return form == 3;
+        case 1017: // Ogerpon: Embody Aspect
+            return form >= 4;
+        case 351:  // Castform
+        case 382:  // Kyogre
+        case 383:  // Groudon
+        case 421:  // Cherrim
+        case 648:  // Meloetta
+        case 681:  // Aegislash
+        case 716:  // Xerneas
+        case 746:  // Wishiwashi
+        case 845:  // Cramorant
+        case 875:  // Eiscue
+        case 877:  // Morpeko
+        case 888:  // Zacian
+        case 889:  // Zamazenta
+        case 890:  // Eternatus
+        case 964:  // Palafin
+        case 1024: // Terapagos
+            return form != 0;
+        default:
+            return false;
+        }
+    }
+
     // PKHeX FormInfo.HasMegaForm -- membership of its BattleMegas list. That list is exactly the
     // union of the two groups above (77 single-mega species + the 12 given their own case in
     // isBattleOnlyForm) MINUS Kyogre and Groudon: those two revert to PRIMAL forms, which PKHeX

@@ -136,7 +136,8 @@ This decides real behaviour:
 - **Whether the trainer ID renders as six digits or a 16-bit TID** —
   `usesSixDigitTrainerID(originGame())`. The games pick this from the mon's **origin** generation,
   not the save it lives in.
-- **Which encounter table Layer 3 checks against** — the origin's, always.
+- **Which encounters the legality checker searches** — the origin's, always: the encounter engine
+  dispatches on the origin generation.
 
 ---
 
@@ -422,8 +423,11 @@ Take PKHeX as authoritative for offsets, algorithms, form **indices** and name t
 Do **not** take its editor's permissiveness as a specification. PKHeX exposes megas in its Z-A
 dropdown; PKHeX's own tables class every mega as battle-only. PKSE follows the tables.
 
-Where PKHeX itself declines to make a claim — its Let's Go EV rule exists but is **disabled** — PKSE
-reports a Warning rather than Invalid. **Match the reference's confidence.**
+For legality, PKHeX's severity IS the specification: the checker is a port, Invalid stays Invalid and
+Fishy is a Warning (chapter 11). **Match the reference's confidence, exactly.** The pre-port checker
+reported nonzero Let's Go EVs as a Warning because it believed PKHeX's rule was disabled; PKHeX's
+`AwakenedValueVerifier` reports them Invalid, and so does PKSE now. A softer severity is a parity
+extra in reverse: a gap.
 
 And where PKHeX's per-game rule answers a subtly different question than you need, deviate — loudly,
 in the generator's docstring. `gen_personal.py` excludes Gen 7 Totem forms for exactly that reason
@@ -438,6 +442,28 @@ null but is written back at its position, so it occupies a slot. The storage vie
 empty: a Pokemon dropped there made the list one entry longer than it can hold, and the last entry
 was cut on save. Every "is there room?" question goes through `storageSlotLocked` (boxes) or counts
 `getUnmappedPartySlots()` (party), never through `!pokemon` alone. Chapter 06 has the details.
+
+---
+
+## 32. A legality port measured only where the corpus reaches
+
+The legality checker is a port of PKHeX's, measured against PKHeX itself on real saves and PKHeX's
+test files (`build-parity.sh`, chapter 11). Two traps were found building it, and one it cannot
+see:
+
+- **Pair by identity, never by slot.** The two programs do not number boxes the same way for every
+  save — PKHeX counts X/Y's Battle Box among its boxes and PKSE does not — so a slot key compares
+  different Pokémon and reports their differences as findings. `parity_diff.py` keys a Pokémon by title, species, PID, encryption constant and occurrence,
+  and a finding by PKHeX's identifier and code — never by message text, which drifts the first time
+  either side rewords a sentence.
+- **A stand-in for PKHeX's data must not claim more than it knows.** Before the encounter engine
+  judged every origin, the evolution history was built from the interim sweep's row, and that row
+  could be one PKHeX would reject (a pre-evolution met at the current level, leaving no level up to
+  evolve in). Its empty origin chain then read as "never visited" to every verifier asking. The sweep
+  is retired; a context with no engine match now builds the unknown-encounter history.
+- **A branch neither corpus reaches is unmeasured, not correct.** Real saves are nearly all legal, so
+  most Invalid branches never fire on them, and a verifier that reports nothing passes parity
+  perfectly. Every such branch gets a planted case in `SuiteLegality.cpp`.
 
 ---
 
@@ -457,6 +483,7 @@ was cut on save. Every "is there room?" question goes through `storageSlotLocked
       BDSP   — flat file, two files to write
       LA     — its own entity layout, no held items
 [ ] Every new lookup: what does ABSENCE mean, and is it handled separately?
+[ ] A legality change: build-parity.sh shows no new gaps or extras, and every unreached branch is planted?
 [ ] Every new UI control: drawn, handled, tappable, in the nav hint?
 [ ] Every entity edit: recalc, checksum, unsaved flag, party mirror?
 [ ] Every destructive action: logged BEFORE, guarded by g_debugLogging?

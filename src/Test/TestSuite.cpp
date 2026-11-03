@@ -18,6 +18,8 @@ namespace Test
     {
         const Suite SUITES[] = {
             {"tables", Scope::Global, tablesPlan, tablesRun},
+            {"rng", Scope::Global, rngPlan, rngRun},
+            {"evolution", Scope::Global, evolutionPlan, evolutionRun},
             {"assets", Scope::Global, assetsPlan, assetsRun},
             // The save picker is the first screen the user meets, and the only one they can reach
             // before a save is loaded -- so it is Global, and runs before any target is opened.

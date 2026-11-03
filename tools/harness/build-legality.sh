@@ -2,10 +2,9 @@
 # Build and run the LEGALITY harness on the HOST.
 #
 # roundtrip.sh proves the write path does not corrupt a save; this proves the READ-side judgement is
-# not slandering one. Layer 3 (encounter matching, relearn moves, ribbons/marks, OT/handler) is the
-# only part of PKSE that can call a legitimately-obtained Pokemon illegal, so the measure that
-# matters is what it complains about on saves from actual playthroughs -- where nearly everything IS
-# legal and a wall of findings means the tables are wrong, not the save.
+# not slandering one. The checker ports PKHeX's, so the measure that matters is what it reports on
+# saves from actual playthroughs -- where nearly everything IS legal and a wall of findings means the
+# encounter data or a port is wrong, not the save. build-parity.sh diffs it against PKHeX itself.
 #
 #   ./tools/harness/build-legality.sh <save-root> [--verbose]
 #
@@ -16,7 +15,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT="$ROOT/build-harness"
+OUT="${PKSE_HARNESS_OUT:-$ROOT/build-harness}"
 mkdir -p "$OUT"
 
 SRC=()

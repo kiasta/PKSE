@@ -48,6 +48,7 @@
 #include "Legality/EncounterTable.h"
 #include "Pokemon/EvolutionTable.h"
 #include "Legality/Legality.h"
+#include "Legality/RNG/MethodFinder.h" // a Gen 3 rebuild's IVs are its RNG frame's
 #include "Names/ItemPresence.h"
 #include "Names/MoveNames.h"
 #include "Names/MovePresence.h"
@@ -152,6 +153,15 @@ namespace Test
             return g_autoLegalizeTransfers && Enums::isGen3Group(destination) && !Enums::isGen3Group(sourceGroup);
         }
 
+        /// A Gen 3 rebuild that landed on a wild slot or a static/gift gives the PID and IVs the RNG frame
+        /// that encounter's method produces (Method H / Method 1), so its IVs are the frame's, not the
+        /// source's. Recognised by the result itself: the pair correlates. An egg, trade or fallback landing
+        /// keeps the source's IVs and stays held to preserving them.
+        bool rebuildRolledCorrelatedIVs(Enums::GameVersion sourceGroup, Enums::GameVersion destination, const Pokemon::Pokemon &converted)
+        {
+            return rebuildMayRaiseLevel(sourceGroup, destination) && Legality::RNG::MethodFinder::analyze(converted).type != Legality::RNG::PIDType::None;
+        }
+
         /// `transporter` = this pair went out of Gen 1/2 through Poke Transporter, which is the one
         /// conversion that deliberately REPLACES things the others preserve. Three assertions below
         /// are about preservation and do not apply to it; they are checked by transporterRules()
@@ -186,7 +196,7 @@ namespace Test
 
             // Transporter rerolls the IVs on purpose -- a Gen 1/2 DV is 4 bits wide and there is no
             // honest widening of it -- so this asks the opposite question there (see below).
-            if (!viaTransporter)
+            if (!viaTransporter && !rebuildRolledCorrelatedIVs(source.getGameGroup(), destination, converted))
             {
                 for (int statIndex = 0; statIndex < 6; ++statIndex)
                 {
@@ -578,7 +588,7 @@ namespace Test
                             }
                             problemSummary += (problemSummary.empty() ? "" : "; ") + issue.text;
                         }
-                        context.check(legalityReport.problemCount() == 0, "an evolved pokemon rebuilt into Gen 3 is not legal", "Wartortle loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " -- " + problemSummary);
+                        context.check(legalityReport.invalidCount() == 0, "an evolved pokemon rebuilt into Gen 3 is not legal", "Wartortle loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " -- " + problemSummary);
                     }
                 }
 
@@ -626,7 +636,7 @@ namespace Test
                         // as having no encounter at all.
                         context.check(destinationTable == nullptr || converted->level() >= destinationTable->egg.hatchCurrentLevel, "a rebuilt hatchling came out below the level an egg hatches at", "Elekid level=" + std::to_string(converted->level()));
                         const Legality::Report legalityReport = Legality::analyze(*converted, Enums::GameVersion::FRLG);
-                        context.check(legalityReport.problemCount() == 0, "a pokemon rebuilt as a hatched Gen 3 egg is still flagged", "Elekid loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()));
+                        context.check(legalityReport.invalidCount() == 0, "a pokemon rebuilt as a hatched Gen 3 egg is still flagged", "Elekid loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()));
                     }
                 }
 
@@ -657,7 +667,7 @@ namespace Test
                         context.check(converted->metLocation() == 138, "a pokemon below every encounter's level landed at the lowest location id instead of the closest encounter", "Machop level=" + std::to_string(converted->level()) + " location=" + std::to_string(converted->metLocation()) + " (want 138 Rock Tunnel 16-17, not 132 Victory Road 32-34)" + " metLevel=" + std::to_string(converted->metLevel()));
                         context.check(converted->metLevel() == 16 && converted->level() == 16, "a rebuild left a pokemon below the encounter it landed on", "Machop metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " (want 16/16 -- Rock Tunnel starts at 16)");
                         const Legality::Report machopReport = Legality::analyze(*converted, Enums::GameVersion::FRLG);
-                        context.check(machopReport.problemCount() == 0, "a rebuilt pokemon raised into its encounter's band is still flagged", "Machop level=" + std::to_string(converted->level()));
+                        context.check(machopReport.invalidCount() == 0, "a rebuilt pokemon raised into its encounter's band is still flagged", "Machop level=" + std::to_string(converted->level()));
                     }
                 }
 
@@ -676,7 +686,7 @@ namespace Test
                     {
                         context.check(converted->originGame() == static_cast<uint8_t>(Enums::GameVersion::EM) && converted->metLocation() == 57 && converted->metLevel() == 35 && converted->level() == 35, "a species only the other Gen 3 group produces was not stamped with it", "Hoothoot origin=" + std::to_string(converted->originGame()) + " location=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " (want Emerald 3, Safari Zone 57, 35/35)");
                         const Legality::Report legalityReport = Legality::analyze(*converted, Enums::GameVersion::FRLG);
-                        context.check(legalityReport.problemCount() == 0, "a Hoothoot rebuilt onto its Emerald encounter is still flagged", "Hoothoot level=" + std::to_string(converted->level()));
+                        context.check(legalityReport.invalidCount() == 0, "a Hoothoot rebuilt onto its Emerald encounter is still flagged", "Hoothoot level=" + std::to_string(converted->level()));
                     }
                 }
 
@@ -707,7 +717,7 @@ namespace Test
                             }
                             problemSummary += (problemSummary.empty() ? "" : "; ") + issue.text;
                         }
-                        context.check(legalityReport.problemCount() == 0, "a Noctowl rebuilt into Gen 3 is not legal", "Noctowl origin=" + std::to_string(converted->originGame()) + " loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " -- " + problemSummary);
+                        context.check(legalityReport.invalidCount() == 0, "a Noctowl rebuilt into Gen 3 is not legal", "Noctowl origin=" + std::to_string(converted->originGame()) + " loc=" + std::to_string(converted->metLocation()) + " metLevel=" + std::to_string(converted->metLevel()) + " level=" + std::to_string(converted->level()) + " -- " + problemSummary);
                     }
                 }
 
@@ -764,7 +774,7 @@ namespace Test
                             }
                             problemSummary += (problemSummary.empty() ? "" : "; ") + issue.text;
                         }
-                        context.check(legalityReport.problemCount() == 0, "a Pokemon rebuilt onto an encounter it outgrew is still flagged", "Charizard metLevel=" + std::to_string(converted->metLevel()) + " -- " + problemSummary);
+                        context.check(legalityReport.invalidCount() == 0, "a Pokemon rebuilt onto an encounter it outgrew is still flagged", "Charizard metLevel=" + std::to_string(converted->metLevel()) + " -- " + problemSummary);
                     }
                 }
 
@@ -847,14 +857,15 @@ namespace Test
                     // The whole point of the presence-only filter: Surf-Pikachu is the canonical
                     // Virtual Console transfer and no Gen 7 learnset admits it.
                     context.check(keptSurf, "the moveset sanitizer deleted a legal Virtual Console move", "synthetic Red Pikachu lost Surf");
-                    // ...and having kept it, PKSE must not then call its own output illegal. A
-                    // transferred Pokemon's moves are checked against the pool it learned them in
-                    // as well as the one it lives in now; without that, every Virtual Console
-                    // transfer PKSE performs would immediately warn about itself.
+                    // ...but the legality checker answers as PKHeX does: Pikachu learns Surf only from
+                    // Stadium, which PKHeX allows in the Game Boy era alone (ParseSettings.AllowGBStadium2
+                    // is AllowEraCartGB), so a Virtual Console transfer carrying it reads Invalid Move 1.
+                    bool isSurfFlagged = false;
                     for (const auto &issue : Legality::analyze(*converted, converted->getGameGroup()).issues)
                     {
-                        context.check(issue.text.find("Move may not be learnable") == std::string::npos, "the legality checker flags a move PKSE's own transfer legitimately carried", "synthetic Red Pikachu issue=\"" + issue.text + "\"");
+                        isSurfFlagged = isSurfFlagged || (issue.source == Legality::IssueSource::Move && issue.identifier == Legality::CheckIdentifier::CurrentMove && issue.text.rfind("Invalid Move 1:", 0) == 0);
                     }
+                    context.check(isSurfFlagged, "a Virtual Console Pikachu with Stadium's Surf was not flagged as PKHeX flags it", "synthetic Red Pikachu");
                     context.check(converted->currentHandler() == 1 && !converted->htName().empty(), "a transfer with a known receiving trainer left the Pokemon unhandled", "synthetic Red Pikachu");
                 }
             }
@@ -1553,9 +1564,12 @@ namespace Test
                 // -- the source's own, or the one a Gen 3 rebuild raised it to.
                 const uint8_t expectedLevel = rebuildMayRaiseLevel(sourceGroup, destination) ? converted->level() : source.level();
                 context.check(returned->level() == expectedLevel, "a round-trip conversion changed the level", roundTripLabel + " expected=" + std::to_string(expectedLevel) + " got=" + std::to_string(returned->level()));
+                // The way back is never a rebuild either, so it carries the IVs the way out arrived with:
+                // the source's own, or the RNG frame's a Gen 3 rebuild rolled.
+                const Pokemon::Pokemon &ivReference = rebuildRolledCorrelatedIVs(sourceGroup, destination, *converted) ? *converted : source;
                 for (int statIndex = 0; statIndex < 6; ++statIndex)
                 {
-                    context.check(ivOf(*returned, statIndex) == ivOf(source, statIndex), "a round-trip conversion changed an IV", roundTripLabel + " stat=" + std::to_string(statIndex));
+                    context.check(ivOf(*returned, statIndex) == ivOf(ivReference, statIndex), "a round-trip conversion changed an IV", roundTripLabel + " stat=" + std::to_string(statIndex));
                 }
                 context.check(returned->isStructurallyValid(), "a round-trip conversion produced an invalid entity", roundTripLabel);
             }

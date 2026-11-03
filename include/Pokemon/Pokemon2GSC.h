@@ -281,6 +281,7 @@ namespace Pokemon
             return (rd8(b(0x1C)) & 0xF) == 0 && (rd8(b(0x1C)) >> 4) != 0;
         }
         bool hasPokerus() const noexcept override { return true; }
+        uint8_t pokerus() const noexcept override { return rd8(b(0x1C)); }
         void setPokerus(uint8_t value) noexcept override { wr8(b(0x1C), value); }
 
         std::u16string nickname() const override;

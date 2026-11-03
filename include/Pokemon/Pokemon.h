@@ -388,6 +388,63 @@ namespace Pokemon
          */
         virtual void setAlpha(bool alpha) noexcept { (void)alpha; }
 
+        /// Contest stats, Gen 3 on except Let's Go: the five conditions (Cool, Beauty, Cute, Smart,
+        /// Tough, `statIndex` 0-4) then sheen (5), in the order every format stores them.
+        virtual bool hasContestStats() const noexcept { return false; }
+        virtual uint8_t contestStat(int statIndex) const noexcept
+        {
+            (void)statIndex;
+            return 0;
+        }
+
+        /// Box markings: 0 where the format has none (Game Boy), 4 in Gen 3, 6 from Gen 4 on.
+        virtual uint8_t markingCount() const noexcept { return 0; }
+        /// One bit per marking through Gen 6; from Gen 7 on, two bits per marking (blue or pink).
+        virtual uint16_t markingValue() const noexcept { return 0; }
+        virtual bool hasColoredMarkings() const noexcept { return false; }
+
+        /// The favorite flag Let's Go sets, kept by HOME and the Switch formats after it.
+        virtual bool hasFavoriteFlag() const noexcept { return false; }
+        virtual bool isFavorite() const noexcept { return false; }
+
+        /// The 3DS console region and country the Pokemon was obtained on (Gens 6 and 7).
+        virtual bool hasConsoleRegion() const noexcept { return false; }
+        virtual uint8_t consoleRegion() const noexcept { return 0; }
+        virtual uint8_t consoleCountry() const noexcept { return 0; }
+        /// The region within consoleCountry() (PKHeX IRegionOrigin.Region).
+        virtual uint8_t consoleSubregion() const noexcept { return 0; }
+
+        /// The form argument, Gen 6 on (PKHeX IFormArgument): a counter some species keep about
+        /// their form or evolution. From Gen 7 on its low three bytes double as Furfrou's trim
+        /// counters; Gen 6 keeps those apart, so its Pokemon override all three.
+        virtual bool hasFormArgument() const noexcept { return false; }
+        virtual uint32_t formArgument() const noexcept { return 0; }
+        virtual uint8_t formArgumentRemain() const noexcept { return static_cast<uint8_t>(formArgument()); }
+        virtual uint8_t formArgumentElapsed() const noexcept { return static_cast<uint8_t>(formArgument() >> 8); }
+        virtual uint8_t formArgumentMaximum() const noexcept { return static_cast<uint8_t>(formArgument() >> 16); }
+
+        /// The Gen 4 ground tile (encounter type), kept through Gen 6.
+        virtual bool hasGroundTile() const noexcept { return false; }
+        virtual uint8_t groundTile() const noexcept { return 0; }
+
+        /// Super Training medals and flags (Gens 6 and 7).
+        virtual bool hasSuperTraining() const noexcept { return false; }
+        virtual uint32_t superTrainFlags() const noexcept { return 0; }
+        virtual uint16_t distributionSuperTrainFlags() const noexcept { return 0; }
+        virtual bool isSecretSuperTrainingUnlocked() const noexcept { return false; }
+        virtual bool isSuperTrainSupremelyTrained() const noexcept { return false; }
+        /// The training bag a Gen 6 Pokemon holds, and how often it has been hit.
+        virtual bool hasTrainingBag() const noexcept { return false; }
+        virtual uint8_t trainingBag() const noexcept { return 0; }
+        virtual uint8_t trainingBagHits() const noexcept { return 0; }
+
+        /// Size scalars, read where a check needs them (Let's Go, Scarlet/Violet, Legends: Z-A); `scale`
+        /// is the third, separate value Scarlet/Violet and Legends: Z-A add.
+        virtual uint8_t heightScalar() const noexcept { return 0; }
+        virtual uint8_t weightScalar() const noexcept { return 0; }
+        virtual bool hasScale() const noexcept { return false; }
+        virtual uint8_t scale() const noexcept { return 0; }
+
         virtual uint16_t move(int slot) const noexcept
         {
             (void)slot;
@@ -443,6 +500,11 @@ namespace Pokemon
 
         virtual uint8_t originGame() const noexcept { return 0; }
         virtual void setOriginGame(uint8_t version) noexcept { (void)version; }
+
+        /// The game whose battles the Pokemon is cleared for (PKHeX IBattleVersion), Gen 8 on: 0
+        /// until a transferred Pokemon is given the battle-ready mark, so 0 is a real value.
+        virtual bool hasBattleVersion() const noexcept { return false; }
+        virtual uint8_t battleVersion() const noexcept { return 0; }
 
         /** Storage-format game group (which subclass this is), NOT the origin Version byte. */
         virtual Enums::GameVersion getGameGroup() const noexcept = 0;
@@ -544,6 +606,16 @@ namespace Pokemon
         virtual bool isFatefulEncounter() const noexcept { return false; }
         virtual void setFatefulEncounter(bool value) noexcept { (void)value; }
 
+        /**
+         * The raw bytes of the nickname, original trainer name and handling trainer name fields:
+         * the text, its terminator and whatever earlier text still follows it (PKHeX NicknameTrash,
+         * OriginalTrainerTrash, HandlingTrainerTrash), which the trash-byte legality check reads.
+         * Empty in a format where PKSE does not expose the field.
+         */
+        virtual std::span<const std::byte> nicknameBytes() const noexcept { return {}; }
+        virtual std::span<const std::byte> originalTrainerNameBytes() const noexcept { return {}; }
+        virtual std::span<const std::byte> handlingTrainerNameBytes() const noexcept { return {}; }
+
         /** Original Trainer name (UTF-16; empty if unwired). */
         virtual std::u16string otName() const { return std::u16string(); }
         virtual void setOTName(const std::u16string &value) noexcept { (void)value; }
@@ -608,6 +680,13 @@ namespace Pokemon
         virtual uint8_t htMemoryFeeling() const noexcept { return 0; }
         virtual void setHTMemoryFeeling(uint8_t value) noexcept { (void)value; }
 
+        /// ORIGINAL TRAINER MEMORIES, the original trainer's counterpart of the four fields above. A
+        /// format has them exactly where it has handler memories (hasHandlerMemories()).
+        virtual uint8_t otMemory() const noexcept { return 0; }
+        virtual uint16_t otMemoryVariable() const noexcept { return 0; }
+        virtual uint8_t otMemoryIntensity() const noexcept { return 0; }
+        virtual uint8_t otMemoryFeeling() const noexcept { return 0; }
+
         /**
          * HANDLER AFFECTION. Generation 6 and 7 only: Gen 8 folded affection back into friendship,
          * and Let's Go allocates the byte but no game ever writes it (PKHeX marks it Unused), so
@@ -616,6 +695,8 @@ namespace Pokemon
         virtual bool hasHandlerAffection() const noexcept { return false; }
         virtual uint8_t htAffection() const noexcept { return 0; }
         virtual void setHTAffection(uint8_t value) noexcept { (void)value; }
+        /// Original trainer affection, present exactly where hasHandlerAffection() is.
+        virtual uint8_t otAffection() const noexcept { return 0; }
 
         /// Handler geolocation slots a Gen 6/7 record carries -- see hasGeolocation().
         static constexpr int GEOLOCATION_SLOT_COUNT = 5;
@@ -796,6 +877,9 @@ namespace Pokemon
 
         /** Whether this game actually has the Pokerus mechanic, so editing it is meaningful. */
         virtual bool hasPokerus() const noexcept { return false; }
+        /// The stored Pokerus byte: strain in the high nibble, days left in the low. 0 where the format
+        /// stores none (Gen 1).
+        virtual uint8_t pokerus() const noexcept { return 0; }
 
         virtual uint16_t checksum() const noexcept = 0;
 

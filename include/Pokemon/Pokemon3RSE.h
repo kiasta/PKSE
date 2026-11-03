@@ -90,6 +90,16 @@ namespace Pokemon
         const char *species() const noexcept override;
         uint8_t formID() const noexcept override { return form(); }
         uint8_t form() const noexcept override;                            // Unown (201) form from PID; else 0
+        bool hasContestStats() const noexcept override { return true; }
+        uint8_t contestStat(int statIndex) const noexcept override { return (statIndex >= 0 && statIndex < 6) ? rd8(0x3E + statIndex) : 0; }
+        uint8_t markingCount() const noexcept override { return 4; }
+        /// The stored byte has bits 1 and 2 swapped relative to the marking order (PKHeX PK3.MarkingValue).
+        uint16_t markingValue() const noexcept override
+        {
+            const uint8_t storedMarkings = rd8(0x1B);
+            return static_cast<uint16_t>((storedMarkings & ~0x06) | ((storedMarkings & 0x02) << 1) | ((storedMarkings & 0x04) >> 1));
+        }
+
         uint16_t heldItem() const noexcept override { return rd16(0x22); } // Gen3 item id
         uint32_t id32() const noexcept override { return rd32(0x04); }
         uint16_t tid16() const noexcept override { return rd16(0x04); }
@@ -122,6 +132,8 @@ namespace Pokemon
         int getMaxNicknameLength() const noexcept override { return 10; } // 10 bytes @0x08, 1 byte per glyph
         bool canStoreNickname(const std::u16string &value) const noexcept override;
         std::u16string otName() const override;                        // Gen3 char table @0x14 (7 bytes)
+        std::span<const std::byte> nicknameBytes() const noexcept override { return data.subspan(0x08, 10); }
+        std::span<const std::byte> originalTrainerNameBytes() const noexcept override { return data.subspan(0x14, 7); }
         void setOTName(const std::u16string &value) noexcept override; // encode into the Gen3 table @0x14
 
         uint16_t move(int slot) const noexcept override { return (slot < 0 || slot > 3) ? 0 : rd16(0x2C + slot * 2); }
@@ -156,6 +168,8 @@ namespace Pokemon
         }
 
         uint32_t iv32() const noexcept { return rd32(0x48); }
+        /// The obedience (fateful encounter) flag is the ribbon word's top bit (PKHeX PK3.FatefulEncounter, RIB0 bit 31).
+        bool isFatefulEncounter() const noexcept override { return (rd32(0x4C) >> 31) != 0; }
         uint8_t ivHP() const noexcept override { return (iv32() >> 0) & 0x1F; }
         uint8_t ivATK() const noexcept override { return (iv32() >> 5) & 0x1F; }
         uint8_t ivDEF() const noexcept override { return (iv32() >> 10) & 0x1F; }
@@ -209,7 +223,7 @@ namespace Pokemon
         /// and keeps the default, which is the charset five of Gen 3's six releases share.
         void setSaveLanguage(uint8_t languageId) noexcept { saveLanguage = languageId; }
         uint8_t friendship() const noexcept override { return rd8(0x29); }
-        uint8_t pokerus() const noexcept { return rd8(0x44); }
+        uint8_t pokerus() const noexcept override { return rd8(0x44); }
         bool isPokerusInfected() const noexcept override { return (pokerus() & 0x0F) != 0; }
         bool isPokerusCured() const noexcept override { return (pokerus() & 0xF0) != 0 && (pokerus() & 0x0F) == 0; }
         void setPokerus(uint8_t value) noexcept override

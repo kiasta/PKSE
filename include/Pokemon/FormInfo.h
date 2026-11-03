@@ -33,6 +33,18 @@ namespace Pokemon
     bool isBattleOnlyForm(uint16_t species, uint8_t form);
 
     /**
+     * True when (species, form) is a non-Mega battle form of a species in PKHeX's `BattleForms`
+     * list: Zen, Ash, Complete, Shields-Down, Busted, Ultra, Embody Aspect, Primal and the forms
+     * where every non-zero index is temporary. Ported from PKHeX `FormInfo.IsBattleForm` gated on
+     * `BattleForms.Contains`, so a species outside the list is always false.
+     *
+     * The legality layer's battle-only test is `isMegaForm(...) || isBattleForm(...)` (PKHeX
+     * `FormInfo.IsBattleOnlyForm`). isBattleOnlyForm() above is the Form picker's own policy and
+     * differs (Koraidon/Miraidon ride builds), so the two are deliberately kept apart.
+     */
+    bool isBattleForm(uint16_t species, uint8_t form);
+
+    /**
      * True when the species has a **Mega Evolution** at all. Ported from PKHeX
      * `FormInfo.HasMegaForm` (membership of its `BattleMegas` list).
      *
@@ -115,7 +127,7 @@ namespace Pokemon
      * memory disc, a barber's trim, the season, a form-change item. Ported from PKHeX
      * `FormInfo.IsFormChangeable`'s `FormChange` list.
      *
-     * Layer 3 needs it because an encounter template records the form that SPAWNED, and for
+     * Legality needs it because an encounter template records the form that SPAWNED, and for
      * these species that says nothing about the form now stored. A Rotom caught in its base
      * form and later put in a washing machine is still that encounter; comparing the form
      * would report a mismatch that is not one.
@@ -124,7 +136,7 @@ namespace Pokemon
      * Deerling/Sawsbuck changed rules between generations: Zygarde cannot change form at all in
      * Gen 6 and only towards its Power Construct forms in Gen 7, and Deerling changes with the
      * season in Gen 5 and from the HOME era on but not in Gens 6 and 7. This answers `true` for
-     * all three in every game, which can only make Layer 3 quieter, never accuse a legal form.
+     * all three in every game, which can only make legality quieter, never accuse a legal form.
      */
     bool isFormChangeable(uint16_t species);
 

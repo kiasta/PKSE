@@ -104,8 +104,8 @@ python tools/syntax_check.py --warnings   # ~1 min: -O2 pass; the build is kept 
 - **The UI is immediate-mode** (NanoVG on GL, drawn through `PKSEFramebuffer`). Screens compose
   Panels, Dialogs and Modals, and `TrainerViewScreen` holds the shared state block. Follow that
   pattern rather than introducing a new one. See chapters 08 and 09.
-- **Legality is informational.** PKSE never refuses an edit, and Layer 3 errs toward silence.
-  See chapter 11.
+- **Legality is informational and ported from PKHeX.** PKSE never refuses an edit. Checks and
+  severities match PKHeX exactly (Fishy = Warning), measured by `build-parity.sh`. See chapter 11.
 
 ## Rules that bite everywhere
 

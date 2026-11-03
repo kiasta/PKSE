@@ -932,8 +932,8 @@ while looking more plausible.
 `remapPK8toPK3` asks the same question the origin VERSION beside it asks, and answers it the same way.
 **Origin-preserving** (source version 1–5) carries the location: it is already a Gen 3 id, so it
 round-trips exactly, and returning to your origin game is the one backward transfer that is genuinely
-legal. **Foreign** DERIVES it from a real encounter in the destination, through the tables Layer 3
-already checks against (`gen3LandingFor`) — preferring a slot whose level the Pokémon can satisfy,
+legal. **Foreign** DERIVES it from a real encounter in the destination, through the generated Gen 3
+encounter rows (`EncounterTable`, chapter 11; `gen3LandingFor`), which nothing but this rebuild reads — preferring a slot whose level the Pokémon can satisfy,
 then a wild slot over a one-off, then the SMALLEST LEVEL SHORTFALL, then the lowest location id purely
 for stability, with met level clamped into that encounter's range. No encounter anywhere in Gen 3 —
 the search covers both groups — falls back to the destination's first town: a real place in the right
@@ -983,8 +983,8 @@ clean only because it carried a Colosseum gift it never received.
 
 Six rules do the work, each found as a real defect on that bank:
 
-- **The pre-evolution chain is part of the answer**, exactly as for the checker
-  (`EncounterMatch::buildChain`). A Wartortle is never caught in FireRed — it is a Squirtle that
+- **The pre-evolution chain is part of the answer**, as it was for the checker's retired
+  interim sweep. A Wartortle is never caught in FireRed — it is a Squirtle that
   evolved, so the met data belongs to the Squirtle. Looking up the species alone dropped **120 of
   252** on the fallback town.
 - **Half of Kanto is version-exclusive.** Sandshrew, Vulpix, Bellsprout, Slowpoke, Staryu, Magmar and
@@ -1031,6 +1031,31 @@ Six rules do the work, each found as a real defect on that bank:
 - **An egg row describes the egg, not the meeting.** Togepi's FR/LG row is a gift egg at location
   253; a hatched one is met at 146. Taking the row's own location stamped Togepi as met at "(gift
   egg)", which the checker rightly refuses.
+
+### The PID and IVs follow the landing's RNG method
+
+The legality checker judges Gen 3 origins with the encounter engine, which walks a PID/IV pair back
+through the RNG exactly as PKHeX does: a static or in-game gift must be **Method 1** (PID, then IVs, from
+consecutive LCRNG calls), and a wild slot **Method H** (the slot roll, level roll and nature roll that
+precede the PID). A PID chosen only to keep nature, gender and shininess sits on no frame at all, so
+every rebuilt Pokémon was flagged for a PID/IV mismatch however true its met data was. With the toggle
+on, `remapPK8toPK3` therefore regenerates the pair for the encounter it landed on, the way PKHeX's own
+Gen 3 generation does (`EncounterStatic3.SetMethod1`, `GenerateMethodH.SetRandom` with no lead): the
+wild slot is looked up in the engine's own data (`findGen3Slot`), and its frame must roll the met level.
+
+- **Kept:** nature, gender, shininess, the ability slot (PID bit 0, and the stored bit follows it as
+  `G3PKM.RefreshAbility` does), and Unown's letter. **Not kept: the IVs**, which are whatever the frame
+  rolled. `SuiteConversion` recognises this from the result (the pair correlates) and holds every
+  other conversion to preserving them.
+- **Not regenerated:** an egg landing (a bred pair correlates with nothing), an in-game trade (its PID is
+  the trade's), the fallback town, and a Pokémon whose origin is already Gen 3 (its PID is real).
+- **Deterministic**, seeded from the source's PID and encryption constant, and bounded: if the budget
+  runs out the plain PID stays and the event log says `KEPT_PLAIN_PID`.
+- **A pre-evolution's encounter costs a level.** Landed on Hoothoot's level 35 Emerald slot, a level 35
+  Noctowl was met at 35 and is still 35, which no level-up evolution produces; the rebuild raises it one
+  level (only ever up).
+- **A rebuild left with no move gets its encounter moves** (`Learnset::setEncounterMoves` at its level, in
+  its origin game), as a Pokémon PKHeX generates does: every game's Pokémon knows at least one move.
 
 ### Moves, Unown, and what the rebuild can and cannot claim
 

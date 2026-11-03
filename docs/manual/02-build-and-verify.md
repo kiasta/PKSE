@@ -194,7 +194,8 @@ than the user's choice. It is safe there — it only `fopen`s `sdmc:/PKSE/settin
 ```make
 SOURCES  := src src/Pokemon src/Encryption src/Enums src/UI src/UI/Panels src/UI/Dialogs \
             src/UI/Modals src/Trainer src/Names src/Utils src/Save src/Legality \
-            src/Conversion nanovg memecrypto
+            src/Legality/Verifiers src/Legality/RNG src/Legality/Evolutions \
+            src/Legality/Encounters src/Legality/LearnSource src/Conversion nanovg memecrypto
 INCLUDES := include nanovg memecrypto
 ```
 

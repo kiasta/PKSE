@@ -868,21 +868,15 @@ unchanged. **Move ids 1–467 likewise.** **Species 1–493 likewise.** Only **i
 
 ## 10. Legality
 
-`getEncounterTable(GameVersion)` currently returns `nullptr` for anything pre-Gen 3, which yields
-one Info note and no findings — a correct, honest answer. Gen 4 encounter tables are a **separate
-project**; `tools/gen_encounters.py` already handles the Gen 8/9 shapes and would need Gen 4 wild
-slot binaries added.
+The legality checker is a port of PKHeX's verifiers and encounter engine, Gen 4 included
+(`EncounterGenerator4`, `gen_encounters4.py`); manual chapter 11 describes it and how to measure it
+against PKHeX. The facts this section once listed for a hand-written check still hold, and PKHeX's
+verifiers encode them:
 
-Ship Gen 4 with layers 1 and 2 only. Layer 3 says "no encounter data for this origin game", which
-is true.
-
-Layer 2 needs:
-
-- `presenceBit()` — Gen 4 has no personal-table presence bit in PKSE's generated table, so gate
-  species presence on `species <= 493` instead.
-- The ability check works unchanged (ids are a prefix).
-- **Nature is PID-derived**, so a nature/PID mismatch is impossible by construction — do not add a
-  check for it.
+- Gen 4 has no personal-table presence bit in PKSE's generated table; species presence is
+  `species <= 493`.
+- Ability ids are a prefix of the modern table, so ability lookups work unchanged.
+- **Nature is PID-derived**, so a nature/PID mismatch is impossible by construction.
 
 ---
 
