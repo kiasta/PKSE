@@ -406,18 +406,30 @@ namespace Pokemon
     // Nature, gender, shininess and the ability bit all live in the same PID, so changing one of
     // them means re-deriving all four. Each setter pins the three it was NOT asked to change --
     // editing a nature must not silently un-shiny the pokemon, nor desync its ability from its PID.
-    void Pokemon3FRLG::setNature(uint8_t nature) noexcept
+    //
+    // Each setter does nothing when the Pokemon already has the value asked for. rerollPID always
+    // moves to a NEW PID, and the details page's pickers call these setters on every confirm, so
+    // confirming the current nature or gender used to replace a game-generated PID with one that has
+    // no RNG relation to the IVs -- PKHeX then reports PIDTypeMismatch on a legitimate Pokemon (a
+    // FireRed starter's Method 1 PID). The Gen 4-7 setters already had this guard.
+    void Pokemon3FRLG::setNature(uint8_t natureValue) noexcept
     {
-        rerollPreservingShiny(gender(), nature % 25, abilityPidBit());
+        if (natureValue % 25 == nature())
+            return;
+        rerollPreservingShiny(gender(), natureValue % 25, abilityPidBit());
     }
     void Pokemon3FRLG::setGender(uint8_t genderValue) noexcept
     {
+        if (genderValue == gender())
+            return;
         rerollPreservingShiny(genderValue, nature(), abilityPidBit());
     }
 
     // setShiny is the one setter shininess is the SUBJECT of, so it is pinned rather than preserved.
     void Pokemon3FRLG::setShiny(bool makeShiny, uint32_t) noexcept
     {
+        if (isShiny(id32(), "") == makeShiny)
+            return;
         rerollPID(makeShiny ? 1 : 0, gender(), nature(), abilityPidBit());
     }
 

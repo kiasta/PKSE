@@ -746,6 +746,18 @@ namespace Pokemon
         uint8_t enjoyment() const noexcept { return static_cast<uint8_t>(data[0xDD]); }
         /// Sword/Shield Technical Record learned flags, kept through HOME (PKHeX ITechRecord).
         bool isTRFlagSet(int recordIndex) const noexcept { return recordIndex >= 0 && recordIndex < 112 && ((static_cast<uint8_t>(data[0x127 + (recordIndex >> 3)]) >> (recordIndex & 7)) & 1) != 0; }
+        /// Sets or clears one Technical Record flag (PKHeX PK8.SetMoveRecordFlag). The caller refreshes the checksum.
+        void setTRFlag(int recordIndex, bool isSet) noexcept
+        {
+            if (recordIndex < 0 || recordIndex >= 112)
+            {
+                return;
+            }
+            const int flagOffset = 0x127 + (recordIndex >> 3);
+            const uint8_t flagMask = static_cast<uint8_t>(1u << (recordIndex & 7));
+            const uint8_t flagByte = static_cast<uint8_t>(data[flagOffset]);
+            data[flagOffset] = static_cast<std::byte>(isSet ? (flagByte | flagMask) : (flagByte & static_cast<uint8_t>(~flagMask)));
+        }
         bool hasAnyTRFlag() const noexcept
         {
             for (int byteIndex = 0; byteIndex < 14; ++byteIndex)

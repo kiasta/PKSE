@@ -106,7 +106,12 @@ context.add(Severity::Invalid, CheckIdentifier::Marking, ResultCode::MarkValueOu
 
 `add()` fills `text` from PKHeX's English template for the code, with `{0}` and `{1}` replaced by
 the arguments (`getResultText`). `addText()` takes a ready sentence, for the few findings
-whose text PKHeX builds itself (the medal verifier's bag hits). Per-move verdicts carry `IssueSource::Move`, because PKHeX keeps them apart from its results (in
+whose text PKHeX builds itself (the medal verifier's bag hits), and for the move PP findings, whose text is
+PKSE's own. PKHeX's "Move 4 PP is above the amount allowed (35)." prints the *stored* PP as if it were
+the limit, and names a move that isn't there when the slot is empty (a HOME gift Fuecoco's empty fourth
+slot holds 35 PP). `MovePPVerifier` says "Move 4 is empty, but the slot still stores 35 PP…" instead. The
+code and severity stay PKHeX's, and the parity harness compares only those, so rewording a message never
+changes parity. Per-move verdicts carry `IssueSource::Move`, because PKHeX keeps them apart from its results (in
 `LegalInfo.Moves` / `Relearn`) and its report prints them as their own lines.
 
 ## AnalysisContext: what a verifier can see

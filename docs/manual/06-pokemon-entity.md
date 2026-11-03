@@ -497,6 +497,14 @@ happened about once in eleven Make Shiny presses (1 PID in 409,600 met all three
 draws also ignored the gender, and about one shiny in eight of a 7:1 species came out with a PID that
 contradicted its stored gender.
 
+**A setter asked for the value the Pokémon already has does nothing.** In every generation,
+`setNature`, `setGender` and `setShiny` return without touching the PID when the requested value already
+holds. The details page's nature and gender pickers call the setter on every confirm. Gen 3 used to
+reroll anyway, because `rerollPID` always moves to a *new* PID, so confirming a picker without changing
+it replaced a game-generated PID with one that had no RNG relation to the IVs. A legitimate FireRed
+starter then failed PKHeX's correlation check (`PIDTypeMismatch`) for good. `SuiteSetters` checks this in
+every format.
+
 **Nothing rerolls the PID after an IV or EV edit.** The stat editor used to call `regeneratePID`
 "to maintain legality". A new PID cannot restore a PID–IV link the edit broke, and in Gens 4–7 the
 random replacement turned every shiny Pokémon plain on its first IV edit. An IV or EV edit now changes
