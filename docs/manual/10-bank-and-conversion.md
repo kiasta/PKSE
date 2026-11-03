@@ -318,6 +318,22 @@ legal moves and drops only the illegal ones.
 | PK7 ↔ PK8 | the PB7 remap plus everything Let's Go dropped — held item, EVs, contest stats, both trainers' memories, the ribbon memory counts. Gen-7-only regions have nowhere to go and are dropped: Super Training, the Poké Pelago resort state, the 3DS geolocation block (plus Country/Region/ConsoleRegion), and affection. **Ribbons are a byte copy**: Gen 8 keeps the Gen 6/7 ribbon bits in the same order four bytes later (PK7 0x30–0x36 is PK8 0x34–0x3A) and only appends its own from 0x3A bit 2, which the way down masks off. Coming back down, Gen 8's own additions (TR flags, Dynamax, Sociability, height/weight scalars, AffixedRibbon, marks, and the **mint** — PK7 has `Nature` but no `StatNature`) have no home. |
 | PK3 (FRLG, RSE) | the most divergent. No EC (EC := PID); nature/gender/shiny are all PID-derived; ability is a slot **bit** resolved via the personal table; species/items/text use Gen-3 id spaces; IVs pack the ability bit at 31. Item ids convert via `Item3to4`, names transcode Gen-3↔Unicode, level/stats recomputed. Coming **from** Gen 3 follows Pal Park and the later transfers (PKHeX `PK3.ConvertToPK4` … `PK6.ConvertToPK7`): met location Poké Transfer (30001) and met level the level at transfer; IsNicknamed set only for a real nickname, a species name rewritten in proper case; the PID's bit 31 flipped where Gen 6's wider shiny window would make it shiny (EC keeps the original); the ten ribbons later games still have kept, the contest ranks folded into the contest memory count and Winning/Victory into the battle one; markings blue; an egg hatched. Going **to** Gen 3, nature and gender become PID-derived; a nickname is kept and an un-nicknamed Pokémon gets its language's species name; a Gen 3-origin Pokémon gets its original PID, fateful flag, markings and carried ribbons back (the contest ranks cannot be unfolded), and a Poké Transfer met location becomes a Gen 3 landing. Every Gen 3 party record carries mail id 0xFF (no mail). A Gen 3 destination is a **rebuild**, not a carry — see "Rules: Poké Transporter and the Gen 3 rebuild" below. |
 
+**Two of HOME's arrival rules are applied on every conversion into a Gen 8+ format**, because PKHeX
+checks for them:
+
+- **Height and weight scalars.** A Pokémon from Gens 1–7 (a Gen 3 or Gen 7 record, or a Gen 8 one
+  still at 0/0 from before HOME 3.0.0) that arrives with both scalars 0 gets two random ones, rolled as
+  PKHeX's `PokeSizeUtil.GetRandomScalar` does (`randomSizeScalar` in `Convert.cpp`). Scale then follows
+  the height wherever the format has it. Let's Go and GO Pokémon keep their own sizes. Without this,
+  PKHeX reports `TransferBad` and `StatInvalidHeightWeight` on every Gen 1–7 Pokémon in a Gen 9 game.
+- **TM and TR record flags.** Every kept move that Scarlet/Violet teaches by TM, or Sword/Shield by TR,
+  gets that record flag, but only where the species may use that TM or TR
+  (`setMoveRecordFlagsForMoves`). PKHeX accepts such a move in those two games only when its flag is
+  set. Z-A and BDSP keep no record.
+
+The HOME tracker is **not** generated. PKHeX's own converter leaves it 0, and PKHeX reports a 0 tracker
+(`TransferTrackerMissing`); PKSE does the same. A real tracker is one only HOME's server issues.
+
 The result: any of the interconverting games ↔ any other, **full two-way** — deliberately beyond
 HOME's one-way Let's Go limit — bounded only by destination dex presence.
 

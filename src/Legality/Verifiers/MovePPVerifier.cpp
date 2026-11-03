@@ -205,6 +205,56 @@ namespace Legality
             const bool isFromPokewalker = Enums::getGameGroup(static_cast<Enums::GameVersion>(pokemon.originGame())) == Enums::GameVersion::HGSS && pokemon.metLocation() == pokewalkerLocation;
             return isPokemon4 && isFromPokewalker && pokemon.move(MOVE_SLOT_COUNT - 1) == 0;
         }
+
+        // The words for each PP finding. The result codes and severities are PKHeX's, and the parity
+        // harness compares those; the text is PKSE's own, because PKHeX's template reads badly in the
+        // commonest case. "Move 4 PP is above the amount allowed (35)" on a Pokemon with three moves
+        // names a move that is not there, and the 35 is the PP stored, not the amount allowed. (A HOME
+        // gift Fuecoco in Violet arrives with an empty fourth slot holding 35 PP; PKHeX flags it too.)
+        std::string describeMoveSlot(int moveIndex)
+        {
+            return "Move " + std::to_string(moveIndex + 1);
+        }
+
+        std::string describePPTooHigh(const Pokemon::Pokemon &pokemon, int moveIndex, uint32_t currentPP, uint32_t allowedPP)
+        {
+            const std::string slotText = describeMoveSlot(moveIndex);
+            if (pokemon.move(moveIndex) == 0)
+            {
+                return slotText + " is empty, but the slot still stores " + std::to_string(currentPP) + " PP. An empty move slot should hold " + std::to_string(allowedPP) + " PP.";
+            }
+            return slotText + " has " + std::to_string(currentPP) + " PP, more than the " + std::to_string(allowedPP) + " it can have (its base PP plus its PP Ups).";
+        }
+
+        std::string describePPExpectedZero(const Pokemon::Pokemon &pokemon, int moveIndex, uint32_t currentPP)
+        {
+            const std::string slotText = describeMoveSlot(moveIndex);
+            if (pokemon.move(moveIndex) == 0)
+            {
+                return slotText + " is empty, but the slot still stores " + std::to_string(currentPP) + " PP. An empty move slot should hold 0 PP.";
+            }
+            return slotText + " has " + std::to_string(currentPP) + " PP, but a Pokemon stored here should have 0.";
+        }
+
+        std::string describePPUpsNotAllowed(const Pokemon::Pokemon &pokemon, int moveIndex, uint8_t ppUps, bool formatHasPPUps)
+        {
+            const std::string slotText = describeMoveSlot(moveIndex);
+            const std::string ppUpsText = std::to_string(ppUps) + (ppUps == 1 ? " PP Up" : " PP Ups");
+            if (pokemon.move(moveIndex) == 0)
+            {
+                return slotText + " is empty, but the slot still stores " + ppUpsText + ". An empty move slot should have none.";
+            }
+            if (!formatHasPPUps)
+            {
+                return slotText + " has " + ppUpsText + ", but this game has no PP Ups.";
+            }
+            return slotText + " has " + ppUpsText + ", but PP Ups cannot be used on this move.";
+        }
+
+        std::string describePPBelowHealed(const Pokemon::Pokemon &pokemon, int moveIndex, uint32_t currentPP, uint32_t healedPP)
+        {
+            return describeMoveSlot(moveIndex) + " has " + std::to_string(currentPP) + " PP, but a Pokemon stored here has its PP fully restored (" + std::to_string(healedPP) + ").";
+        }
     }
 
 
@@ -223,7 +273,7 @@ namespace Legality
             const uint8_t ppUps = pokemon.movePPUps(moveIndex);
             if (ppUps != 0 && (!formatHasPPUps || !isPPUpAvailableForMove(pokemon.move(moveIndex))))
             {
-                context.add(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPUpsTooHigh, std::to_string(moveIndex + 1), std::to_string(ppUps));
+                context.addText(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPUpsTooHigh, describePPUpsNotAllowed(pokemon, moveIndex, ppUps, formatHasPPUps));
             }
         }
 
@@ -239,7 +289,7 @@ namespace Legality
             const uint32_t currentPP = pokemon.movePP(moveIndex);
             if (currentPP > healedPP)
             {
-                context.add(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPTooHigh, std::to_string(moveIndex + 1), std::to_string(currentPP));
+                context.addText(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPTooHigh, describePPTooHigh(pokemon, moveIndex, currentPP, healedPP));
                 continue;
             }
             if (allowedStates == MOVE_HEAL_STATE_ANY)
@@ -256,11 +306,11 @@ namespace Legality
             }
             if (allowedStates == MOVE_HEAL_STATE_ONLY_ZERO)
             {
-                context.add(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPTooHigh, std::to_string(moveIndex + 1), "0");
+                context.addText(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPTooHigh, describePPExpectedZero(pokemon, moveIndex, currentPP));
             }
             else
             {
-                context.add(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPExpectHealed, std::to_string(moveIndex + 1), std::to_string(healedPP));
+                context.addText(Severity::Invalid, CheckIdentifier::CurrentMove, ResultCode::MovePPExpectHealed, describePPBelowHealed(pokemon, moveIndex, currentPP, healedPP));
             }
         }
     }

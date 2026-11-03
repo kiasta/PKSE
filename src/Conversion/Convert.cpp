@@ -25,6 +25,7 @@
 #include "Pokemon/PersonalInfoTable.h"
 #include "Pokemon/PokemonTypes.h"  // getPokemonTypes -> Tera type for cross-generation PK8->PK9
 #include "Pokemon/LearnsetTable.h" // isLearnable -> sanitize the moveset to the destination game
+#include "Pokemon/MoveRecordTable.h" // TM/TR permissions -> the record flag of a kept TM move
 #include "Pokemon/Experience.h"    // getLevelFromExp / getGrowthRate -> seed a fresh party-stat tail
 #include "Encryption/Encryption8SWSH.h"
 #include "Encryption/Encryption8BDSP.h"
@@ -84,6 +85,52 @@ namespace Conversion
 {
     namespace
     {
+        /// One random height or weight scalar, as HOME rolls it for a Pokemon arriving from a game
+        /// that has none (PKHeX PokeSizeUtil.GetRandomScalar: rand(0x81) + rand(0x80), a triangle
+        /// peaking at 128).
+        uint8_t randomSizeScalar() noexcept
+        {
+            return static_cast<uint8_t>(Utils::rand32() % 0x81u + Utils::rand32() % 0x80u);
+        }
+
+        /// Sets the Technical Machine / Technical Record flag of every move the Pokemon knows that the
+        /// destination teaches through one. Scarlet/Violet and Sword/Shield record which TMs/TRs a
+        /// Pokemon has used, and PKHeX accepts a move learnable there only by TM or TR only when its flag
+        /// is set (LearnSource9SV / LearnSource8SWSH GetIsTM / GetIsTR). A Pokemon arriving from another
+        /// game knows the move from there, and its legal route in the destination is to be taught it
+        /// again, which sets the flag. A flag is set only where the species may use that TM or TR, so it
+        /// can never make the record claim something impossible. Legends: Z-A and BDSP keep no such
+        /// record (PKHeX: "Can just use the TM at any time").
+        void setMoveRecordFlagsForMoves(Pokemon::Pokemon &pokemon, GameVersion destGroup)
+        {
+            const uint16_t speciesId = pokemon.speciesID();
+            const uint8_t formValue = pokemon.form();
+            for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
+            {
+                const uint16_t moveId = pokemon.move(moveIndex);
+                if (moveId == 0)
+                    continue;
+                if (destGroup == GameVersion::SV)
+                {
+                    auto &scarletVioletPokemon = static_cast<Pokemon::Pokemon9SV &>(pokemon);
+                    for (int machineIndex = 0; machineIndex < Pokemon::TM_COUNT_9SV; ++machineIndex)
+                    {
+                        if (Pokemon::TM_MOVES_9SV[machineIndex] == moveId && Pokemon::isTMPermitted9SV(speciesId, formValue, machineIndex))
+                            scarletVioletPokemon.setTMFlag(machineIndex, true);
+                    }
+                }
+                else if (destGroup == GameVersion::SWSH)
+                {
+                    auto &swordShieldPokemon = static_cast<Pokemon::Pokemon8SWSH &>(pokemon);
+                    for (int recordIndex = 0; recordIndex < Pokemon::TR_COUNT_8SWSH; ++recordIndex)
+                    {
+                        if (Pokemon::TR_MOVES_8SWSH[recordIndex] == moveId && Pokemon::isTRPermitted8SWSH(speciesId, formValue, recordIndex))
+                            swordShieldPokemon.setTRFlag(recordIndex, true);
+                    }
+                }
+            }
+        }
+
         // Rebuild the destination entity from an ENCRYPTED record (the subclass ctor decrypts).
         std::unique_ptr<Pokemon::Pokemon> makePokemon(GameVersion gameVersion, std::span<const std::byte> record)
         {
@@ -1286,8 +1333,9 @@ namespace Conversion
         //     the whole 3DS locale block; there is nowhere to put it.
         //   - Affection (OT 0xCB, HT 0xA3). Gen 8 dropped affection into the LGPE-style friendship.
         //
-        // Height/weight scalars (PK8 0x50/0x51) stay 0: Gen 8 introduced them and a PK7 has no such
-        // field, so there is nothing to carry. That matches what the Gen 3 remap already does.
+        // Height/weight scalars (PK8 0x50/0x51) stay 0 here: Gen 8 introduced them and a PK7 has no
+        // such field, so there is nothing to carry. convert() rolls them afterwards, as HOME does,
+        // for this remap and the Gen 3 one alike (step 1a).
         // Offsets: PKHeX PK7.cs / G8PKM.cs.
 
         // PK8 keeps a "has a memory ribbon" flag beside each memory count (0x38 bits 5 and 6), and
@@ -2587,6 +2635,28 @@ namespace Conversion
             // PK7 -> PK8 (a real Sun/Moon pokemon, or a Transporter result)
             else if (isG7(layoutFrom)) buffer = remapPK7toPK8(buffer);
 
+            // 1a. Height and weight. Gen 8 introduced the scalars, so a Gen 1-7 Pokemon arrives with
+            // 0/0 -- straight from a Gen 3 or Gen 7 record, or still 0/0 in a Gen 8 one it reached
+            // before HOME 3.0.0 -- and HOME (3.0.0 on) rolls new ones as it passes through. PKHeX
+            // reports a Gen 1-7 Pokemon in a Gen 9 format still at 0/0 as TransferBad and
+            // StatInvalidHeightWeight (TransferVerifier.VerifyHOMETransfer, MiscScaleVerifier). The
+            // destination remaps carry them on; Scarlet/Violet, Z-A and Legends: Arceus copy the height
+            // into Scale, as HOME does. Let's Go and GO Pokemon are left alone: their sizes are their
+            // own, and PKHeX accepts any value for them.
+            // The hub buffer's own origin byte (PK8 0xDE), not the source's: a Gen 1/2 Pokemon has
+            // none until Poke Transporter writes its Virtual Console version.
+            const uint8_t originVersion = 0xDE < buffer.size() ? rd8(buffer, 0xDE) : 0;
+            constexpr uint8_t pokemonGoVersion = 34;
+            constexpr uint8_t letsGoPikachuVersion = 42;
+            constexpr uint8_t letsGoEeveeVersion = 43;
+            const int originGeneration = Enums::getVersionGeneration(originVersion);
+            const bool sizeNeverRolled = originGeneration >= 1 && originGeneration <= 7 && originVersion != pokemonGoVersion && originVersion != letsGoPikachuVersion && originVersion != letsGoEeveeVersion;
+            if (sizeNeverRolled && 0x51 < buffer.size() && rd8(buffer, 0x50) == 0 && rd8(buffer, 0x51) == 0)
+            {
+                wr8(buffer, 0x50, randomSizeScalar());
+                wr8(buffer, 0x51, randomSizeScalar());
+            }
+
             // 1b. Those three hub remaps emit a STORED-size (0x148) buffer -- no battle-stat tail. Handing
             // that to a Gen 8/9 entity makes level()/statXXX() index PAST the allocation, so the pokemon shows a
             // random level and garbage stats that change on every placement (and lands in the destination
@@ -2760,6 +2830,9 @@ namespace Conversion
                     out->setMovePP(moveIndex, maxPowerPoints);
             }
         }
+
+        // A kept move the destination teaches by TM or TR gets its record flag (see the helper).
+        setMoveRecordFlagsForMoves(*out, destGroup);
 
         // Sanitize the held item the same way: drop anything the destination can't actually hold.
         // Let's Go and Legends: Arceus have NO held-item mechanic at all (PKHeX Legal.HeldItems_GG and

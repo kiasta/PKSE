@@ -54,6 +54,7 @@
 #include "Names/MovePresence.h"
 #include "Pokemon/Experience.h"
 #include "Pokemon/LearnsetTable.h"
+#include "Pokemon/MoveRecordTable.h"
 #include "Pokemon/PersonalInfo7USUM.h"
 #include "Pokemon/PersonalRecord.h"
 #include "Enums/LanguageID.h"
@@ -61,6 +62,8 @@
 #include "Pokemon/Pokemon2GSC.h"
 #include "Pokemon/Pokemon7USUM.h"
 #include "Pokemon/Pokemon8LA.h"
+#include "Pokemon/Pokemon8SWSH.h"
+#include "Pokemon/Pokemon9SV.h"
 #include "Trainer/Bank.h"
 #include "Utils/StringHelpers.h"
 
@@ -1159,6 +1162,72 @@ namespace Test
         if (unreceived)
         {
             context.check(unreceived->currentHandler() == 0 && unreceived->htName().empty(), "a conversion with no receiver invented a handler", "no receiver ht=\"" + Utils::utf16ToUtf8(unreceived->htName()) + "\"");
+        }
+
+        // 5. HOME's arrival rules for a Gen 3 Pokemon: new height and weight scalars where it had none
+        //    (Scale follows the height), and the TM or TR record flag of a move it keeps that the
+        //    destination teaches only that way. A legitimate FireRed Venusaur knowing Giga Drain
+        //    reached Violet with 0/0 sizes and no TM flag, and PKHeX reported TransferBad,
+        //    StatInvalidHeightWeight and move 3 Unobtainable.
+        {
+            constexpr uint16_t gigaDrainMove = 202;
+            fireRedVenusaur->setMove(2, gigaDrainMove);
+            fireRedVenusaur->setMovePP(2, 5);
+            fireRedVenusaur->refreshChecksum();
+            for (const Enums::GameVersion destination : {Enums::GameVersion::SWSH, Enums::GameVersion::BDSP, Enums::GameVersion::PLA, Enums::GameVersion::SV, Enums::GameVersion::ZA})
+            {
+                const std::string whereLabel = "synthetic FireRed Venusaur with Giga Drain -> " + Enums::getGameVersionName(destination);
+                Conversion::Result conversionResult = Conversion::Result::Ok;
+                auto converted = Conversion::convert(*fireRedVenusaur, destination, conversionResult, 0, &receivingTrainer);
+                if (!converted)
+                {
+                    // Legends: Arceus has no Venusaur; the refusal is its own test's business.
+                    continue;
+                }
+                context.check(converted->heightScalar() != 0 || converted->weightScalar() != 0, "a Gen 3 Pokemon reached a Gen 8+ format with the 0/0 sizes HOME re-rolls", whereLabel);
+                if (converted->hasScale())
+                {
+                    context.check(converted->scale() == converted->heightScalar(), "Scale does not follow the height scalar HOME copies into it", whereLabel + " scale=" + std::to_string(converted->scale()) + " height=" + std::to_string(converted->heightScalar()));
+                }
+                int gigaDrainSlot = -1;
+                for (int moveIndex = 0; moveIndex < 4; ++moveIndex)
+                {
+                    if (converted->move(moveIndex) == gigaDrainMove)
+                    {
+                        gigaDrainSlot = moveIndex;
+                    }
+                }
+                if (destination == Enums::GameVersion::SV)
+                {
+                    context.check(gigaDrainSlot >= 0, "the conversion dropped a move Venusaur learns by TM in Scarlet/Violet", whereLabel);
+                    int gigaDrainMachineIndex = -1;
+                    for (int machineIndex = 0; machineIndex < Pokemon::TM_COUNT_9SV; ++machineIndex)
+                    {
+                        if (Pokemon::TM_MOVES_9SV[machineIndex] == gigaDrainMove)
+                        {
+                            gigaDrainMachineIndex = machineIndex;
+                        }
+                    }
+                    context.check(gigaDrainMachineIndex >= 0 && static_cast<const Pokemon::Pokemon9SV &>(*converted).isTMFlagSet(gigaDrainMachineIndex), "a kept TM move did not get its Scarlet/Violet TM record flag", whereLabel + " machineIndex=" + std::to_string(gigaDrainMachineIndex));
+                }
+                if (destination == Enums::GameVersion::SWSH)
+                {
+                    for (int recordIndex = 0; recordIndex < Pokemon::TR_COUNT_8SWSH; ++recordIndex)
+                    {
+                        const bool expectedFlag = gigaDrainSlot >= 0 && Pokemon::TR_MOVES_8SWSH[recordIndex] == gigaDrainMove && Pokemon::isTRPermitted8SWSH(converted->speciesID(), converted->form(), recordIndex);
+                        if (expectedFlag)
+                        {
+                            context.check(static_cast<const Pokemon::Pokemon8SWSH &>(*converted).isTRFlagSet(recordIndex), "a kept TR move did not get its Sword/Shield TR record flag", whereLabel + " recordIndex=" + std::to_string(recordIndex));
+                        }
+                    }
+                }
+                for (const auto &issue : Legality::analyze(*converted, destination).issues)
+                {
+                    const bool sizeFinding = issue.code == Legality::ResultCode::TransferBad || issue.code == Legality::ResultCode::StatInvalidHeightWeight;
+                    context.check(!sizeFinding, "the legality checker objects to a converted Pokemon's sizes", whereLabel + " issue=\"" + issue.text + "\"");
+                    context.check(!(issue.source == Legality::IssueSource::Move && issue.severity == Legality::Severity::Invalid), "the legality checker objects to a move the conversion kept", whereLabel + " issue=\"" + issue.text + "\"");
+                }
+            }
         }
 
         // 4. Sun/Moon <-> Ultra Sun/Ultra Moon is one record format: the receiver changes nothing.

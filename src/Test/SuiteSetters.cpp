@@ -44,6 +44,7 @@
 #include "Pokemon/Pokemon8LA.h"
 #include "Pokemon/PersonalInfoTable.h"
 #include "Pokemon/PIDSearch.h"
+#include "Pokemon/FormInfo.h"
 #include "Pokemon/Pokemon7LGPE.h"
 #include "Enums/LanguageID.h"
 #include "Utils/StringHelpers.h"
@@ -213,6 +214,28 @@ namespace Test
             {
                 pokemon.recalculateStats();
                 context.check(pokemon.statHPMax() == 1, "Shedinja's HP is not 1", whereLabel + " hp=" + std::to_string(pokemon.statHPMax()));
+            }
+
+            // Confirming the value a Pokemon already has must not touch its PID. The details page's
+            // nature and gender pickers call the setter on every confirm, and a Gen 3 reroll there
+            // replaced a FireRed starter's Method 1 PID with an uncorrelated one (PIDTypeMismatch).
+            {
+                pokemon.setSpecies(25);
+                pokemon.setPID(0x6A566C19u);
+                pokemon.refreshChecksum();
+                // Gens 4 and 5 also STORE the gender, and a raw PID write leaves the blank record's
+                // stored gender disagreeing with the PID; setGender rightly repairs that. One call
+                // with the PID's own gender makes the record consistent before the snapshot.
+                pokemon.setGender(Pokemon::genderFromPID(pokemon.pid(), Pokemon::getGenderRatio(25, 0, group)));
+                const uint32_t pidBefore = pokemon.pid();
+                const uint8_t ivAttackBefore = pokemon.ivATK();
+                pokemon.setNature(pokemon.nature());
+                context.check(pokemon.pid() == pidBefore, "setNature with the current nature changed the PID", whereLabel + " " + hexField("before", pidBefore, 8) + " " + hexField("after", pokemon.pid(), 8));
+                pokemon.setGender(pokemon.gender());
+                context.check(pokemon.pid() == pidBefore, "setGender with the current gender changed the PID", whereLabel + " " + hexField("before", pidBefore, 8) + " " + hexField("after", pokemon.pid(), 8));
+                pokemon.setShiny(pokemon.isShiny(id32, ""), id32);
+                context.check(pokemon.pid() == pidBefore, "setShiny with the current shininess changed the PID", whereLabel + " " + hexField("before", pidBefore, 8) + " " + hexField("after", pokemon.pid(), 8));
+                context.check(pokemon.ivATK() == ivAttackBefore, "confirming an unchanged nature, gender or shininess changed the IVs", whereLabel);
             }
 
             // Wurmple's evolution comes from the PID: a PID touch-up must not turn a Silcoon-line

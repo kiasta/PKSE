@@ -931,6 +931,32 @@ namespace Test
                 defective->setMovePP(0, 99);
                 expectVerifierFlags(context, Legality::verifyMovePP, base, *defective, uncheckedEncounter, {Legality::Severity::Invalid, Legality::CheckIdentifier::CurrentMove, Legality::ResultCode::MovePPTooHigh});
             }
+            // The words: an empty slot holding PP is called empty, not "above the amount allowed" with
+            // the stored PP printed as if it were the limit (a HOME gift Fuecoco's empty fourth slot
+            // holds 35 PP), and a real move's message names both the stored PP and its limit.
+            {
+                auto defective = base.clone();
+                defective->setMove(3, 0);
+                defective->setMovePPUps(3, 0);
+                defective->setMovePP(3, 99);
+                defective->setMovePP(0, 99);
+                defective->refreshChecksum();
+                bool emptySlotDescribed = false;
+                bool movePPDescribed = false;
+                std::string reportedTexts;
+                for (const Legality::Issue &issue : runVerifier(Legality::verifyMovePP, *defective, group, uncheckedEncounter).issues)
+                {
+                    if (issue.code != Legality::ResultCode::MovePPTooHigh)
+                    {
+                        continue;
+                    }
+                    reportedTexts += " \"" + issue.text + "\"";
+                    emptySlotDescribed = emptySlotDescribed || issue.text.rfind("Move 4 is empty, but the slot still stores 99 PP.", 0) == 0;
+                    movePPDescribed = movePPDescribed || (issue.text.rfind("Move 1 has 99 PP, more than the ", 0) == 0 && defective->move(0) != 0);
+                }
+                context.check(emptySlotDescribed, "an empty move slot holding PP is not described as empty", "texts:" + reportedTexts);
+                context.check(movePPDescribed || defective->move(0) == 0, "a move with too much PP does not name its stored PP and its limit", "texts:" + reportedTexts);
+            }
             const bool hasPPUps = group != Enums::GameVersion::PLA && group != Enums::GameVersion::ZA;
             if (hasPPUps)
             {

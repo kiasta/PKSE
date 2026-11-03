@@ -409,8 +409,8 @@ namespace Pokemon
         }
         void setLevel(uint8_t level) noexcept override;   // writes EXP for the level, recalcs
         void setExp(uint32_t value) noexcept override;    // writes EXP (the level derives from it), recalcs
-        void setNature(uint8_t nature) noexcept override; // re-rolls PID to the nature (keeps gender + shiny)
-        void setGender(uint8_t gender) noexcept override; // re-rolls PID to the gender (keeps nature + shiny)
+        void setNature(uint8_t natureValue) noexcept override; // re-rolls PID to a new nature (keeps gender + shiny); no-op when unchanged
+        void setGender(uint8_t genderValue) noexcept override; // re-rolls PID to a new gender (keeps nature + shiny); no-op when unchanged
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
         void regeneratePID(uint32_t trainerID32) noexcept override;
         void recalculateStats() noexcept override;

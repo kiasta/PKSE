@@ -789,6 +789,19 @@ namespace Pokemon
             const int flagOffset = machineIndex < 200 ? 0x12F + (machineIndex >> 3) : 0x4B + ((machineIndex - 200) >> 3);
             return ((static_cast<uint8_t>(data[flagOffset]) >> (machineIndex & 7)) & 1) != 0;
         }
+        /// Sets or clears one Technical Machine record flag, at the same place isTMFlagSet reads it
+        /// (PKHeX PK9.SetMoveRecordFlag). The caller refreshes the checksum.
+        void setTMFlag(int machineIndex, bool isSet) noexcept
+        {
+            if (machineIndex < 0 || machineIndex >= 304)
+            {
+                return;
+            }
+            const int flagOffset = machineIndex < 200 ? 0x12F + (machineIndex >> 3) : 0x4B + ((machineIndex - 200) >> 3);
+            const uint8_t flagMask = static_cast<uint8_t>(1u << (machineIndex & 7));
+            const uint8_t flagByte = static_cast<uint8_t>(data[flagOffset]);
+            data[flagOffset] = static_cast<std::byte>(isSet ? (flagByte | flagMask) : (flagByte & static_cast<uint8_t>(~flagMask)));
+        }
     };
 }
 
