@@ -16,7 +16,7 @@ PKSE is a homebrew application for conveniently editing Pokemon save files on th
 - Edit trainer info and item pouches. **Add All Items** (ZR in the Items view) gives you every item each pocket can hold, in the amount you choose, capped at what the game allows for each item. Key items are left out unless you switch them on, since getting one early can skip or break story events.
 - **Older generations** — open a save file from an emulator, a cartridge dump or a 3DS save manager and edit it the same way. Boxes, party, items, trainer details, the creator, the legality checker and the bank all work as they do for the Switch games.
 - **Pokemon creator** — build a Pokemon from scratch in any supported game's format, with legal options highlighted.
-- **Legality checker** — flags illegal values as you edit, and checks whether a real encounter in the Pokemon's origin game could have produced it (informational; it never blocks or auto-changes anything).
+- **Legality checker** — a port of PKHeX's legality analysis, at PKHeX's severities: the field checks, and which real encounter in the Pokemon's origin game produced it, its PID/IV correlation, its moves and its transfer history. A Pokemon with only warnings is legal, as PKHeX calls it. Informational: it never blocks or auto-changes anything.
 - **Cross-game bank** — PKSE-native persistent storage that every supported game shares, 200 boxes deep. Deposit from one game and withdraw into another and the Pokemon is converted into the destination's format on the way out, preserving its origin (OT, IDs, met data, IVs/nature/PID). Moves the destination can't legally know are cleared, since an impossible move corrupts the Pokemon in some games. Red/Blue/Yellow and Gold/Silver/Crystal Pokemon travel forward through Poke Transporter, exactly as the Virtual Console games did, and never back.
 - **Pokemon files** — export a Pokemon from Storage as a PKHeX-compatible file (`.pk3`, `.pb7`, `.pk9` and so on) to `sdmc:/PKSE/exports`, and import one into the bank through the same browser as PKSM banks. PKHeX's encrypted files (`.ek3` … `.ea9`) open too.
 - **PKSM bank import** — read a PKSM `.bnk` file straight off the SD card (Minus in the Storage view opens a file browser) and pull its Pokemon into PKSE's bank, keeping your box layout and box names. Every generation a PKSM bank can hold is covered — Gens 1 through 9 — and the preview reports exactly what it found before anything is written.
@@ -257,8 +257,13 @@ It finds every `tools/gen_*.py` by itself. By default it **also regenerates any 
 | `gen_movepresence.py` | which moves exist in each game |
 | `gen_itempouches.py` | which items belong in each bag pocket |
 | `gen_itempresence.py` | which items a Pokemon may legally hold, per game |
-| `gen_evolutions.py` | the legality checker's evolution tables |
-| `gen_encounters.py` | the legality checker's encounter tables — wild, static, gift, trade, raid and Mystery Gift |
+| `gen_evolutions.py` | evolution chains (pre-evolution walks) |
+| `gen_encounters.py` | the Gen 3 encounter rows the bank's Gen 3 rebuild reads, and helpers the per-generation encounter generators share |
+| `gen_encounters1.py` … `gen_encounters9a.py` | the legality checker's encounter templates, one generator per PKHeX encounter generation — wild, static, gift, trade, egg, raid and Mystery Gift |
+| `gen_evolutiontree.py` | the legality checker's evolution trees |
+| `gen_legalitycodes.py` | the legality checker's check identifiers and result codes, with PKHeX's English text |
+| `gen_learnsources.py`, `gen_moverecords.py` | the per-game move data the legality checker's move verdicts read |
+| `gen_helditems.py`, `gen_breedingpermissions.py`, `gen_encounterbreeding.py`, `gen_memories.py`, `gen_geolocation.py`, `gen_vivillonpatterns.py`, `gen_wordfilter.py`, `gen_gen2korean.py` | the rule tables the legality checker's verifiers read |
 | `gen_blocktables.py` | the fixed save-block tables for Gens 5–7 |
 | `gen_dexformtables.py` | Pokedex form-index tables for X/Y, Omega Ruby/Alpha Sapphire, Sun/Moon, Ultra Sun/Ultra Moon and Let's Go |
 | `gen_dextable8swsh.py` | which of Sword/Shield's three Pokedexes a species is in |

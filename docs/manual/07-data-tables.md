@@ -47,7 +47,20 @@ Rerun the generator.
 | `Pokemon/Gen2Tables.cpp` | `gen_personaltables.py` | Gen 2's own item id space |
 | `Trainer/Blocks5BW.h` … `Blocks7USUM.h` (6) | `gen_blocktables.py` | The fixed block tables of the six block-list saves |
 | `Utils/Gen2Text.h`, `Utils/Gen4Text.h` | `gen_gen2text.py`, `gen_gen4text.py` | Gen 2 and Gen 4 character tables |
-| `Legality/EncounterTable.cpp` | `gen_encounters.py` | Every encounter template, per game (~53 k lines) |
+| `Legality/EncounterTable.cpp` | `gen_encounters.py` | Gen 3's merged encounter rows (Ruby/Sapphire/Emerald, FireRed/LeafGreen), read only by the bank's Gen 3 rebuild |
+| `Legality/Encounters/EncounterData1.cpp` … `EncounterData9a.cpp` | `gen_encounters1.py` … `gen_encounters9a.py` (one per PKHeX encounter generation: 1, 2, 3, 4, 5, 6, 7, 8, 8a, 8b, 9, 9a), and `gen_encountersgo.py` for `EncounterDataGO.cpp` (Pokemon GO: GO Park and GO to HOME) | The encounter engine's templates: one array per PKHeX array, unmerged, in PKHeX's order, of the template classes themselves (chapter 11) |
+| `Legality/Encounters/EncounterBreedingTable.cpp` | `gen_encounterbreeding.py` | PKHeX `Breeding.cs`: which species can hatch, split-breed parents, breedable forms |
+| `Legality/Evolutions/EvolutionTreeTable.cpp` | `gen_evolutiontree.py` | The evolution engine's trees, one per PKHeX entity context |
+| `Legality/ResultCode.h`, `ResultCodeText.cpp` | `gen_legalitycodes.py` | PKHeX's `CheckIdentifier`s and result codes, PKSE names in PKHeX's order, with PKHeX's English templates |
+| `Legality/Verifiers/BreedingPermissionTable.cpp` | `gen_breedingpermissions.py` | Egg ball inheritance per species (`BallContext6/7/HOME.Permit`) and Gen 5's hidden-ability breeding ban |
+| `Legality/Verifiers/MemoryTable.h` | `gen_memories.py` | PKHeX's trainer-memory rules (argument types, per-context memory tables) |
+| `Legality/Verifiers/GeolocationTable.h` | `gen_geolocation.py` | Which 3DS (country, region) pairs exist |
+| `Legality/Verifiers/VivillonPatternTable.cpp` | `gen_vivillonpatterns.py` | Which Vivillon pattern each 3DS region offers |
+| `Legality/Verifiers/WordFilterTable.cpp` | `gen_wordfilter.py` | The consoles' bad-word lists, for nickname and trainer-name checks (PKSE matches the subset of regex they use, without a regex engine) |
+| `Pokemon/LearnSourceTable.cpp` | `gen_learnsources.py` | The per-game move data PKHeX's learn sources read: level-up learnsets WITH levels, egg moves, tutors, in PKHeX's own shape |
+| `Pokemon/MoveRecordTable.cpp` | `gen_moverecords.py` | Per-species TR, move-shop and Z-A move permissions (`MiscVerifier`, `LegendsArceusVerifier`, `LegendsZAVerifier`) |
+| `Names/ReleasedHeldItemTable.cpp` | `gen_helditems.py` | PKHeX's legality question for held items, per entity context (`ItemVerifier`). Not `ItemPresence`, which is the bank's question |
+| `Utils/Gen2KoreanText.h` | `gen_gen2korean.py` | The set of code points Korean Gold/Silver can write, for the Game Boy name checks |
 | `Pokemon/FormSpriteMapping.cpp` | — (hand-maintained) | Form → PokeAPI sprite id / name stem |
 | `romfs/sprites/pokemon_hd/` | `gen_hdsprites.py` | The 3260 sprite PNGs |
 | `romfs/sprites/types/` | `gen_typeicons.py` | The 19 type icons — 18 plus Stellar, which is Tera-only |
@@ -158,7 +171,7 @@ The table is flat: indices `0..1025` are the form-0 rows, `1026..` are alternate
 base row's `formIndex` redirects into — mirroring PKHeX's `FormIndex` redirection. Out-of-range
 species or forms fall back to the species' form-0 row.
 
-`presence` (an OR of `PersonalGameBit`) is what conversion, Layer 2 legality and the creator's
+`presence` (an OR of `PersonalGameBit`) is what conversion, the legality checker's transfer check and the creator's
 species filter test to decide what a given game may hold.
 
 **PKHeX stores "no second ability" as `ability2 == ability1`, not `0`.**
@@ -253,17 +266,26 @@ shifts move thousands of lines without changing a single answer:
   Route 7 — where blue ones are — read as a species never there.
 - **`LearnsetTable`: 0 rows removed, 797 added, 16 changed — and every change is a gain.** The added
   rows are exactly PKHeX's cosmetic lists; the changed ones are Floette's flowers inheriting
-  Flabébé's moves through the new edges. **Those 797 forms' moves had never been checked**: Layer 2
-  reads a `nullptr` row as "unknown", correctly, and so said nothing about any of them.
+  Flabébé's moves through the new edges. **Those 797 forms' moves had never been checked**: the move
+  check of the time read a `nullptr` row as "unknown", correctly, and so said nothing about any of them.
 
 The reader was fixed alongside: **a Gen 1-6 evolution binary is addressed BY SPECIES for every form**
 (`EVO_SPECIES_INDEXED`, moved into `gen_learnsets.py` beside the reader that needs it), as
 `EvolutionReverseSpecies` walks it. Addressing it by form index sent Floette's own alternate forms,
 which do have entries, past the end of the file.
 
-## Encounter tables (legality Layer 3)
+## Encounter tables
 
-`include/Legality/EncounterTable.h`, generated by `gen_encounters.py`. One flat row per template:
+There are two sets, and they answer different questions.
+
+**The encounter engine's templates** (`Legality/Encounters/EncounterDataN.*`, one `gen_encountersN.py`
+per PKHeX encounter generation) are PKHeX's own arrays, unmerged and in PKHeX's order, emitted as
+the template classes themselves. They are what the legality checker searches for every origin; chapter 11 ("Porting a generation's encounters") is the recipe for a new generation.
+
+**The Gen 3 landing table** below (`include/Legality/EncounterTable.h`, generated by
+`gen_encounters.py` for its `TABLE_GAMES`, Ruby/Sapphire/Emerald and FireRed/LeafGreen) predates the
+engine. The legality checker no longer reads it; the bank's Gen 3 rebuild (`gen3LandingFor`, chapter
+10) picks a met location from it. One flat row per template:
 
 ```cpp
 struct EncounterRow {
@@ -281,7 +303,7 @@ struct EncounterRow {
     uint8_t  flags;         // FATEFUL / ALPHA / BOOST60 / EGG / MET_LEVEL_ZERO / CATCH_COMBO
 };
 
-const EncounterTable* getEncounterTable(Enums::GameVersion versionOrGroup);   // nullptr if none
+const EncounterTable* getEncounterTable(Enums::GameVersion versionOrGroup);   // nullptr unless Gen 3
 ```
 
 Design notes that matter if you extend it (the readers and the per-generation traps are in
@@ -297,7 +319,7 @@ chapter 11):
   each is a distinct template whose fixed data must stay exact.
 - **The ability slot is deliberately absent.** Ability Capsule and Ability Patch let a legitimate
   Pokémon hold a slot its encounter never offered, so the column would only enable a check that
-  false-flags real saves. Layer 2 already verifies the ability against the species.
+  false-flags real saves. The ability verifier checks it against the species and the encounter.
 - **Region sentinels**: `ENCOUNTER_LOCATION_SWSH_WILDAREA{,_ISLE_OF_ARMOR,_ALL}` stand for a whole region —
   SW/SH distribution raids, where the den is anonymous — and `ENCOUNTER_LOCATION_ROAMER2` through
   `ROAMER5` stand for the routes a roamer can be cornered on. Resolve them with
@@ -524,8 +546,8 @@ for origin versions 1-5, 7-12, 20-34 and 42-52 and nothing for 35-41, so every G
 Crystal record hit `default: return ""`. A `PK2` inherits `originGame() == 0`,
 `locationTableVersion` falls through to the format's representative version (Gold, 39), and the
 details page printed `(none)` — **the same thing it prints for a field that is genuinely unset**, so
-a Crystal Pokémon caught on Route 25 and one with no caught data at all looked identical. Layer 3
-said `location57`. The table is `text_gsc_00000_en.txt`, 128 entries (Gen 2's met location is seven
+a Crystal Pokémon caught on Route 25 and one with no caught data at all looked identical. The
+encounter check said `location57`. The table is `text_gsc_00000_en.txt`, 128 entries (Gen 2's met location is seven
 bits), one bank, all nine languages, and Gold/Silver share Crystal's because only Crystal ever writes
 the field. Gen 1 needs none: a PK1 has no met data, so the row is never drawn.
 
@@ -606,10 +628,11 @@ ENCOUNTERED with through evolution (PKHeX `AbilityVerifier.VerifyBirthAbility`),
 caught with Big Pecks stays a Big Pecks Fletchinder. The one Fletchinder in a real Z-A save — Big
 Pecks in slot 2, never through HOME — was reported "Ability not legal for this species", by two
 places each asking their own copy of the slot question. `Pokemon::isAbilityLegal(const Pokemon &)`
-is now the only place it is asked: one of the species' slots, or, where the entity's
-`hasBirthAbility()` says so, the ability that same slot held on any species in the chain. PKHeX
-checks the one encounter it matched; Layer 2 cannot name that encounter, so any ancestor counts,
-which can only accept more than PKHeX does.
+became the one place outside the legality checker that asks it: one of the species' slots, or, where
+the entity's `hasBirthAbility()` says so, the ability that same slot held on any species in the
+chain. This predicate cannot name an encounter, so any ancestor counts, which can only accept more
+than PKHeX does. The legality checker itself now asks PKHeX's question, against the encounter it
+matched (`AbilityVerifier.cpp`, chapter 11).
 
 ### Decoding PKHeX's text files
 

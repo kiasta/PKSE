@@ -134,7 +134,14 @@ PKSE/
 │   ├── Conversion/             cross-generation entity conversion
 │   ├── Encryption/             per-group crypt
 │   ├── Enums/                  GameVersion, SCTypeCode, Ball, LanguageID
-│   ├── Legality/               the 3-layer checker + generated encounter tables
+│   ├── Legality/               the legality checker, a port of PKHeX's (ch. 11): analyze(), AnalysisContext,
+│   │   │                       ResultCode, and the generated Gen 3 rows the bank's rebuild reads
+│   │   ├── Verifiers/          one file per PKHeX verifier, run in PKHeX's order
+│   │   ├── Encounters/         the encounter engine: templates, generated per-generation data, coroutine
+│   │   │                       generators and enumerators, EncounterFinder, LegalityInfo
+│   │   ├── Evolutions/         the evolution engine (EvolutionTree, EvolutionHistory)
+│   │   ├── LearnSource/        move verification (LearnVerifier, MoveBreed)
+│   │   └── RNG/                PKHeX's RNG library (LCRNGs, MethodFinder, PIDIV)
 │   ├── Libs/                   stb_image.h (vendored)
 │   ├── Names/                  generated string tables
 │   ├── Pokemon/                entity classes + generated data tables
@@ -154,7 +161,9 @@ PKSE/
     ├── pkhex_source.py         fetches + caches PKHeX resources; tracks the default branch, PKHEX_REF pins
     ├── regenerate.py           runs every table generator in one go
     ├── formdump/               a .NET tool that calls PKHeX's real FormConverter (ch. 07)
-    ├── harness/                host test programs over real saves; uihost/ drives the real UI headless
+    ├── legalitydump/           a .NET tool that runs PKHeX's own LegalityAnalysis, for legality parity (ch. 11)
+    ├── harness/                host test programs over real saves; uihost/ drives the real UI headless;
+    │                           build-parity.sh + the *_diff.py scripts compare the legality checker with PKHeX
     └── syntax_check.py         the fast compile check. Use it constantly.
 ```
 
@@ -208,7 +217,8 @@ Save::       Block, readTrainerInfo, saveTrainerInfo, TrainerVariant
 Encryption:: decrypt, encrypt, encryptArray8SWSH, cryptPokemon
 Names::      getItemName, getMoveName, getFormName, getPouchItems
 Enums::      GameVersion, SCTypeCode, Ball, LanguageID
-Legality::   analyze, Report, Issue, EncounterRow
+Legality::   analyze, Report, Issue, AnalysisContext, ResultCode, verifyPID ...
+Legality::Encounters:: Encounterable, EncounterFinder, LegalityInfo   (also ::Evolutions, ::LearnSource, ::RNG)
 Conversion:: convert, canConvert, Result
 UI::         UIManager, TrainerViewScreen, PKSEFramebuffer, Colors
 UI::Panels:: drawItems, drawStorageView, drawHomeMenu

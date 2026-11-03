@@ -421,13 +421,27 @@ a dex-presence rule, and check the conversion in both directions against real Po
 
 ## 12. Legality
 
-Layers 1 and 2 mostly work already, because they read the base interface. Check:
+The checker is a port of PKHeX's, so a new game's legality is whatever PKHeX does for it, ported in
+the same shape (chapter 11). Wait for PKHeX to support the game; there is nothing to invent.
 
-- `presenceBit()` in `Legality.cpp` needs a case if the personal table has a bit for the game.
-- Any check whose *question* differs for this format needs a branch — see the three-rule EV check
-  (chapter 11).
-- Layer 3 needs an encounter table, or `getEncounterTable()` returns `nullptr` and it correctly
-  emits one Info note and stops.
+- **The verifiers mostly work already**, because they read the base `Pokemon` interface. Where PKHeX
+  adds a branch or a format gate for the new game or its entity context, port it into that verifier's
+  file and into `runVerifiers()`'s gates. A field PKHeX reads that the entity does not expose needs an
+  accessor and a capability predicate first (chapter 06).
+- **Regenerate every legality table whose game list the game joins**: `gen_legalitycodes.py` (new
+  result codes), `gen_learnsources.py`, `gen_evolutiontree.py` (a new entity context is a new tree),
+  `gen_helditems.py`, `gen_moverecords.py`, `gen_breedingpermissions.py`, `gen_memories.py`, and the
+  `gen_encounters.py` helpers the per-generation generators import (its `GAMES` list is
+  append-only; only a Gen 3 game would add to its `TABLE_GAMES`). Compare each semantically.
+- **Port the game's encounters** with the five-step recipe in chapter 11 ("Porting a generation's
+  encounters"): templates, a `gen_encountersN.py`, the generator and enumerator coroutines, the
+  `EncounterVerifier` branches. Until the generator is wired into `EncounterGenerator::getEncounters`
+  the origin matches nothing and gets `EncounterInvalid`, so port it before shipping the game.
+- **A new transfer path** (HOME, a new context) is `TransferVerifier.cpp` plus the learn groups'
+  step-back and the evolution engine's context list.
+- **Measure with parity**: add the game's test save to the save tree, set `PARITY_REFRESH_PKHEX=1`
+  once (the cache predates the save), and run `build-parity.sh` until the new title shows no gaps and
+  no extras. Planted cases in `SuiteLegality.cpp` cover any branch the save does not reach.
 
 ---
 

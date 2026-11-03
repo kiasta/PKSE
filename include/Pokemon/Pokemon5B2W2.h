@@ -140,6 +140,13 @@ namespace Pokemon
         uint16_t speciesID() const noexcept override { return rd16(0x08); }
         void setSpecies(uint16_t value) noexcept override { wr16(0x08, value); }
         const char *species() const noexcept override;
+        bool hasContestStats() const noexcept override { return true; }
+        uint8_t contestStat(int statIndex) const noexcept override { return (statIndex >= 0 && statIndex < 6) ? rd8(0x1E + statIndex) : 0; }
+        uint8_t markingCount() const noexcept override { return 6; }
+        uint16_t markingValue() const noexcept override { return rd8(0x16); }
+        bool hasGroundTile() const noexcept override { return true; }
+        uint8_t groundTile() const noexcept override { return rd8(0x85); }
+
         uint16_t heldItem() const noexcept override { return rd16(0x0A); }
         void setHeldItem(uint16_t value) noexcept override { wr16(0x0A, value); }
         uint32_t id32() const noexcept override { return rd32(0x0C); }
@@ -278,6 +285,7 @@ namespace Pokemon
         bool isPokerusInfected() const noexcept override { return (rd8(0x82) & 0xF) != 0; }
         bool isPokerusCured() const noexcept override { return (rd8(0x82) & 0xF) == 0 && (rd8(0x82) >> 4) != 0; }
         bool hasPokerus() const noexcept override { return true; }
+        uint8_t pokerus() const noexcept override { return rd8(0x82); }
         void setPokerus(uint8_t value) noexcept override { wr8(0x82, value); }
 
         uint8_t ball() const noexcept override { return rd8(0x83); }
@@ -383,6 +391,11 @@ namespace Pokemon
         int natureModifier(int statIndex) const noexcept;
         std::u16string readString(size_t offset, size_t units) const;
         void writeString(size_t offset, size_t units, const std::u16string &value) noexcept;
+
+    public:
+        /// Pokestar Studios fame (PKHeX PK5.PokeStarFame) and N's Sparkle (0x42 bit 1).
+        uint8_t pokeStarFame() const noexcept { return rd8(0x87); }
+        bool hasNSparkle() const noexcept { return (rd8(0x42) & 0x02) != 0; }
     };
 }
 

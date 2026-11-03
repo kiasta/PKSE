@@ -33,6 +33,7 @@
 #include "Pokemon/Trade.h"     // applyTradeRoundTrip -- the handler block a trade leaves
 #include "Trainer/TradeDonor.h" // gamesCanTrade -- which saves may stand in as a partner
 #include "Pokemon/Gen1Tables.h"
+#include "Legality/Encounters/EncounterGenerator.h"
 #include "Legality/Legality.h"      // the encounter rules are asserted through the analyzer itself
 #include "Pokemon/AbilityInfo.h"    // the Legends: Z-A birth ability
 #include "Pokemon/EvolutionTable.h" // form-keeping evolution edges
@@ -1377,17 +1378,30 @@ namespace Test
         };
         // A Crystal-format record. Met location 0 and met level 0 leave its caught data EMPTY, which
         // is what a Gold or Silver Pokemon carries.
-        auto gen2Pokemon = [](uint16_t speciesId, uint8_t level, uint16_t metLocation, uint8_t metLevel)
+        constexpr uint16_t tackleMoveId = 33;
+        auto gen2Pokemon = [](uint16_t speciesId, uint8_t level, uint16_t metLocation, uint8_t metLevel, uint16_t moveId)
         {
             auto pokemon = std::make_unique<Pokemon::Pokemon2GSC>(false);
             pokemon->setSpecies(speciesId);
             pokemon->setLevel(level);
             pokemon->setTID16(12345);
             pokemon->setOTName(Utils::utf8ToUtf16("PKSE"));
+            // An empty name is itself a finding (PKHeX NickLengthShort), so give the species' own.
+            pokemon->setNickname(Pokemon::speciesNameAsStored(speciesId, Enums::GameVersion::GSC, static_cast<uint8_t>(Enums::LanguageID::English)));
             pokemon->setMetLocation(metLocation);
             pokemon->setMetLevel(metLevel);
+            // An empty moveset is itself a finding (PKHeX LearnVerifier: an empty first move slot),
+            // and a move the encounter cannot explain is another (PKHeX leaves it unparsed, which is
+            // invalid), so each case passes a move its own encounter knows.
+            pokemon->setMove(0, moveId);
             pokemon->recalculateStats();
             return pokemon;
+        };
+        // Crystal records the time of day of anything caught or hatched; only a gift or an in-game trade leaves it 0 (PKHeX MiscG1Verifier).
+        auto setMorning = [](Pokemon::Pokemon2GSC &pokemon)
+        {
+            constexpr uint16_t morningTimeOfDay = 1;
+            pokemon.setCaughtData(static_cast<uint16_t>(pokemon.caughtData() | (morningTimeOfDay << 14)));
         };
         auto expectLegal = [&](const Pokemon::Pokemon &pokemon, Enums::GameVersion group, const char *what, const std::string &detail)
         {
@@ -1400,7 +1414,7 @@ namespace Test
         };
 
         {
-            auto steelix = gen2Pokemon(steelixSpeciesId, 6, 126, 0);
+            auto steelix = gen2Pokemon(steelixSpeciesId, 6, 126, 0, tackleMoveId);
             steelix->setTID16(kyleTrainerId);
             // The trade's own fixed DVs (Attack 9, then 6/6/6), which is also what makes it male --
             // a Gen 2 gender is read off the Attack DV, and the template fixes this one.
@@ -1409,28 +1423,48 @@ namespace Test
             expectLegal(*steelix, Enums::GameVersion::GSC, "a Crystal in-game trade is not recognised", "Steelix traded as Kyle's Onix, met at LinkTrade2NPC (126) at met level 0");
         }
         {
-            auto raikou = gen2Pokemon(raikouSpeciesId, 40, 34, 40);
+            constexpr uint16_t leerMoveId = 43; // Raikou's level 1 move
+            auto raikou = gen2Pokemon(raikouSpeciesId, 40, 34, 40, leerMoveId);
+            setMorning(*raikou);
             expectLegal(*raikou, Enums::GameVersion::GSC, "a Crystal roamer met on a Johto route is not recognised", "Raikou met at location 34 at level 40");
+            // A move the matched encounter cannot explain is left unparsed, and PKHeX counts an
+            // unparsed move as invalid (MoveResult.Valid is false for LearnMethod.None).
+            raikou->setMove(0, tackleMoveId);
+            expectFlagged(*raikou, Enums::GameVersion::GSC, "a Gen 2 move no source explains was not flagged", "Raikou met at location 34 at level 40 knowing Tackle");
         }
         {
-            auto cleffa = gen2Pokemon(cleffaSpeciesId, 5, 19, 1);
+            constexpr uint16_t poundMoveId = 1; // Cleffa's level 1 move
+            auto cleffa = gen2Pokemon(cleffaSpeciesId, 5, 19, 1, poundMoveId);
+            setMorning(*cleffa);
             expectLegal(*cleffa, Enums::GameVersion::GSC, "a Crystal egg hatched away from location 16 is flagged", "Cleffa met at location 19 at met level 1");
         }
         {
-            auto togepi = gen2Pokemon(togepiSpeciesId, 5, 0, 0);
+            constexpr uint16_t growlMoveId = 45; // Togepi's level 1 move
+            auto togepi = gen2Pokemon(togepiSpeciesId, 5, 0, 0, growlMoveId);
             expectLegal(*togepi, Enums::GameVersion::GSC, "a Gold/Silver egg with no caught data is flagged", "Togepi, level 5, no caught data");
             togepi->setLevel(3);
             expectFlagged(*togepi, Enums::GameVersion::GSC, "a Pokemon below the level an egg hatches at was explained as an egg", "Togepi, level 3, no caught data");
         }
         {
-            auto articuno = gen2Pokemon(articunoSpeciesId, 65, 0, 0);
+            auto articuno = gen2Pokemon(articunoSpeciesId, 65, 0, 0, tackleMoveId);
+            // Peck, a level 1 move in Red/Blue: the engine judges a Game Boy moveset now, and
+            // Articuno never learns the helper's Tackle.
+            constexpr uint16_t peckMoveId = 64;
+            articuno->setMove(0, peckMoveId);
+            // One past the level's threshold: an exact threshold away from the encounter level is
+            // PKHeX's LevelEXPThreshold Fishy, which is not what this case is about.
+            articuno->setExp(articuno->exp() + 1);
             expectLegal(*articuno, Enums::GameVersion::GSC, "a Gen 1 Pokemon in a Gen 2 save is not traced back through the Time Capsule", "Articuno, level 65, no caught data");
         }
         {
-            auto celebi = gen2Pokemon(celebiSpeciesId, 30, 0, 0);
+            // Future Sight, Celebi's level 30 move: Gen 2 has no move reminder outside Stadium 2, so a
+            // level 1 move pushed out of the level 30 encounter's moveset would be a finding of its own.
+            constexpr uint16_t futureSightMoveId = 248;
+            auto celebi = gen2Pokemon(celebiSpeciesId, 30, 0, 0, futureSightMoveId);
             expectFlagged(*celebi, Enums::GameVersion::GSC, "a Celebi with no caught data matched Crystal's GS Ball Celebi", "Celebi, level 30, no caught data");
             celebi->setMetLocation(14);
             celebi->setMetLevel(30);
+            setMorning(*celebi);
             expectLegal(*celebi, Enums::GameVersion::GSC, "Crystal's GS Ball Celebi is not recognised", "Celebi met at Ilex Forest (14) at level 30");
         }
         {
@@ -1439,13 +1473,20 @@ namespace Test
             butterfree.setLevel(9);
             butterfree.setTID16(12345);
             butterfree.setOTName(Utils::utf8ToUtf16("PKSE"));
+            butterfree.setNickname(Pokemon::speciesNameAsStored(butterfreeSpeciesId, Enums::GameVersion::RBY, static_cast<uint8_t>(Enums::LanguageID::English)));
+            // An empty moveset is itself a finding (PKHeX LearnVerifier); Confusion is the move it
+            // learns on evolving.
+            constexpr uint16_t confusionMoveId = 93;
+            butterfree.setMove(0, confusionMoveId);
+            // One past the level's threshold (see the Articuno case).
+            butterfree.setExp(butterfree.exp() + 1);
             butterfree.recalculateStats();
             expectLegal(butterfree, Enums::GameVersion::RBY, "a Gen 1 Pokemon catchable in Gen 2 is not traced forward through the Time Capsule", "Butterfree, level 9 -- Gold and Crystal have a level 7 one");
         }
 
-        // THE EVOLUTION FLOOR OUTRANKS THE LEVEL BAND. On FireRed's Route 16 a Raticate met at 18 fits
-        // the Rattata row and misses its own 23-25 row; now level 19, what it cannot have done is
-        // evolve. Ranked the other way, the report named a level band instead.
+        // A RATICATE THAT CANNOT HAVE EVOLVED HAS NO ENCOUNTER. On FireRed's Route 16 a Raticate met at 18
+        // fits the Rattata row and misses its own 23-25 row; now level 19, it cannot have evolved since.
+        // PKHeX's finder (ported in Legality/Encounters) reports that as an Invalid EncounterInvalid.
         {
             std::vector<std::byte> record(Trainer::Bank::recordSizeFor(Enums::GameVersion::FRLG), std::byte{0});
             auto raticate = Trainer::Bank::makePokemon(Enums::GameVersion::FRLG, record);
@@ -1459,12 +1500,12 @@ namespace Test
                 raticate->setLevel(19);
                 raticate->recalculateStats();
                 const Legality::Report report = Legality::analyze(*raticate, Enums::GameVersion::FRLG);
-                bool explainedAsEvolution = false;
+                bool encounterRejected = false;
                 for (const auto &issue : report.issues)
                 {
-                    explainedAsEvolution = explainedAsEvolution || issue.text.find("would have to evolve from") != std::string::npos;
+                    encounterRejected = encounterRejected || (issue.identifier == Legality::CheckIdentifier::Encounter && issue.code == Legality::ResultCode::EncounterInvalid && issue.severity == Legality::Severity::Invalid);
                 }
-                context.check(explainedAsEvolution, "an unpaid evolution level was reported as a level band instead", "Raticate met at Route 16 at 18, now level " + std::to_string(raticate->level()) + " -- " + problemsIn(report));
+                context.check(encounterRejected, "a Raticate that cannot have evolved since it was met still matched an encounter", "Raticate met at Route 16 at 18, now level " + std::to_string(raticate->level()) + " -- " + problemsIn(report));
             }
         }
 
@@ -1561,13 +1602,13 @@ namespace Test
         {
             pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::ZA), 10);
             pokemon->setLanguage(spanishLatinAmericaLanguage);
-            expectSilent(*pokemon, Enums::GameVersion::ZA, "Invalid language", "a Z-A Pokemon in Latin American Spanish is called an invalid language", "language=11");
+            expectSilent(*pokemon, Enums::GameVersion::ZA, "Language ID should be", "a Z-A Pokemon in Latin American Spanish is called an invalid language", "language=11");
         }
         if (auto pokemon = makeRecord(Enums::GameVersion::SV))
         {
             pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::SL), 10);
             pokemon->setLanguage(spanishLatinAmericaLanguage);
-            expectFinding(*pokemon, Enums::GameVersion::SV, "Invalid language", "a Scarlet Pokemon in Latin American Spanish is not flagged", "language=11");
+            expectFinding(*pokemon, Enums::GameVersion::SV, "Language ID should be", "a Scarlet Pokemon in Latin American Spanish is not flagged", "language=11");
         }
 
         // 255 EVs in one stat is ordinary before Gen 6; the 252 cap arrived with X/Y.
@@ -1578,7 +1619,7 @@ namespace Test
             pose(*pokemon, 25, 0, Enums::getGroupRepVersion(group), 50);
             pokemon->setEV(0, 255);
             const bool capsAt252 = group == Enums::GameVersion::XY;
-            const std::string found = findingsAbout(*pokemon, group, "EV over 252");
+            const std::string found = findingsAbout(*pokemon, group, "EVs cannot go above 252");
             context.check(found.empty() != capsAt252, capsAt252 ? "a Gen 6 EV of 255 is not flagged" : "a pre-Gen 6 EV of 255 is called over the 252 cap", Enums::getGameVersionName(group) + " HP EV 255");
         }
 
@@ -1590,10 +1631,15 @@ namespace Test
         if (auto pokemon = makeRecord(Enums::GameVersion::SM))
         {
             pose(*pokemon, chespinSpeciesId, 0, static_cast<uint8_t>(Enums::GameVersion::X), 10);
+            // X/Y's starter gift at Aquacorde Town (location 10, level 5, Poke Ball), so the encounter
+            // engine matches an origin and the move is judged against it.
+            pokemon->setMetLocation(10);
+            pokemon->setMetLevel(5);
+            pokemon->setBall(static_cast<uint8_t>(Enums::Ball::Poke));
             pokemon->setMove(0, tackleMoveId);
-            expectSilent(*pokemon, Enums::GameVersion::SM, "learnable: Tackle", "a move learned in X/Y is called unlearnable after the move to Sun/Moon", "Chespin from X with Tackle in Sun");
+            expectSilent(*pokemon, Enums::GameVersion::SM, "Invalid Move 1:", "a move learned in X/Y is called unlearnable after the move to Sun/Moon", "Chespin from X with Tackle in Sun");
             pokemon->setOriginGame(static_cast<uint8_t>(Enums::GameVersion::SN));
-            expectFinding(*pokemon, Enums::GameVersion::SM, "learnable: Tackle", "a Sun-native Chespin with Tackle is not flagged", "Chespin from Sun with Tackle in Sun");
+            expectFinding(*pokemon, Enums::GameVersion::SM, "Invalid Move 1:", "a Sun-native Chespin with Tackle is not flagged", "Chespin from Sun with Tackle in Sun");
         }
 
         // Smeargle can know whatever Sketch copies, and nothing Sketch cannot.
@@ -1627,10 +1673,10 @@ namespace Test
             pose(*pokemon, slakothSpeciesId, 0, static_cast<uint8_t>(Enums::GameVersion::OR), 20);
             pokemon->setMetLocation(petalburgWoodsLocation);
             pokemon->setMetLevel(15);
-            expectSilent(*pokemon, Enums::GameVersion::ORAS, "No encounter for", "a DexNav-boosted ORAS met level is reported", "Slakoth met at Petalburg Woods at 15");
+            expectSilent(*pokemon, Enums::GameVersion::ORAS, "Unable to match an encounter", "a DexNav-boosted ORAS met level is reported", "Slakoth met at Petalburg Woods at 15");
             pokemon->setLevel(80);
             pokemon->setMetLevel(70);
-            expectFinding(*pokemon, Enums::GameVersion::ORAS, "No encounter for", "an ORAS met level past even a DexNav chain is accepted", "Slakoth met at Petalburg Woods at 70");
+            expectFinding(*pokemon, Enums::GameVersion::ORAS, "Unable to match an encounter", "an ORAS met level past even a DexNav chain is accepted", "Slakoth met at Petalburg Woods at 70");
         }
 
         // Bred-egg locations: BD/SP's traded egg is 30001; Platinum and HGSS also accept Faraway4.
@@ -1648,7 +1694,9 @@ namespace Test
             pose(*pokemon, 387, 0, static_cast<uint8_t>(version), 5);
             pokemon->setEggLocation(3002);
             const bool faraway = version == Enums::GameVersion::Pt;
-            const std::string found = findingsAbout(*pokemon, Enums::GameVersion::PT, "Egg location");
+            // PKHeX EncounterEnumerator4: Diamond breeds nothing at 3002, so no template matches and
+            // the finding is the unmatched encounter rather than an egg-location one.
+            const std::string found = findingsAbout(*pokemon, Enums::GameVersion::PT, faraway ? "Egg location" : "Unable to match an encounter");
             context.check(found.empty() == faraway, faraway ? "a Platinum egg from a faraway place (3002) is flagged" : "a Diamond egg from a faraway place (3002) is accepted", Enums::getGameVersionName(version) + " " + found);
         }
 
@@ -1676,8 +1724,11 @@ namespace Test
             pose(*pokemon, 25, 0, static_cast<uint8_t>(Enums::GameVersion::SH), 20);
             pokemon->setMetLocation(59994);
             pokemon->setMetLevel(20);
-            expectFinding(*pokemon, Enums::GameVersion::SWSH, "HOME replaced the met location", "the Switch FireRed/LeafGreen HOME sentinel is not recognised", "met 59994");
-            expectSilent(*pokemon, Enums::GameVersion::SWSH, "is not a place", "the encounter sweep still runs after a HOME sentinel", "met 59994");
+            // PKHeX's EncounterGenerator8X sends a PK8 from Shield met at HOME's LeafGreen sentinel to the
+            // Gen 3 generator as a LeafGreen (Switch) origin rather than skipping it, so the sentinel must
+            // lead to a Gen 3 match.
+            expectSilent(*pokemon, Enums::GameVersion::SWSH, "Unable to match an encounter", "the Switch FireRed/LeafGreen HOME sentinel is not routed to the Gen 3 encounters", "met 59994");
+            expectSilent(*pokemon, Enums::GameVersion::SWSH, "is not a place", "the encounter search still runs after a HOME sentinel", "met 59994");
         }
 
         // The origin-version metadata for the ids PKHeX added (FRX/LGX, Champions, Winds, Waves).

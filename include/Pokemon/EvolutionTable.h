@@ -7,7 +7,7 @@
  * there has no ancestor, and a Hisuian form's ancestor is not its Kantonian one.
  * An edge is present only when both ends exist in that game.
  *
- * Layer 3 legality is the caller: an encounter template names the species that was
+ * Legality and Conversion are the callers: an encounter template names the species that was
  * caught, so an evolved Pokemon has to be matched against its pre-evolution's slots.
  */
 #ifndef PKM_EVOLUTION_TABLE_H

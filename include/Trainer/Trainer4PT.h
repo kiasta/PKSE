@@ -86,6 +86,7 @@ namespace Trainer
         /// Platinum stands alone -- its layout is its own, so the group IS the title.
         GameVersion getGameVersion() const noexcept override { return GameVersion::Pt; }
 
+        bool hasLanguage() const noexcept override { return true; }
         /// The save's language (PKHeX SAV4.Language, Trainer1 + 0x19), so a Pokemon created here is
         /// stamped with it. A byte Gen 4 cannot hold (0, the unused 6, past Korean) answers English.
         uint8_t language() const noexcept override

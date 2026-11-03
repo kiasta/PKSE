@@ -1137,7 +1137,7 @@ because at a 24px row a sideways shift is two pixels and reads as a rendering sl
 `wrapTextToWidth` (`ScreenChrome.h`) measures with `measureText`, never a character budget — Nunito is
 proportional, and a Japanese name has no spaces to break at. It breaks inside a word only when the word
 cannot fit whole, and then on a UTF-8 boundary. The legality overlay drew each finding as one line, and
-Layer 3's sentences ran out of its 760px card. **A card holding wrapped text is SIZED from the wrapped
+the encounter check's sentences ran out of its 760px card. **A card holding wrapped text is SIZED from the wrapped
 lines**, and one that still cannot fit says how many entries it left out rather than cutting them
 silently.
 
@@ -1224,9 +1224,11 @@ would make it find that instead and quietly drop every box name.
 
 The editor page has always had a verdict, but that is a page you open one Pokemon at a time — finding
 the single problem in a box meant opening thirty. The panel answers while the cursor moves:
-*"Legality: no problems found"* (green) or *"Legality: N issue(s)"* (red). **"no problems found",
-never "Legal"** — Layer 3 errs toward silence, so a clean report means nothing was found, not that
-HOME will accept it (chapter 11). It is deliberately NOT a tap target: the whole panel is already one
+*"Legality: no problems found"* (green), *"Legality: legal, N warning(s)"* (green: PKHeX calls a
+Pokémon with only Fishy findings legal) or *"Legality: N issue(s)"* (red, when there is an Invalid
+finding). **A clean report says "no problems found", never "Legal"**: not every verifier is ported in
+full, and even PKHeX's verdict is not HOME's
+(chapter 11). It is deliberately NOT a tap target: the whole panel is already one
 (open the editor), and a second target inside it would make one corner behave differently; the issue
 LIST stays on `R` in the editor.
 

@@ -131,8 +131,8 @@ namespace Enums
      * harmlessly (Gens 1 and 2 have no ball field) and two correctly by luck (Gen 7 really does
      * stop at Beast), but seven wrongly -- Diamond/Pearl, Platinum and HeartGold/SoulSilver were
      * offered the Dream and Beast Balls, and Black/White through ORAS the Beast Ball. Nothing
-     * downstream caught it: the picker draws no legal marker for balls, and Legality Layer 1 only
-     * range-checks the id against the enum.
+     * downstream caught it: the picker draws no legal marker for balls, and the legality checker of the time only
+     * range-checked the id against the enum.
      */
     inline uint8_t maxBallForGroup(GameVersion group)
     {

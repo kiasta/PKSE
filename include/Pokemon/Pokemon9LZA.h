@@ -68,6 +68,18 @@ namespace Pokemon
             return static_cast<uint8_t>(data[0x24]);
         }
 
+        bool hasContestStats() const noexcept override { return true; }
+        uint8_t contestStat(int statIndex) const noexcept override { return (statIndex >= 0 && statIndex < 6) ? static_cast<uint8_t>(data[0x2C + statIndex]) : 0; }
+        uint8_t markingCount() const noexcept override { return 6; }
+        uint16_t markingValue() const noexcept override { return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x18)); }
+        bool hasColoredMarkings() const noexcept override { return true; }
+        bool hasFavoriteFlag() const noexcept override { return true; }
+        bool isFavorite() const noexcept override { return (static_cast<uint8_t>(data[0x16]) & 0x08) != 0; }
+        uint8_t heightScalar() const noexcept override { return static_cast<uint8_t>(data[0x48]); }
+        uint8_t weightScalar() const noexcept override { return static_cast<uint8_t>(data[0x49]); }
+        bool hasScale() const noexcept override { return true; }
+        uint8_t scale() const noexcept override { return static_cast<uint8_t>(data[0x4A]); }
+
         uint16_t heldItem() const noexcept override
         {
             return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x0A));
@@ -108,6 +120,11 @@ namespace Pokemon
         {
             return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x1C));
         }
+
+        /// Nickname 0x58, OT name 0xF8 and handler name 0xA8: 13 UTF-16 units each.
+        std::span<const std::byte> nicknameBytes() const noexcept override { return data.subspan(0x58, 26); }
+        std::span<const std::byte> originalTrainerNameBytes() const noexcept override { return data.subspan(0xF8, 26); }
+        std::span<const std::byte> handlingTrainerNameBytes() const noexcept override { return data.subspan(0xA8, 26); }
 
         std::u16string nickname() const override
         {
@@ -193,7 +210,7 @@ namespace Pokemon
         }
 
         /// Low nibble is days remaining (0 = cured), high nibble the strain.
-        uint8_t pokerus() const noexcept
+        uint8_t pokerus() const noexcept override
         {
             return static_cast<uint8_t>(data[0x32]);
         }
@@ -233,6 +250,7 @@ namespace Pokemon
         }
         uint8_t hyperTrainMinimumLevel() const noexcept override { return 50; }
 
+        bool hasBattleVersion() const noexcept override { return true; }
         uint8_t originGame() const noexcept override { return static_cast<uint8_t>(data[0xCE]); }
         void setOriginGame(uint8_t version) noexcept override
         {
@@ -275,6 +293,10 @@ namespace Pokemon
         }
 
         uint8_t otFriendship() const noexcept override { return static_cast<uint8_t>(data[0x112]); }
+        uint8_t otMemoryIntensity() const noexcept override { return static_cast<uint8_t>(data[0x113]); }
+        uint8_t otMemory() const noexcept override { return static_cast<uint8_t>(data[0x114]); }
+        uint16_t otMemoryVariable() const noexcept override { return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x116)); }
+        uint8_t otMemoryFeeling() const noexcept override { return static_cast<uint8_t>(data[0x118]); }
         void setOTFriendship(uint8_t value) noexcept override
         {
             data[0x112] = static_cast<std::byte>(value);
@@ -399,6 +421,8 @@ namespace Pokemon
 
         /// HOME arrived with Gen 8; this format carries a tracker.
         bool hasHomeTracker() const noexcept override { return true; }
+        bool hasFormArgument() const noexcept override { return true; }
+        uint32_t formArgument() const noexcept override { return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0xD0)); }
         bool hasBirthAbility() const noexcept override { return true; }
         uint64_t homeTracker() const noexcept override
         {
@@ -777,6 +801,24 @@ namespace Pokemon
         void regeneratePID(uint32_t trainerID32) noexcept override;
 
         void setShiny(bool makeShiny, uint32_t trainerID32) noexcept override;
+
+        uint8_t battleVersion() const noexcept override { return static_cast<uint8_t>(data[0xCF]); }
+        uint8_t levelBoost() const noexcept { return static_cast<uint8_t>(data[0x4B]); }
+        /// Plus move flags: 264 at 0xD6, then 96 more at 0x94 (PKHeX PA9.GetMovePlusFlag).
+        bool isPlusFlagSet(int plusIndex) const noexcept
+        {
+            if (plusIndex < 0 || plusIndex >= 360)
+            {
+                return false;
+            }
+            const int flagOffset = plusIndex < 264 ? 0xD6 + (plusIndex >> 3) : 0x94 + ((plusIndex - 264) >> 3);
+            return ((static_cast<uint8_t>(data[flagOffset]) >> (plusIndex & 7)) & 1) != 0;
+        }
+        /// A flag past the 340 the game uses (PKHeX PA9.GetMovePlusFlagAnyImpossible).
+        bool hasImpossiblePlusFlag() const noexcept
+        {
+            return data[0x94 + 11] != std::byte{0} || data[0x94 + 10] != std::byte{0} || (static_cast<uint8_t>(data[0x94 + 9]) & 0xF0) != 0;
+        }
     };
 }
 

@@ -307,6 +307,8 @@ int main(int argc, char **argv)
     std::printf("PKSE self-test framework, host run\n\n");
 
     runSuite(report, "tables", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::tablesPlan, Test::tablesRun);
+    runSuite(report, "rng", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::rngPlan, Test::rngRun);
+    runSuite(report, "evolution", "-", Enums::GameVersion::Any, Enums::GameVersion::Invalid, Test::evolutionPlan, Test::evolutionRun);
 
     for (Enums::GameVersion group : ALL_SAVE_GROUPS)
     {

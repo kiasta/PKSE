@@ -145,6 +145,23 @@ namespace Pokemon
         uint16_t speciesID() const noexcept override { return rd16(0x08); }
         void setSpecies(uint16_t value) noexcept override { wr16(0x08, value); }
         const char *species() const noexcept override;
+        bool hasContestStats() const noexcept override { return true; }
+        uint8_t contestStat(int statIndex) const noexcept override { return (statIndex >= 0 && statIndex < 6) ? rd8(0x24 + statIndex) : 0; }
+        uint8_t markingCount() const noexcept override { return 6; }
+        uint16_t markingValue() const noexcept override { return rd16(0x16); }
+        bool hasColoredMarkings() const noexcept override { return true; }
+        bool hasConsoleRegion() const noexcept override { return true; }
+        uint8_t consoleRegion() const noexcept override { return rd8(0xE2); }
+        uint8_t consoleCountry() const noexcept override { return rd8(0xE0); }
+        uint8_t consoleSubregion() const noexcept override { return rd8(0xE1); }
+        bool hasFormArgument() const noexcept override { return true; }
+        uint32_t formArgument() const noexcept override { return rd32(0x3C); }
+        bool hasSuperTraining() const noexcept override { return true; }
+        uint32_t superTrainFlags() const noexcept override { return rd32(0x2C); }
+        uint16_t distributionSuperTrainFlags() const noexcept override { return rd16(0x3A); }
+        bool isSecretSuperTrainingUnlocked() const noexcept override { return (rd8(0x72) & 0x01) != 0; }
+        bool isSuperTrainSupremelyTrained() const noexcept override { return (rd8(0x72) & 0x02) != 0; }
+
         uint16_t heldItem() const noexcept override { return rd16(0x0A); }
         void setHeldItem(uint16_t value) noexcept override { wr16(0x0A, value); }
         uint32_t id32() const noexcept override { return rd32(0x0C); }
@@ -208,6 +225,7 @@ namespace Pokemon
         bool isPokerusInfected() const noexcept override { return (rd8(0x2B) & 0xF) != 0; }
         bool isPokerusCured() const noexcept override { return (rd8(0x2B) & 0xF) == 0 && (rd8(0x2B) >> 4) != 0; }
         bool hasPokerus() const noexcept override { return true; }
+        uint8_t pokerus() const noexcept override { return rd8(0x2B); }
         void setPokerus(uint8_t value) noexcept override { wr8(0x2B, value); }
 
         std::u16string nickname() const override { return readString(0x40, 13); }
@@ -342,6 +360,11 @@ namespace Pokemon
         uint8_t friendship() const noexcept override { return currentHandler() == 0 ? rd8(0xCA) : rd8(0xA2); }
         void setFriendship(uint8_t value) noexcept override { wr8(currentHandler() == 0 ? 0xCA : 0xA2, value); }
         uint8_t otFriendship() const noexcept override { return rd8(0xCA); }
+        uint8_t otAffection() const noexcept override { return rd8(0xCB); }
+        uint8_t otMemoryIntensity() const noexcept override { return rd8(0xCC); }
+        uint8_t otMemory() const noexcept override { return rd8(0xCD); }
+        uint16_t otMemoryVariable() const noexcept override { return rd16(0xCE); }
+        uint8_t otMemoryFeeling() const noexcept override { return rd8(0xD0); }
         void setOTFriendship(uint8_t value) noexcept override { wr8(0xCA, value); }
 
         uint8_t eggYear() const noexcept override { return rd8(0xD1); }
@@ -459,6 +482,13 @@ namespace Pokemon
         int natureModifier(int statIndex) const noexcept;
         std::u16string readString(size_t offset, size_t units) const;
         void writeString(size_t offset, size_t units, const std::u16string &value) noexcept;
+
+    public:
+        /// Pokemon-Amie / Refresh fullness and enjoyment (PKHeX IFullnessEnjoyment).
+        uint8_t fullness() const noexcept { return rd8(0xAE); }
+        uint8_t enjoyment() const noexcept { return rd8(0xAF); }
+        /// Poke Pelago event state (PKHeX PK7.ResortEventStatus).
+        uint8_t resortEventStatus() const noexcept { return rd8(0x2A); }
     };
 }
 

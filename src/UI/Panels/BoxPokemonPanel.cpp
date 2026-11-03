@@ -404,9 +404,8 @@ namespace UI
             // LEGALITY VERDICT. The editor page already carries this, but that is a page you have
             // to open per pokemon -- finding the one problem in a box meant opening thirty of them.
             // Here it answers while the cursor moves. Same two colours and the same wording as the
-            // editor's row: "no problems found" rather than "Legal" is deliberate, because Layer 3
-            // errs toward silence, so a clean report means nothing was found against this pokemon,
-            // not that HOME will accept it.
+            // editor's row. A Pokemon with only warnings is legal, as PKHeX calls it (no Invalid
+            // finding), and the warnings are counted beside it.
             //
             // Not a tap target: the whole panel is already one (id 2000 -> open the editor), and a
             // second target inside it would make one corner do something different from the rest.
@@ -420,10 +419,19 @@ namespace UI
             // status-then-action on one centred line.
             const int bottomRowY = boxSummaryPanelY + boxSummaryPanelHeight - 24;
             {
-                const Legality::Report summaryReport = Legality::analyze(*p, p->getGameGroup());
-                const bool clean = summaryReport.ok();
-                const std::string verdict = clean ? std::string("Legality: no problems found") : "Legality: " + std::to_string(summaryReport.problemCount()) + " issue(s)";
-                framebuffer.drawText(boxSummaryPanelX + 18, bottomRowY, verdict, clean ? Colors::LegalityClean : Colors::LegalityProblem, TextStyle::Caption);
+                const Legality::Report summaryReport = screen.analyzeLegality(*p, TrainerViewScreen::EditSource::Box);
+                const bool isLegal = summaryReport.invalidCount() == 0;
+                const int warningCount = summaryReport.warningCount();
+                std::string verdict = "Legality: no problems found";
+                if (!isLegal)
+                {
+                    verdict = "Legality: " + std::to_string(summaryReport.problemCount()) + " issue(s)";
+                }
+                else if (warningCount > 0)
+                {
+                    verdict = "Legality: legal, " + std::to_string(warningCount) + " warning(s)";
+                }
+                framebuffer.drawText(boxSummaryPanelX + 18, bottomRowY, verdict, isLegal ? Colors::LegalityClean : Colors::LegalityProblem, TextStyle::Caption);
             }
 
             // Edit hint + whole-panel tap target (opens the editor for the selected slot).

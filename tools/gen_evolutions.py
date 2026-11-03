@@ -3,7 +3,7 @@
 per-game REVERSE evolution lineage (what a species+form evolved FROM), plus the per-game
 FORWARD table of trade evolutions (what a species+form becomes when it is traded).
 
-Layer 3 legality needs this at runtime. An encounter template records the species that
+Legality and Conversion need this at runtime. An encounter template records the species that
 was actually caught, so a Charizard met on Route 3 has to be matched against the
 *Charmander* slot there; without the lineage every evolved Pokemon reads as "no
 encounter produces this species". gen_learnsets.py already walks the same lineage, but
@@ -219,7 +219,7 @@ def emit_header():
  * there has no ancestor, and a Hisuian form's ancestor is not its Kantonian one.
  * An edge is present only when both ends exist in that game.
  *
- * Layer 3 legality is the caller: an encounter template names the species that was
+ * Legality and Conversion are the callers: an encounter template names the species that was
  * caught, so an evolved Pokemon has to be matched against its pre-evolution's slots.
  */
 #ifndef PKM_EVOLUTION_TABLE_H

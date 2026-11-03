@@ -149,6 +149,14 @@ namespace Pokemon
             return static_cast<uint8_t>(data[0x1D]) >> 3;
         }
 
+        uint8_t markingCount() const noexcept override { return 6; }
+        uint16_t markingValue() const noexcept override { return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x16)); }
+        bool hasColoredMarkings() const noexcept override { return true; }
+        bool hasFavoriteFlag() const noexcept override { return true; }
+        bool isFavorite() const noexcept override { return (static_cast<uint8_t>(data[0x15]) & 0x08) != 0; }
+        bool hasFormArgument() const noexcept override { return true; }
+        uint32_t formArgument() const noexcept override { return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x3C)); }
+
         uint16_t heldItem() const noexcept override
         {
             return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x0A));
@@ -243,6 +251,11 @@ namespace Pokemon
         {
             return readUInt32LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0x18));
         }
+
+        /// Nickname 0x40, OT name 0xB0 and handler name 0x78: 13 UTF-16 units each.
+        std::span<const std::byte> nicknameBytes() const noexcept override { return data.subspan(0x40, 26); }
+        std::span<const std::byte> originalTrainerNameBytes() const noexcept override { return data.subspan(0xB0, 26); }
+        std::span<const std::byte> handlingTrainerNameBytes() const noexcept override { return data.subspan(0x78, 26); }
 
         std::u16string nickname() const override
         {
@@ -747,12 +760,12 @@ namespace Pokemon
             return readUInt16LittleEndian(reinterpret_cast<const uint8_t *>(data.data() + 0xFE));
         }
 
-        uint8_t heightScalar() const noexcept
+        uint8_t heightScalar() const noexcept override
         {
             return static_cast<uint8_t>(data[0x3A]);
         }
 
-        uint8_t weightScalar() const noexcept
+        uint8_t weightScalar() const noexcept override
         {
             return static_cast<uint8_t>(data[0x3B]);
         }
@@ -808,6 +821,14 @@ namespace Pokemon
         static float weightAbsoluteFor(uint16_t speciesId, uint8_t formId, uint8_t heightScalarValue, uint8_t weightScalarValue) noexcept;
         /// Rewrites both stored absolutes from the current species, form and scalars.
         void resetSizeAbsolutes() noexcept;
+
+        /// Let's Go has no Pokerus, but keeps the byte (PKHeX PB7.PokerusState).
+        uint8_t pokerus() const noexcept override { return static_cast<uint8_t>(data[0x2B]); }
+        uint8_t receivedMonth() const noexcept { return static_cast<uint8_t>(data[0xCC]); }
+        uint8_t receivedDay() const noexcept { return static_cast<uint8_t>(data[0xCD]); }
+        uint8_t receivedHour() const noexcept { return static_cast<uint8_t>(data[0xCE]); }
+        uint8_t receivedMinute() const noexcept { return static_cast<uint8_t>(data[0xCF]); }
+        uint8_t receivedSecond() const noexcept { return static_cast<uint8_t>(data[0xD0]); }
     };
 }
 

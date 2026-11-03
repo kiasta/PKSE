@@ -10,6 +10,7 @@ when something is wrong.
 | `python tools/syntax_check.py --warnings` | ~1 min | does the optimizer object? |
 | `make` | minutes | does the `.nro` link, with every asset in it? |
 | host harnesses (`tools/harness/`) | seconds each | is the byte work right, against real saves? |
+| legality parity (`tools/harness/build-parity.sh`) | minutes | does the legality checker agree with PKHeX itself, Pokémon by Pokémon? |
 | the self test (`PKSE-dev.nro`, `-` on the save picker) | about a minute | does it all still work on a console, for every generation? |
 | the `.nro` on a console, by hand | as long as it takes | does it do the right thing to a real save? |
 
@@ -67,12 +68,21 @@ owner's trainer name and id.
   layers with the host compiler and run them against a folder of saves, one sub-folder per title
   (default `~/pkse-test-saves`). `build.sh` is the unedited round trip described below, done for
   every save at once. Others cover Gen 1, Gens 2 and 4–7 with every save envelope, the PKSM bank
-  import, Pokemon files against PKHeX's own test files, the legality sweep, the self test's own
-  suites, and (`uihost/run.sh`) the real screens driven headless. They stub the filesystem layer, so **only `make` proves the `.nro` links.**
+  import, Pokemon files against PKHeX's own test files, the legality sweep, legality parity against
+  PKHeX, the self test's own suites (including `rng` and `evolution`, PKHeX's own test vectors for the
+  legality engines), and (`uihost/run.sh`) the real screens driven headless. They stub the filesystem layer, so **only `make` proves the `.nro` links.**
 - **The self test** is in the development build only (chapter 02). Press `-` on the save picker and
   it opens, edits, converts and writes back one save per title on hardware: an installed Switch
   title's own save, and for a loose-file game the save under `sdmc:/PKSE/tests/saves/<Title>/`. It
   works on copies: nothing the user owns is written.
+
+**Legality parity** is the one harness that runs a second program. `build-parity.sh` runs PKSE's
+analyzer over the saves and over PKHeX's own test files, runs PKHeX's real `LegalityAnalysis` over the
+same files through `tools/legalitydump` (it needs the .NET SDK and a PKHeX checkout, `PKHEX_LOCAL`,
+default `~/repos/PKHeX`), and lists every finding one side reports and the other does not. PKHeX's
+side is cached in `build-harness/pkhex-cache/`; `PARITY_REFRESH_PKHEX=1` recomputes it after a PKHeX
+pull or new test saves. `PKSE_HARNESS_OUT=<dir>` moves PKSE's build and output elsewhere, so several
+runs can share one tree. Chapter 11 explains how to read its output.
 
 Run the harnesses whenever a change can be decided from data (a parse, an offset, a conversion),
 and the self test before a release.
@@ -162,6 +172,7 @@ side a refused action looks identical to nothing happening, so the log is how it
 | a file the build lists, a source directory, an asset | `make` |
 | an offset, a parse, a save writer | an unedited round trip of a real save in that format, compared byte for byte (`tools/harness/build.sh`, or `build-oldgens.sh` for Gens 2 and 4–7) |
 | an editable field | edit it, save, reopen, read it back — in every game that has it |
-| a legality rule or an encounter table | the legality view over real saves (`tools/harness/build-legality.sh`): near-silence is right, a wall of findings means the table is wrong, not the save |
+| a legality check, an encounter template, the RNG or evolution engine | legality parity (`tools/harness/build-parity.sh <save-root>`): the codes you touched must show no gaps and no extras against PKHeX, and no new extras anywhere (chapter 11); then `build-selftest.sh`, with a planted case in `SuiteLegality.cpp` for any branch no corpus reaches |
+| the Gen 3 landing table (`gen_encounters.py`) | `build-selftest.sh` (the conversion suite's Gen 3 rebuild landings), and a semantic diff of the regenerated `EncounterTable.cpp` |
 | a screen, panel, dialog or modal | `tools/harness/uihost/run.sh`, then click through it, by button **and** by touch, with the left stick as well as the D-pad |
 | the bank, conversion | deposit and withdraw across generations, then Discard and confirm both sides rewound |

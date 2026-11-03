@@ -10,7 +10,11 @@
 | **SwishCrypto** | The SCBlock container's encryption + SHA-256 integrity scheme. |
 | **Personal table** | Per-(species, form) data: abilities, gender ratio, friendship, form count, types, per-game presence. |
 | **Learnset bitset** | 116 bytes per (species, form, game); bit *M* set = move *M* is legally knowable. |
-| **Encounter row** | One template in the Layer 3 legality tables: species, location, level span, constraints. |
+| **Encounter template** | One PKHeX encounter (a wild slot, a static or gift, a trade, an egg, a Mystery Gift card) as an `Encounters::Encounterable` class. The encounter engine searches these (chapter 11). |
+| **Encounter row** | One merged `EncounterRow` in the generated Gen 3 table (`EncounterTable.cpp`): species, location, level span, constraints. Read only by the bank's Gen 3 rebuild. |
+| **EncounterInfo** | `AnalysisContext::encounter`: the engine's verdict in short form (`type`, `originGroup`), from `Encounters::makeEncounterInfo`. What is left of the retired interim sweep (chapter 11). |
+| **Parity** | PKSE's legality findings compared with PKHeX's own on the same Pokémon (`build-parity.sh`). A **gap** is a finding only PKHeX reports; an **extra** one only PKSE reports. |
+| **Fishy** | PKHeX's middle severity: suspicious but legal. PKSE's `Severity::Warning`. A Pokémon is legal when it has no Invalid finding. |
 | **DV** | Gen 1/2's 4-bit Individual Value. Caps at 15; HP's is derived. |
 | **Stat Experience** | Gen 1/2's 16-bit-per-stat trainable value. Cap 65535, no total, contributes via a square root. Not an EV. |
 | **AV (Awakening Value)** | Let's Go's stat training, 0–200 per stat, no total cap. Replaces EVs there. |
@@ -100,6 +104,34 @@ Four, and each says so in a comment where it lives, so a future sweep does not "
 
 Two names that belong to somebody else are also left alone wherever they appear:
 `FsSaveDataInfo::uid` and `HidTouchState::x/y` are libnx's fields, not PKSE's.
+
+### PKHeX names in the legality port
+
+The legality layer is a line-for-line port of PKHeX, so it meets PKHeX's names constantly. They are
+renamed under the same rules (`docs/CODING_STANDARDS.md` §3.7); provenance goes in a comment. The
+recurring ones:
+
+| PKHeX | PKSE |
+|---|---|
+| `LegalityAnalysis` (what a verifier receives) | `AnalysisContext`; the entry point is `analyze()` |
+| `LegalInfo` | `Encounters::LegalityInfo` |
+| `LegalInfo.EvoChainsAllGens` | `evolutionChainsAllGens()` / `AnalysisContext::evolutionHistory()`, an `EvolutionHistory` |
+| `EvoCriteria` | `Evolutions::EvolutionCriteria` |
+| `EvolutionChain.GetEvolutionChainsAllGens` | `Evolutions::getEvolutionChainsAllGens` (`EvolutionChainSearch.h`) |
+| `EntityContext` | a context group (`Enums::GameVersion`), `EVOLUTION_CONTEXT_GROUPS` |
+| `IEncounterable` + `IEncounterTemplate` + `IEncounterMatch` | `Encounters::Encounterable` |
+| `enc is EncounterStatic3 s` | `encounterAs<EncounterStatic3>(encounter)`, via `templateType()` / `EncounterTemplateType` |
+| `enc is IMoveset m` (any multi-member interface) | `encounter.asMoveset()` on a `MovesetTemplate` mix-in |
+| `IEnumerable<IEncounterable>` + `yield return` | `EncounterCandidates` coroutine + `co_yield` (`EncounterSequence.h`) |
+| `MatchedEncounter<T>`, `PeekEnumerator` | `MatchedEncounter`, `PeekEnumerator` |
+| `LegalityCheckResultCode` | `ResultCode` (generated; `getResultCodeSourceName()` keeps PKHeX's spelling) |
+| `CheckIdentifier` | `CheckIdentifier` |
+| `CheckResult`, `Severity.Fishy` | `Encounters::CheckResult` with `Judgement::Fishy`; reported as `Severity::Warning` |
+| `ParseSettings.ActiveTrainer` | `ActiveTrainer` in `AnalysisOptions` |
+| `StorageSlotType.Ignore` | `StorageSlotType::Unknown` |
+| `ParseSettings.AllowEraCartGB` / `AllowEraCartGBA` / `AllowEraSwitchGBA` | `allowsGameBoyCartridgeEra()` / `allowsGameBoyAdvanceCartridgeEra()` / `allowsSwitchGameBoyAdvanceEra()` |
+| `XxxVerifier.Verify(data)` | `verifyXxx(context)` (`Verifiers.h`) |
+| `pk`, `enc`, `evo` | `pokemon`, `encounter`, `evolution` |
 
 ## Code conventions
 
@@ -344,6 +376,20 @@ pokemon.canStoreNickname(u16) / trainer.canStoreBoxName(u8)
 | `src/Pokemon/Gen1Tables.cpp` | `tools/gen_gen1.py` |
 | `src/Pokemon/EvolutionTable.cpp` | `tools/gen_evolutions.py` |
 | `src/Legality/EncounterTable.cpp` | `tools/gen_encounters.py` |
+| `src/Legality/Encounters/EncounterData1.cpp` … `EncounterData9a.cpp` | `tools/gen_encounters1.py` … `gen_encounters9a.py` |
+| `src/Legality/Encounters/EncounterDataGO.cpp` | `tools/gen_encountersgo.py` |
+| `src/Legality/Encounters/EncounterBreedingTable.cpp` | `tools/gen_encounterbreeding.py` |
+| `src/Legality/Evolutions/EvolutionTreeTable.cpp` | `tools/gen_evolutiontree.py` |
+| `include/Legality/ResultCode.h`, `src/Legality/ResultCodeText.cpp` | `tools/gen_legalitycodes.py` |
+| `src/Legality/Verifiers/BreedingPermissionTable.cpp` | `tools/gen_breedingpermissions.py` |
+| `include/Legality/Verifiers/MemoryTable.h` | `tools/gen_memories.py` |
+| `include/Legality/Verifiers/GeolocationTable.h` | `tools/gen_geolocation.py` |
+| `src/Legality/Verifiers/VivillonPatternTable.cpp` | `tools/gen_vivillonpatterns.py` |
+| `src/Legality/Verifiers/WordFilterTable.cpp` | `tools/gen_wordfilter.py` |
+| `src/Pokemon/LearnSourceTable.cpp` | `tools/gen_learnsources.py` |
+| `src/Pokemon/MoveRecordTable.cpp` | `tools/gen_moverecords.py` |
+| `src/Names/ReleasedHeldItemTable.cpp` | `tools/gen_helditems.py` |
+| `include/Utils/Gen2KoreanText.h` | `tools/gen_gen2korean.py` |
 | `src/Names/LocationNames.cpp` | `tools/gen_locations.py` |
 | `src/Names/ItemPouches.cpp` | `tools/gen_itempouches.py` |
 | `src/Names/ItemPresence.cpp` | `tools/gen_itempresence.py` |
@@ -384,8 +430,17 @@ pokemon.canStoreNickname(u16) / trainer.canStoreBoxName(u8)
 |---|---|
 | `src/Trainer/Bank.cpp` | the cross-game bank |
 | `src/Conversion/Convert.cpp` | cross-generation entity conversion |
-| `src/Legality/Legality.cpp` | Layers 1 + 2 |
-| `src/Legality/EncounterMatch.cpp` | Layer 3 |
+| `src/Legality/Legality.cpp` | `analyze()` and `runVerifiers()`: the order PKHeX runs its checks in |
+| `include/Legality/AnalysisContext.h` | what a verifier sees: the Pokémon, the slot type, the active trainer, the encounter |
+| `src/Legality/Verifiers/*.cpp` | one file per PKHeX verifier |
+| `src/Legality/Encounters/EncounterGenerator.cpp` | the per-generation dispatch |
+| `src/Legality/Encounters/EncounterFinder.cpp` | PKHeX's `FindVerifiedEncounter` |
+| `src/Legality/Encounters/EncounterVerifier.cpp` | each generation's egg and template rules |
+| `src/Legality/Evolutions/EvolutionChainSearch.cpp` | `getEvolutionChainsAllGens` |
+| `src/Legality/LearnSource/LearnVerifier.cpp` | the per-slot move verdicts |
+| `src/Legality/RNG/MethodFinder.cpp` | the PID/IV correlation search |
+| `tools/legalitydump/` | runs PKHeX's own `LegalityAnalysis` for parity |
+| `tools/harness/build-parity.sh`, `parity_diff.py`, `pidiv_diff.py`, `evolution_diff.py`, `encounter_diff.py` | the parity harness and its diffs |
 
 ## Commands
 
@@ -449,7 +504,8 @@ sdmc:/PKSE/
 | Stats disagree with IVs/EVs | `recalculateStats()` missing, or raw IVs used instead of `effectiveIV` |
 | Wrong sprite | `FormSpriteMapping` — verify the id against PokeAPI |
 | Wrong name | which table? `getItemNameFor`, `locationTableVersion` |
-| Legality false positive | is a lookup returning "no data" being read as "no"? |
+| Legality false positive | is a lookup returning "no data" being read as "no"? Then run `build-parity.sh --verbose --title <save>`: does PKHeX report it too? |
+| Legality differs from PKHeX | the gap's code in `ResultCode.h`, then the PKHeX verifier that emits it; for an `Encounter`/`PID` code, the generation's `EncounterGeneratorN` |
 | UI control does nothing | drawn but not handled, or the touch id is not mapped into `kDown` |
 | Taps land on the wrong thing | overlay draw order, or a missing `touchButtons.clear()` |
 | App appears frozen | a modal resolving a target by index while compaction moved it |

@@ -37,6 +37,7 @@
 #include <string>
 #include <vector>
 
+#include "Save/SaveFileName.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/Inventory1RBY.h"
 #include "Pokemon/Pokemon1RBY.h"
@@ -144,6 +145,7 @@ namespace Trainer
          */
         const char *gameTitle() const noexcept;
         const std::string &fileName() const noexcept { return saveFileName; }
+        bool isVirtualConsole() const noexcept override { return Save::isGameBoyVirtualConsoleFileName(saveFileName); }
 
         /// The full save, checksum refreshed. This is what gets written back to the SD card.
         const std::vector<uint8_t> &serialize();

@@ -1,24 +1,15 @@
 /**
- * analyze() runs three layers against a decrypted Pokemon and returns human-readable
- * issues:
+ * analyze() is PKSE's port of PKHeX's LegalityAnalysis. It finds the verified encounter
+ * (Legality/Encounters: PKHeX's EncounterFinder, with move verification from
+ * Legality/LearnSource and evolution chains from Legality/Evolutions), then runs one
+ * verifier per PKHeX verifier (Legality/Verifiers) in PKHeX's order behind PKHeX's format
+ * gates. Every Issue carries PKHeX's CheckIdentifier and result code (ResultCode.h), and
+ * severities match PKHeX: Invalid stays Invalid, Fishy becomes Warning. A Pokemon is legal
+ * exactly when PKHeX would call it legal: no Invalid issue (Report::invalidCount() == 0).
  *
- *   Layer 1  structural   -- field ranges: EV/AV caps, nature and ball ids, known
- *                            species / move / item ids, name lengths, checksum.
- *   Layer 2  consistency  -- the Pokemon against itself and its species data: level
- *                            vs EXP, met level vs level, gender vs gender ratio,
- *                            ability against the species' slots, move learnability,
- *                            per-game species presence.
- *   Layer 3  encounter    -- the Pokemon against the game it says it came from: is
- *                            there a real encounter template that produces it, at
- *                            that met location and met level, with that shiny state,
- *                            ball, gender and nature? See EncounterMatch.h.
- *
- * It stays INFORMATIONAL (no auto-fix) and deliberately conservative. Layer 3's data
- * is real but not complete -- only the distributions PKHeX archives are in it, the
- * moves a specific encounter or event hands out are not, and neither are PID/seed
- * correlations -- so a clean report still means "no problems found", never a
- * guarantee of full legality. Where a check would need data PKSE does
- * not have, it says so as an Info note rather than staying silent.
+ * It stays INFORMATIONAL: PKSE never refuses or auto-fixes an edit because of a finding.
+ * tools/harness/build-parity.sh compares every finding with PKHeX's own on real saves
+ * and PKHeX's test files; see docs/manual/11-legality.md.
  *
  * No RTTI / no exceptions: every check calls base Pokemon virtuals; per-generation
  * differences branch on the game group / capability flags, never on concrete type.
@@ -32,6 +23,7 @@
 #include <vector>
 
 #include "Enums/GameVersion.h"
+#include "Legality/ResultCode.h"
 
 namespace Pokemon
 {
@@ -48,10 +40,23 @@ namespace Legality
         Invalid
     };
 
+    /// One finding. `identifier` and `code` are PKHeX's CheckIdentifier and LegalityCheckResultCode
+    /// for the same finding, which is what the parity harness compares; `text` is what the user reads.
+    /// Where a finding comes from: a check, or one move slot's verdict (PKHeX keeps those apart, in
+    /// LegalInfo.Moves / Relearn rather than its Results).
+    enum class IssueSource : uint8_t
+    {
+        Check,
+        Move,
+    };
+
     struct Issue
     {
         Severity severity;
+        CheckIdentifier identifier;
+        ResultCode code;
         std::string text;
+        IssueSource source = IssueSource::Check;
     };
 
     struct Report
@@ -69,16 +74,54 @@ namespace Legality
         }
         bool ok() const noexcept { return problemCount() == 0; }
 
+        /// Number of Invalid issues. PKHeX calls a Pokemon legal when this is 0: a Warning is its
+        /// "Fishy", suspicious but still legal (LegalityAnalysis.Valid).
+        int invalidCount() const noexcept
+        {
+            int invalidIssueCount = 0;
+            for (const auto &issue : issues)
+            {
+                if (issue.severity == Severity::Invalid)
+                {
+                    ++invalidIssueCount;
+                }
+            }
+            return invalidIssueCount;
+        }
+
+        /// Number of Warning issues, PKHeX's "Fishy" findings.
+        int warningCount() const noexcept
+        {
+            int warningIssueCount = 0;
+            for (const auto &issue : issues)
+            {
+                if (issue.severity == Severity::Warning)
+                {
+                    ++warningIssueCount;
+                }
+            }
+            return warningIssueCount;
+        }
+
         /// Is there anything at all to show? A Pokemon with no problems can still have
         /// Info notes worth reading -- which encounter it matched, or that a check could
         /// not run -- so the UI opens its issue list on this, not on ok().
         bool empty() const noexcept { return issues.empty(); }
     };
 
+    /// PKHeX's English template for `code` with its {0} / {1} placeholders replaced.
+    std::string getResultText(ResultCode code, const std::string &firstArgument = "", const std::string &secondArgument = "");
+
+    struct AnalysisOptions;
+
     /// Analyze a decrypted Pokemon and return its legality issues (informational).
-    /// originGroup = the save's format group (Trainer::getGameGroup()). Returns an
+    /// originGroup = the Pokemon's own format group (Pokemon::getGameGroup()). Returns an
     /// empty report for an empty slot (species 0).
     Report analyze(const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup);
+
+    /// As above, with where the Pokemon is stored and the open save's trainer, which PKHeX's
+    /// handler, trainer and slot checks compare against (see AnalysisContext.h).
+    Report analyze(const Pokemon::Pokemon &pokemon, Enums::GameVersion originGroup, const AnalysisOptions &options);
 }
 
 #endif

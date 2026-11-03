@@ -54,7 +54,7 @@ namespace UI
             const bool isShiny = p->isShiny(p->id32(), p->species());
             const bool usesAwakeningValues = p->hasAwakeningValues();
             const int selectedIndex = screen.details.selectedField; // 0-5 stats, 6 shiny, 7 nature, 8 gender, 9 level, 10-13 moves, 14 item
-            const Legality::Report legalityRep = Legality::analyze(*p, p->getGameGroup());
+            const Legality::Report legalityRep = screen.analyzeLegality(*p, screen.details.source);
             const bool hasRibbons = !Names::getRibbonDefinitions(p->getGameGroup()).empty();
 
             screen.touchButtons.clear();
@@ -535,15 +535,25 @@ namespace UI
             }
 
             // Legality summary pinned at the bottom of the left pane (R / tap opens the full issue list).
-            // A clean pokemon is still worth opening: Layer 3 records which encounter it matched, or why it
+            // A clean pokemon is still worth opening: the encounter engine records which encounter it matched, or why it
             // could not be checked, as notes -- so the row stays tappable whenever there is anything to read.
             {
                 const int legalityRowY = colY + colH - legalityH + 6;
-                const bool clean = legalityRep.ok();
-                std::string label = clean ? "Legality: no problems found" : "Legality: " + std::to_string(legalityRep.problemCount()) + " issue(s)";
+                // PKHeX calls a Pokemon legal when it has no Invalid finding; its warnings are still counted.
+                const bool isLegal = legalityRep.invalidCount() == 0;
+                const int warningCount = legalityRep.warningCount();
+                std::string label = "Legality: no problems found";
+                if (!isLegal)
+                {
+                    label = "Legality: " + std::to_string(legalityRep.problemCount()) + " issue(s)";
+                }
+                else if (warningCount > 0)
+                {
+                    label = "Legality: legal, " + std::to_string(warningCount) + " warning(s)";
+                }
                 if (!legalityRep.empty())
                     label += "  -  R / tap to view";
-                framebuffer.drawText(leftColumnX + 18, legalityRowY, label, clean ? Colors::LegalityClean : Colors::LegalityProblem, TextStyle::Caption);
+                framebuffer.drawText(leftColumnX + 18, legalityRowY, label, isLegal ? Colors::LegalityClean : Colors::LegalityProblem, TextStyle::Caption);
                 if (!legalityRep.empty())
                 {
                     int labelWidth, lh;
@@ -860,7 +870,7 @@ namespace UI
                 const int overlayX = (screenWidth - overlayWidth) / 2;
 
                 // EVERY MESSAGE IS WRAPPED TO THE CARD, AND THE CARD IS SIZED FROM THE WRAPPED LINES.
-                // Layer 3's sentences name a game, a species, a place and a level, and drawn as one
+                // Encounter findings name a game, a species, a place and a level, and drawn as one
                 // line each they ran straight out of the card's right edge. The severity tag keeps a
                 // column of its own, as wide as the widest tag, so every message starts at the same x
                 // and a continuation line sits under the text it continues rather than under the tag.
@@ -877,7 +887,7 @@ namespace UI
                 const int messageWidth = overlayX + overlayWidth - overlayPadding - messageX;
                 const int captionLineHeight = framebuffer.lineHeight(TextStyle::Caption);
 
-                // Info notes are listed too, dimmed: they carry Layer 3's verdict (which encounter
+                // Info notes are listed too, dimmed: they carry the encounter engine's verdict (which encounter
                 // matched) and its abstentions (why a check could not run), which are exactly what a
                 // clean-looking pokemon is worth reading.
                 struct IssueLayout
@@ -888,7 +898,8 @@ namespace UI
                 };
                 std::vector<IssueLayout> issueLayouts;
                 issueLayouts.reserve(legalityRep.issues.size());
-                int contentHeight = legalityRep.ok() ? headlineHeight : 0;
+                const bool isLegal = legalityRep.invalidCount() == 0;
+                int contentHeight = isLegal ? headlineHeight : 0;
                 for (const auto &issue : legalityRep.issues)
                 {
                     IssueLayout layout{Colors::TextDim, noteTag, {}};
@@ -920,9 +931,10 @@ namespace UI
                 }
 
                 int lineY = overlayY + headerHeight;
-                if (legalityRep.ok())
+                if (isLegal)
                 {
-                    framebuffer.drawText(tagX, lineY, "No problems found.", Colors::LegalityClean, TextStyle::Body);
+                    const char *headline = legalityRep.warningCount() > 0 ? "Legal, with warnings." : "No problems found.";
+                    framebuffer.drawText(tagX, lineY, headline, Colors::LegalityClean, TextStyle::Body);
                     lineY += headlineHeight;
                 }
                 // A REPORT TALLER THAN THE SCREEN SAYS SO. Wrapping makes an issue taller, never

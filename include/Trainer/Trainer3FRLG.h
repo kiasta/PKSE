@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "Save/SaveFileName.h"
 #include "Trainer/Trainer.h"
 #include "Trainer/Inventory3FRLG.h"
 #include "Pokemon/Pokemon3FRLG.h"
@@ -119,10 +120,13 @@ namespace Trainer
         /// reported yet. See the note on Enums::getGameVersion.
         static bool detect(const std::vector<uint8_t> &bytes) noexcept;
 
+        bool hasLanguage() const noexcept override { return true; }
+
         uint8_t language() const noexcept override { return languageId; }
 
         bool isValid() const noexcept { return valid; }
         const std::string &fileName() const noexcept { return saveFileName; }
+        bool isVirtualConsole() const noexcept override { return Save::isGameBoyAdvanceVirtualConsoleFileName(saveFileName); }
         const std::vector<uint8_t> &getSaveData() const noexcept { return saveData; }
         uint32_t securityKey() const noexcept { return saveSecurityKey; }
 

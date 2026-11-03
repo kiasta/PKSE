@@ -49,6 +49,8 @@ SRC+=("$ROOT/src/Test/SuiteLegality.cpp")
 SRC+=("$ROOT/src/Test/SuiteConversion.cpp")
 SRC+=("$ROOT/src/Test/SuitePokemonFile.cpp")
 SRC+=("$ROOT/src/Test/SuiteBank.cpp")
+SRC+=("$ROOT/src/Test/SuiteRNG.cpp")
+SRC+=("$ROOT/src/Test/SuiteEvolution.cpp")
 SRC+=("$ROOT/tools/harness/selftest.cpp")
 
 MEMECRYPTO_A=$(sh "$ROOT/tools/harness/memecrypto.sh" "$OUT")

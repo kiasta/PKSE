@@ -186,6 +186,10 @@ namespace Test
     void uiRun(Context &, int); // DRIVES the app: real screens, synthetic input
     int pickerPlan(Context &);
     void pickerRun(Context &, int); // DRIVES the save picker (console only)
+    int rngPlan(Context &);
+    void rngRun(Context &, int); // the Legality/RNG library against PKHeX's own test vectors
+    int evolutionPlan(Context &);
+    void evolutionRun(Context &, int); // the Legality/Evolutions engine against PKHeX's results
     int fileBrowserPlan(Context &);
     void fileBrowserRun(Context &, int); // DRIVES the file browser over a fixture it builds
 }

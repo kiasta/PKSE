@@ -308,6 +308,14 @@ namespace Trainer
             return static_cast<uint8_t>(Enums::LanguageID::English);
         }
 
+        /// Does language() read the save? The Gen 3 and Gen 4 groups override it; every other group
+        /// answers English without looking, so a check comparing languages must not trust it.
+        virtual bool hasLanguage() const noexcept { return false; }
+
+        /// A Virtual Console save rather than a cartridge one (PKHeX SAV1/SAV2/SAV3.IsVirtualConsole).
+        /// PKHeX tells them apart only by the file's name, and the legality checks read it.
+        virtual bool isVirtualConsole() const noexcept { return false; }
+
         /// Let's Go only -- the Partner Pikachu/Eevee. No other format has such a slot.
         virtual bool isStarterPokemon(size_t boxIndex, size_t slotIndex) const noexcept
         {
